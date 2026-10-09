@@ -1,0 +1,1466 @@
+{
+  "$defs": {
+    "ChangeMode": {
+      "enum": [
+        "track",
+        "direct"
+      ],
+      "type": "string"
+    },
+    "ChromeKind": {
+      "enum": [
+        "default",
+        "first",
+        "even"
+      ],
+      "type": "string"
+    },
+    "Command": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "html": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "kind": {
+              "const": "create"
+            },
+            "paragraphs": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "read"
+            },
+            "read_kind": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "view": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "ignore_case": {
+              "type": "boolean"
+            },
+            "kind": {
+              "const": "find"
+            },
+            "query": {
+              "type": "string"
+            },
+            "view": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/FindView"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "query"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "author": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "change_mode": {
+              "$ref": "#/$defs/ChangeMode"
+            },
+            "kind": {
+              "const": "edit"
+            },
+            "op": {
+              "$ref": "#/$defs/editOp"
+            }
+          },
+          "required": [
+            "author",
+            "change_mode",
+            "kind",
+            "op"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "CommandRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "$ref": "#/$defs/Command"
+        },
+        "expected_source": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SourceHash"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "command"
+      ],
+      "type": "object"
+    },
+    "CommandResult": {
+      "oneOf": [
+        {
+          "properties": {
+            "bytes": {
+              "items": {
+                "format": "uint8",
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "outcome": {
+              "enum": [
+                "completed"
+              ],
+              "type": "string"
+            },
+            "result": true,
+            "source": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/SourceHash"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "outcome"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "diagnostic": {
+              "$ref": "#/$defs/Diagnostic"
+            },
+            "outcome": {
+              "enum": [
+                "rejected"
+              ],
+              "type": "string"
+            },
+            "result": true,
+            "source": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/SourceHash"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "diagnostic",
+            "outcome"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "CommentStatus": {
+      "enum": [
+        "open",
+        "resolved"
+      ],
+      "type": "string"
+    },
+    "Diagnostic": {
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "span": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Span"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "type": "object"
+    },
+    "InsertAnchor": {
+      "pattern": "^(?:[A-F0-9]{8}|\\$[A-Za-z_][A-Za-z0-9_]*|table:[1-9][0-9]*)$",
+      "type": "string"
+    },
+    "InsertPosition": {
+      "enum": [
+        "before",
+        "after"
+      ],
+      "type": "string"
+    },
+    "LineSpacing": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "enum": [
+                "multiple"
+              ],
+              "type": "string"
+            },
+            "value": {
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "mode",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "enum": [
+                "exact"
+              ],
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/Points"
+            }
+          },
+          "required": [
+            "mode",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "enum": [
+                "at_least"
+              ],
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/Points"
+            }
+          },
+          "required": [
+            "mode",
+            "value"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "OperationReport": {
+      "properties": {
+        "affected": {
+          "items": true,
+          "type": "array"
+        },
+        "context_truncated": {
+          "type": "boolean"
+        },
+        "index": {
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "op": {
+          "type": "string"
+        },
+        "outcome": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "index",
+        "op",
+        "outcome",
+        "summary"
+      ],
+      "type": "object"
+    },
+    "ParagraphAddress": {
+      "pattern": "^(?:[A-F0-9]{8}|\\$[A-Za-z_][A-Za-z0-9_]*)$",
+      "type": "string"
+    },
+    "Plan": {
+      "additionalProperties": false,
+      "properties": {
+        "author": {
+          "type": "string"
+        },
+        "base": {
+          "$ref": "#/$defs/SourceHash"
+        },
+        "change_mode": {
+          "$ref": "#/$defs/ChangeMode"
+        },
+        "ops": {
+          "items": {
+            "$ref": "#/$defs/editOp"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "author",
+        "base",
+        "change_mode",
+        "ops"
+      ],
+      "type": "object"
+    },
+    "PlanReport": {
+      "properties": {
+        "aliases": {
+          "additionalProperties": true,
+          "default": {},
+          "type": "object"
+        },
+        "allocated_ids": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "completed": {
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "ops": {
+          "items": {
+            "$ref": "#/$defs/OperationReport"
+          },
+          "type": "array"
+        },
+        "repaired_ids": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "stopped_at": {
+          "format": "uint",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "completed",
+        "ops"
+      ],
+      "type": "object"
+    },
+    "PlanRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "plan": {
+          "$ref": "#/$defs/Plan"
+        },
+        "preview_key": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PreviewKey"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "plan"
+      ],
+      "type": "object"
+    },
+    "PlanResult": {
+      "oneOf": [
+        {
+          "properties": {
+            "canonical_toml": {
+              "type": "string"
+            },
+            "outcome": {
+              "enum": [
+                "previewed"
+              ],
+              "type": "string"
+            },
+            "plan": {
+              "$ref": "#/$defs/Plan"
+            },
+            "preview_key": {
+              "$ref": "#/$defs/PreviewKey"
+            },
+            "report": {
+              "$ref": "#/$defs/PlanReport"
+            },
+            "source": {
+              "$ref": "#/$defs/SourceHash"
+            }
+          },
+          "required": [
+            "canonical_toml",
+            "outcome",
+            "plan",
+            "preview_key",
+            "report",
+            "source"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "bytes": {
+              "items": {
+                "format": "uint8",
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              "type": "array"
+            },
+            "canonical_toml": {
+              "type": "string"
+            },
+            "outcome": {
+              "enum": [
+                "committed"
+              ],
+              "type": "string"
+            },
+            "plan": {
+              "$ref": "#/$defs/Plan"
+            },
+            "report": {
+              "$ref": "#/$defs/PlanReport"
+            },
+            "source": {
+              "$ref": "#/$defs/SourceHash"
+            }
+          },
+          "required": [
+            "bytes",
+            "canonical_toml",
+            "outcome",
+            "plan",
+            "report",
+            "source"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "diagnostic": {
+              "$ref": "#/$defs/Diagnostic"
+            },
+            "outcome": {
+              "enum": [
+                "rejected"
+              ],
+              "type": "string"
+            },
+            "plan": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Plan"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "report": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/PlanReport"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "source": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/SourceHash"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "diagnostic",
+            "outcome"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Points": {
+      "minimum": 0,
+      "multipleOf": 0.05,
+      "type": "number"
+    },
+    "PreviewKey": {
+      "type": "string"
+    },
+    "RevisionAction": {
+      "enum": [
+        "accept",
+        "reject"
+      ],
+      "type": "string"
+    },
+    "RevisionTarget": {
+      "pattern": "^(?:all|[0-9]+)$",
+      "type": "string"
+    },
+    "SourceHash": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "Span": {
+      "properties": {
+        "column": {
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "end_column": {
+          "format": "uint",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "end_line": {
+          "format": "uint",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "line": {
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "column",
+        "line"
+      ],
+      "type": "object"
+    },
+    "editOp": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "Replace one current equation without matching reconstructed LaTeX.",
+          "properties": {
+            "at": {
+              "$ref": "#/$defs/ParagraphAddress"
+            },
+            "display": {
+              "default": null,
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "equation": {
+              "default": null,
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "mathml": {
+              "type": "string"
+            },
+            "op": {
+              "enum": [
+                "replace_equation"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "at",
+            "mathml",
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Delete one current equation while preserving the surrounding paragraph.",
+          "properties": {
+            "at": {
+              "$ref": "#/$defs/ParagraphAddress"
+            },
+            "equation": {
+              "default": null,
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "op": {
+              "enum": [
+                "delete_equation"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "at",
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "at": {
+              "$ref": "#/$defs/ParagraphAddress"
+            },
+            "occurrence": {
+              "default": null,
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "op": {
+              "enum": [
+                "replace_text"
+              ],
+              "type": "string"
+            },
+            "select": {
+              "type": "string"
+            },
+            "with": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "at",
+            "op",
+            "select",
+            "with"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "at": {
+              "$ref": "#/$defs/ParagraphAddress"
+            },
+            "op": {
+              "enum": [
+                "replace_paragraph"
+              ],
+              "type": "string"
+            },
+            "with": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "at",
+            "op",
+            "with"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "at": {
+              "$ref": "#/$defs/ParagraphAddress"
+            },
+            "bold": {
+              "default": null,
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "clear": {
+              "default": [],
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "color": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "font_size": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Points"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "italic": {
+              "default": null,
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "occurrence": {
+              "default": null,
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "op": {
+              "enum": [
+                "format_text"
+              ],
+              "type": "string"
+            },
+            "select": {
+              "type": "string"
+            },
+            "strike": {
+              "default": null,
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "subscript": {
+              "default": null,
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "superscript": {
+              "default": null,
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "underline": {
+              "default": null,
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "at",
+            "op",
+            "select"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "alignment": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "at": {
+              "$ref": "#/$defs/ParagraphAddress"
+            },
+            "clear": {
+              "default": [],
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "indent_left": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Points"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "indent_right": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Points"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "line_spacing": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/LineSpacing"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "op": {
+              "enum": [
+                "format_paragraph"
+              ],
+              "type": "string"
+            },
+            "space_after": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Points"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "space_before": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Points"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "style": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "at",
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "as": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "at": {
+              "$ref": "#/$defs/InsertAnchor"
+            },
+            "op": {
+              "enum": [
+                "insert_paragraph"
+              ],
+              "type": "string"
+            },
+            "position": {
+              "$ref": "#/$defs/InsertPosition"
+            },
+            "style": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "with": {
+              "default": "",
+              "type": "string"
+            }
+          },
+          "required": [
+            "at",
+            "op",
+            "position"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "at": {
+              "items": {
+                "$ref": "#/$defs/ParagraphAddress"
+              },
+              "type": "array"
+            },
+            "op": {
+              "enum": [
+                "delete_paragraphs"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "at",
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "bottom": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Points"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "footer": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Points"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "gutter": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Points"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "header": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Points"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "left": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Points"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "op": {
+              "enum": [
+                "set_page_margins"
+              ],
+              "type": "string"
+            },
+            "right": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Points"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "section": {
+              "default": null,
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "top": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Points"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "even_and_odd": {
+              "type": "boolean"
+            },
+            "op": {
+              "enum": [
+                "set_even_and_odd_headers"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "even_and_odd",
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ChromeKind"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "op": {
+              "enum": [
+                "set_header"
+              ],
+              "type": "string"
+            },
+            "section": {
+              "default": null,
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "with": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "op",
+            "with"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ChromeKind"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "op": {
+              "enum": [
+                "set_footer"
+              ],
+              "type": "string"
+            },
+            "section": {
+              "default": null,
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "with": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "op",
+            "with"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ChromeKind"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "op": {
+              "enum": [
+                "clear_header"
+              ],
+              "type": "string"
+            },
+            "section": {
+              "default": null,
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ChromeKind"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "op": {
+              "enum": [
+                "clear_footer"
+              ],
+              "type": "string"
+            },
+            "section": {
+              "default": null,
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "at": {
+              "$ref": "#/$defs/ParagraphAddress"
+            },
+            "occurrence": {
+              "default": null,
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "op": {
+              "enum": [
+                "comment_add"
+              ],
+              "type": "string"
+            },
+            "select": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "at",
+            "op",
+            "text"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "comment_id": {
+              "type": "string"
+            },
+            "op": {
+              "enum": [
+                "comment_reply"
+              ],
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "comment_id",
+            "op",
+            "text"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "comment_id": {
+              "type": "string"
+            },
+            "op": {
+              "enum": [
+                "comment_set_status"
+              ],
+              "type": "string"
+            },
+            "status": {
+              "$ref": "#/$defs/CommentStatus"
+            }
+          },
+          "required": [
+            "comment_id",
+            "op",
+            "status"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "comment_id": {
+              "type": "string"
+            },
+            "op": {
+              "enum": [
+                "comment_delete"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "comment_id",
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "$ref": "#/$defs/RevisionAction"
+            },
+            "op": {
+              "enum": [
+                "revision_settle"
+              ],
+              "type": "string"
+            },
+            "target": {
+              "$ref": "#/$defs/RevisionTarget"
+            }
+          },
+          "required": [
+            "action",
+            "op",
+            "target"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "requestResult": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/CommandResult"
+        },
+        {
+          "$ref": "#/$defs/PlanResult"
+        }
+      ]
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "Generated from crates/docxdriver-core/src/api.rs",
+  "oneOf": [
+    {
+      "additionalProperties": false,
+      "properties": {
+        "Command": {
+          "$ref": "#/$defs/CommandRequest"
+        }
+      },
+      "required": [
+        "Command"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "Plan": {
+          "$ref": "#/$defs/PlanRequest"
+        }
+      },
+      "required": [
+        "Plan"
+      ],
+      "type": "object"
+    }
+  ],
+  "title": "Request"
+}

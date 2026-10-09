@@ -1,0 +1,18 @@
+[build-system]
+requires = ["maturin>=1.9,<2"]
+build-backend = "maturin"
+
+[project]
+name = "docxdriver"
+dynamic = ["version"]
+requires-python = ">=3.10"
+description = "Python SDK for the native Rust DOCX engine"
+license = "MIT"
+readme = "README.md"
+
+[project.urls]
+Repository = "https://github.com/jhnoel/docxdriver"
+
+[tool.maturin]
+python-source = "python"
+module-name = "docxdriver._core"

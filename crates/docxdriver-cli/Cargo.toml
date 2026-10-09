@@ -1,0 +1,20 @@
+[package]
+name = "docxdriver-cli"
+description = "Agent-oriented CLI for the docxdriver DOCX engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "docxdriver"
+path = "src/main.rs"
+
+[dependencies]
+docxdriver-core = { path = "../docxdriver-core" }
+clap = { version = "4", features = ["derive", "env"] }
+serde = "1"
+serde_json = "1"
+
+[dev-dependencies]
+tempfile = "3"

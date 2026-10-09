@@ -1,0 +1,15 @@
+[package]
+name = "docxdriver-python"
+description = "Native Python bindings for docxdriver-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "_core"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+docxdriver-core = { path = "../docxdriver-core" }
+pyo3 = { version = "0.27.2", features = ["abi3-py310"] }
+serde_json = "1"

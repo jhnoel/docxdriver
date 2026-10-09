@@ -1,0 +1,39 @@
+{
+  "name": "docxdriver",
+  "version": "0.2.6",
+  "description": "Typed source-bound DOCX Request and Plan engine compiled from Rust to WebAssembly",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jhnoel/docxdriver",
+    "directory": "packages/docxdriver"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./docxdriver_bg.wasm": "./wasm/docxdriver_bg.wasm",
+    "./schema/typed-request.schema.json": "./schema/typed-request.schema.json"
+  },
+  "files": [
+    "dist",
+    "wasm",
+    "src",
+    "schema"
+  ],
+  "scripts": {
+    "build": "bash scripts/build.sh",
+    "build:ts": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test test/*.test.mjs",
+    "test:e2e": "npm run build && node --test test/e2e/*.test.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.63.0",
+    "typescript": "^5.9.3"
+  }
+}

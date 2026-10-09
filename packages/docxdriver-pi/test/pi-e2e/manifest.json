@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "description": "Public USPTO source-backed fixture available in this checkout for the opt-in Pi behavioral suite.",
+  "fixtures": [
+    {
+      "id": "ctnf-18690238-data-stream",
+      "application_number": "18690238",
+      "document_code": "APPXML",
+      "source_url": "https://api.uspto.gov/api/v1/datasets/products/files/APPXML-SPLT/2024/ipa241114/18690238_20240380805.xml",
+      "retrieved": "2024-11-14",
+      "asset": "test-docs/ctnf-18690238-data-stream.docx",
+      "sha256": "204bf6ded8057fd9f2120a9cb0469b9ecd0274ce2d637b686e5dc68ad550ee9a",
+      "smoke": { "kind": "document", "min_blocks": 1 }
+    }
+  ]
+}

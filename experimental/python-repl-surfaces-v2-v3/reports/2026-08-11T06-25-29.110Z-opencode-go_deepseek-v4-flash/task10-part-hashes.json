@@ -1,0 +1,38 @@
+{
+  "run": "2026-08-11T06-25-29.110Z-opencode-go_deepseek-v4-flash",
+  "generated": "2026-08-11T09:13:03.925Z",
+  "note": "Task-10 package-preservation evidence. before = zipPartHashes of the checked-in complex fixture source (test-docs/ctnf-18690238-data-stream.docx), which is byte-identical to every trial fixture copy (createComplexFixture copies it verbatim). after = verified in-process at trial time: checkFinalDocument(task10) throws on any part mismatch except word/document.xml, and all 9 task-10 trial run.json files record verification outcome ok (see task10-package-preservation/*/run.json). Trial temp dirs are removed on completion, so post-commit files are not retained; the harness now persists partHashes.before/after in run.json for future runs.",
+  "before": {
+    "[Content_Types].xml": "05954a3b4ce5263a891a722932f25ca5dcd37b4354263186f64cf3fa66c51bed",
+    "_rels/.rels": "1b2bbca308bae81ff0ac3e8f6e3b3b28ebca723e03b795bb1c133013cc6f2c51",
+    "docProps/app.xml": "9a77ebe4477c3a821c88752916418328ddaecffee3f3e60e0c78ddd2cecd3f1c",
+    "docProps/core.xml": "4ab236e8adff866e9bd17705b4f7a349a3be8446b28263d234ab1402d1b25474",
+    "word/document.xml": "37c6faca43191ef2741e8052646e821747b3fb54ca8ffa93d942f991b7cdd249",
+    "word/_rels/document.xml.rels": "332ade156ad82f09ab1459987f4522a6a2ce503aefb831466a02d19b907738de",
+    "word/header1.xml": "96200bec91dd4a14fc14c655724f866dc1b6a78b063bc8858c7914dc48371d83",
+    "word/styles.xml": "1ccb12dbaa17a6169f3f96504fab8ff41a6cfc158eeadb16c5b079db0e0dd6e7",
+    "word/endnotes.xml": "c5e8e5f1bc5186e3392b651df039a13b889a49aeb537379d590a25fb39b8f500",
+    "word/numbering.xml": "af8c237a9e04ca27f7e60ec844750be7a1631d26819707be857be95209a6f672",
+    "customXml/item1.xml": "f192fb31af185ddc3a21fc619254ba59085fd836a9bb1b04f34924527973b721",
+    "customXml/_rels/item1.xml.rels": "d28d74dec1dfc95d8d60c4f873bf1fed71b160d5ed66dc25e6a2b0bc78685293",
+    "customXml/itemProps1.xml": "fa7cf6813c676d6c7f4b83ea88152dc2e3c3d1c9959e3fe94fd94211ed8dcfe9",
+    "word/footnotes.xml": "ec60b04bd72acdd970204bd4dd876702f6d87da1cf8576a4f79c8a548164c34a",
+    "word/webSettings.xml": "b31d928f5f88e5d88e68c777c00f630aed220af67938ce4df6d6dc04e336976d",
+    "word/theme/theme1.xml": "95e9db2278364c40d924d624dc9865105d277c22ddee7b3f459b069338b8c56a",
+    "word/settings.xml": "90ca97299697c86a9752f1f45d35d35c6e97c5e343a862d88c415966fcb5862c",
+    "word/fontTable.xml": "dc2b6dd65e42741d1d820f719ccfa83a6c1a486c0336a71b0690e1b5a590b443",
+    "docProps/custom.xml": "4fcce4f845420e800dc8b1f5650ffc96e1d804e0f8fb5a2e276806b5374b96c5"
+  },
+  "trials": [
+    "plan-1",
+    "plan-2",
+    "plan-3",
+    "string-1",
+    "string-2",
+    "string-3",
+    "model-1",
+    "model-2",
+    "model-3"
+  ],
+  "after": null
+}

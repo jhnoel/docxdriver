@@ -1,0 +1,33 @@
+{
+  "baseline_commit": "0e5a0f9c559b3623bf5792e187c8c846fe627dfc",
+  "equations": [
+    "runs",
+    "sup",
+    "sub",
+    "subsup",
+    "prescripts",
+    "fraction",
+    "nobar",
+    "skew",
+    "sqrt",
+    "root",
+    "nary",
+    "limlow",
+    "limupp",
+    "function",
+    "accent",
+    "bar",
+    "underbar",
+    "group-default",
+    "underbrace",
+    "delimiters",
+    "matrix",
+    "equation-array",
+    "box",
+    "borderbox",
+    "phantom",
+    "deleted-run",
+    "unknown",
+    "display"
+  ]
+}

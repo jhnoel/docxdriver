@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "description": "Live-agent trial manifest for the OLD extension surface (default five-tool docxdriver-pi extension + write/edit for TOML plan files). Same 10-task benchmark and task intents as repl-tasks.json; prompts are rewritten for the docx_read/docx_find/docx_edit + write/edit tooling. The core preview/commit gate (p1:sha256: keys) is identical to the Python REPL surfaces, so this measures authoring lift only. verify=commit tasks must end with a successful preview -> later commit and a verified final document; verify=blocked tasks must end with a rejected commit and untouched file bytes.",
+  "tasks": [
+    {
+      "id": "task1-exact-text-correction",
+      "prompt": "contract.docx contains the sentence 'The notice period is thirty days.' with 'thirty days' formatted bold. Replace the phrase so the sentence reads 'The notice period is sixty days.' and 'sixty days' is bold. The surrounding text and any other content must be untouched.",
+      "fixture": "contract",
+      "verify": "commit"
+    },
+    {
+      "id": "task2-repeated-bulk-edit",
+      "prompt": "contract.docx contains three paragraphs that read 'Payment is due within 30 days of invoice receipt.', 'Payment is due within 45 days of invoice receipt.', and 'Payment is due within 60 days of invoice receipt.'. Change every matching date so all three paragraphs read 'Payment is due within 45 days of invoice receipt.' in ONE atomic plan (one preview, then one commit) — do not split the edit into separate preview/commit cycles.",
+      "fixture": "contract",
+      "verify": "commit"
+    },
+    {
+      "id": "task3-ambiguous-occurrence",
+      "prompt": "In contract.docx, the paragraph beginning 'The parties agree that the terms shall govern' contains the phrase 'the terms' four times. Change ONLY the third occurrence to 'THE TERMS' (uppercase). The other three occurrences must stay lowercase and everything else must be untouched.",
+      "fixture": "contract",
+      "verify": "commit"
+    },
+    {
+      "id": "task4-arbitrary-formatting-selection",
+      "prompt": "In contract.docx, the paragraph 'The warranty period is twelve months from delivery.' — apply bold AND underline to the phrase 'warranty period' without changing any text in the document. No other formatting or content may change.",
+      "fixture": "contract",
+      "verify": "commit"
+    },
+    {
+      "id": "task5-paragraph-structure",
+      "prompt": "In contract.docx perform all three structural edits in ONE plan: (1) replace the paragraph 'This paragraph will be replaced entirely.' with the text 'Replacement paragraph.'; (2) insert a new paragraph with the text 'Inserted paragraph.' immediately after the paragraph 'This paragraph anchors an insertion.'; (3) delete the paragraph 'This paragraph will be deleted.'. Everything else must be untouched.",
+      "fixture": "contract",
+      "verify": "commit"
+    },
+    {
+      "id": "task6-mixed-atomic-edit",
+      "prompt": "In contract.docx perform ALL of these in ONE atomic plan: (1) change 'thirty days' to 'sixty days' with bold formatting in the notice-period sentence; (2) make 'warranty period' bold AND underlined; (3) insert a new paragraph 'Inserted paragraph.' immediately after 'This paragraph anchors an insertion.'; (4) delete the paragraph 'This paragraph will be deleted.'. Everything else must be untouched.",
+      "fixture": "contract",
+      "verify": "commit"
+    },
+    {
+      "id": "task7-failed-preview-repair",
+      "prompt": "In contract.docx, begin by making a deliberately broken edit: author a plan file whose operation tries to select the phrase 'missing phrase' inside the notice-period paragraph and preview it — the preview must be rejected with a diagnostic explaining the failed selection. Do NOT rebuild your plan from scratch: repair the SAME plan file with the edit tool (change only the failing selector and replacement text), preview again so it succeeds, and commit. The final document must read 'The notice period is sixty days.' with 'sixty days' bold.",
+      "fixture": "contract",
+      "verify": "commit"
+    },
+    {
+      "id": "task8-source-race",
+      "prompt": "contract.docx: preview a plan that changes 'thirty days' to bold 'sixty days' in the notice-period sentence. After the preview key is returned, do not make any further edits yourself — an external process will modify the document file between your preview and your next call. Then attempt to commit with the preview key anyway and observe the rejection. Report the rejection you observed. Do not attempt to repair or re-commit.",
+      "fixture": "contract",
+      "verify": "blocked"
+    },
+    {
+      "id": "task9-mutation-after-review",
+      "prompt": "contract.docx: use a TOML plan to change 'thirty days' to bold 'sixty days' in the notice-period sentence. Preview the plan, then commit it with the returned preview key in a later call, and verify the final document.",
+      "fixture": "contract",
+      "verify": "commit"
+    },
+    {
+      "id": "task10-package-preservation",
+      "prompt": "complex.docx is a real-world document containing fields, headers, footnotes, media and other complex structures. Choose ONE clean plain-text paragraph — one with no bold, italic, underline, links, fields, or other markup in it — and append the text ' [edited]' to that paragraph's text. Everything else in the document must be preserved exactly: fields, headers, media, and every package part must be byte-identical. Preview, then commit in a later call, then verify.",
+      "fixture": "complex",
+      "verify": "commit"
+    }
+  ]
+}

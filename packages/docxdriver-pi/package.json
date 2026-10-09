@@ -1,0 +1,54 @@
+{
+  "name": "docxdriver-pi",
+  "version": "0.1.5",
+  "description": "Pi coding-agent extension: path-based DOCX tools over the docxdriver WASM engine",
+  "license": "MIT",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "wasm",
+    "schema",
+    "src",
+    "skills",
+    "README.md"
+  ],
+  "keywords": [
+    "pi-package",
+    "docx",
+    "docxdriver"
+  ],
+  "scripts": {
+    "build": "npm run build:wasm && npm run build:ts",
+    "build:wasm": "bash ../../scripts/build-wasm.sh",
+    "build:ts": "rm -rf dist && tsc -p tsconfig.json",
+    "test": "npm run build && node --test test/*.test.mjs",
+    "test:e2e": "npm run test",
+    "test:e2e:live": "node test/pi-e2e/run.mjs"
+  },
+  "pi": {
+    "extensions": [
+      "./dist/python-plan-extension.js"
+    ],
+    "skills": [
+      "./skills/docx-pi-repl"
+    ]
+  },
+  "dependencies": {
+    "@pydantic/monty": "0.0.21",
+    "typebox": "^1.0.0"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.80.3",
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.3"
+  }
+}

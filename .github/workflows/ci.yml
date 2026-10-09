@@ -1,0 +1,128 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -Dwarnings
+
+jobs:
+  public-content:
+    name: Public content audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check paths, document metadata and compiled outputs
+        run: python scripts/audit-public-content.py
+
+  linux:
+    name: Linux
+    runs-on: ubuntu-latest
+    env:
+      # Fail LibreOffice e2e suites if soffice/pdftoppm are missing (no silent skip).
+      DOCXDRIVER_E2E_SOFFICE: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install WASM build tool
+        run: cargo install wasm-pack --version 0.14.0 --locked
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install LibreOffice + pdftoppm (e2e)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libreoffice-writer-nogui poppler-utils
+          soffice --version
+          pdftoppm -v
+
+      - name: Build
+        run: cargo build --workspace --all-targets
+
+      - name: Test
+        # Optional external conformance fixtures are not included in this repository.
+        # DOCXDRIVER_E2E_SOFFICE=1 makes LibreOffice e2e required on this job.
+        run: cargo test --workspace -- --skip conformance_corpus
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: packages/docxdriver/package-lock.json
+
+      - name: Package tests
+        working-directory: packages/docxdriver
+        run: npm ci && npm test
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: packages/docxdriver-pi/package-lock.json
+
+      - name: Pi package tests (archive/isolation/regression guards)
+        working-directory: packages/docxdriver-pi
+        run: npm ci && npm test
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: docxdriver-package-${{ github.sha }}
+          path: |
+            packages/docxdriver/dist
+            packages/docxdriver/wasm
+            packages/docxdriver/src
+            packages/docxdriver/package.json
+            packages/docxdriver/README.md
+          if-no-files-found: error
+
+  windows:
+    name: Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install WASM build tool
+        run: cargo install wasm-pack --version 0.14.0 --locked
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --workspace --all-targets
+
+      - name: Test
+        # Optional external conformance fixtures are not included in this repository.
+        # LibreOffice e2e is soft-skipped here (no DOCXDRIVER_E2E_SOFFICE); Linux is the gate.
+        run: cargo test --workspace -- --skip conformance_corpus
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: packages/docxdriver/package-lock.json
+
+      - name: Package tests
+        working-directory: packages/docxdriver
+        run: npm ci && npm test
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: docxdriver-package-${{ github.sha }}
+          path: |
+            packages/docxdriver/dist
+            packages/docxdriver/wasm
+            packages/docxdriver/src
+            packages/docxdriver/package.json
+            packages/docxdriver/README.md
+          if-no-files-found: error

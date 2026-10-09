@@ -1,0 +1,3 @@
+/packages/docxdriver/schema/typed-request.schema.json text eol=lf
+/packages/docxdriver-pi/schema/typed-request.schema.json text eol=lf
+/packages/docxdriver/src/typed.ts text eol=lf

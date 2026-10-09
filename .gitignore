@@ -1,0 +1,63 @@
+/target
+Cargo.lock.orig
+pkg/
+/corpus
+# benchmark harness outputs (generated fixtures, results, profiles)
+/bench/fixtures/
+/bench/results/
+/bench/profiles/
+/profiles/
+/.worktrees/
+
+# agent run logs
+.pi-subagent/
+.pi-subagents/
+/packages/docxdriver-pi/test/pi-e2e/results/
+
+# usptodata extension downloads
+/usptodata-records/
+/usptodata-publications/
+/usptodata-ifw-cache/
+
+# transient tool artifacts
+crates/docxdriver-cli/tmp-read.*/
+
+# REPL conformance suite outputs
+/packages/docxdriver-pi/test-results/
+
+# Native Python bindings and generator caches
+__pycache__/
+*.pyc
+
+# Local credentials and machine-specific configuration
+.env
+.env.*
+!.env.example
+!.env.sample
+*.pem
+*.key
+*.p12
+*.pfx
+.npmrc
+.pypirc
+.DS_Store
+
+# Manual Word experiments and Office recovery files
+/.tmp-comments/
+~$*
+
+# Compiled and packaged outputs; keep only WASM build documentation.
+dist/
+*.wasm
+*.whl
+*.so
+*.dylib
+*.dll
+*.exe
+*.rlib
+*.rmeta
+/packages/*/wasm/*
+!/packages/*/wasm/README.md
+
+# Private audit notes and support correspondence drafts
+/.public-access-audit/

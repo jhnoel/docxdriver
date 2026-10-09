@@ -1,0 +1,1393 @@
+{
+  "final": {
+    "blocks": [
+      {
+        "markup": "<p id=\"11111111\" ord=\"1\" class=\"CustomStyle\"><b>Bold</b><i> italic</i><u> underline</u><s> strike</s><sup> super</sup><sub> sub</sub><a href=\"https://example.com/?a=1&amp;b=2\">Safe link</a><a href=\"custom-scheme:opaque-target\">Opaque link</a><a href=\"#bookmark\">Internal link</a></p>",
+        "paragraphs": [
+          "11111111"
+        ]
+      },
+      {
+        "markup": "<p id=\"22222222\" ord=\"2\"><field instr=\"AUTHOR\">Author result</field><field instr=\"REF source\">Complex result</field>Commented<b> changed-format</b> neutral-format</p>",
+        "paragraphs": [
+          "22222222"
+        ]
+      },
+      {
+        "markup": "<p id=\"33333333\" ord=\"3\" num=\"III.\">Roman item</p>",
+        "paragraphs": [
+          "33333333"
+        ]
+      },
+      {
+        "markup": "<p id=\"33333334\" ord=\"4\" num=\"a)\">Nested item</p>",
+        "paragraphs": [
+          "33333334"
+        ]
+      },
+      {
+        "markup": "<p id=\"33333335\" ord=\"5\" num=\"IV.\">Next item</p>",
+        "paragraphs": [
+          "33333335"
+        ]
+      },
+      {
+        "markup": "<p id=\"44444444\" ord=\"6\">Common inserted</p>",
+        "paragraphs": [
+          "44444444"
+        ]
+      },
+      {
+        "markup": "<p id=\"55555555\" ord=\"7\"><image w=\"32\" h=\"24\" alt=\"Available picture\"/><image w=\"48\" h=\"36\" alt=\"Opaque picture\"/></p>",
+        "paragraphs": [
+          "55555555"
+        ]
+      },
+      {
+        "markup": "<p id=\"66666666\" ord=\"8\">Unicode 😀 nonbreaking space literal\ttab\t<br/><br type=\"page\"/><br type=\"column\"/>Fallback content</p>",
+        "paragraphs": [
+          "66666666"
+        ]
+      },
+      {
+        "markup": "<p id=\"77777777\" ord=\"9\"><field instr=\"REF joined\">Joined firstJoined second</field></p>",
+        "paragraphs": [
+          "77777777",
+          "88888888"
+        ]
+      },
+      {
+        "markup": "<p id=\"4B101413\" ord=\"11\">Inserted break first</p>",
+        "paragraphs": [
+          "99999999"
+        ]
+      },
+      {
+        "markup": "<p id=\"11543C1E\" ord=\"12\">Inserted break second</p>",
+        "paragraphs": [
+          "99999998"
+        ]
+      },
+      {
+        "markup": "<table n=\"1\">\n<tr>\n<td colspan=\"2\" rowspan=\"2\">\n<p id=\"07B86923\" ord=\"13\">Merged cell</p>\n</td>\n<td>\n<p id=\"5B82D4E5\" ord=\"14\">Top cell</p>\n</td>\n</tr>\n<tr>\n<td>\n<table>\n<tr>\n<td>\n<p id=\"0BA5B732\" ord=\"16\">Nested cell</p>\n</td>\n</tr>\n</table>\n<p id=\"78B6F0A2\" ord=\"17\"></p>\n</td>\n</tr>\n</table>",
+        "paragraphs": [
+          "AA000001",
+          "AA000002",
+          "AA000003"
+        ]
+      },
+      {
+        "markup": "<p id=\"28B506BC\" ord=\"18\">runs: <equation>\\alpha  + \\beta \\sin</equation></p>",
+        "paragraphs": [
+          "F0000000"
+        ]
+      },
+      {
+        "markup": "<p id=\"4835B59D\" ord=\"19\">sup: <equation>x^{2}</equation></p>",
+        "paragraphs": [
+          "F0000001"
+        ]
+      },
+      {
+        "markup": "<p id=\"6C6C0863\" ord=\"20\">sub: <equation>x_{i}</equation></p>",
+        "paragraphs": [
+          "F0000002"
+        ]
+      },
+      {
+        "markup": "<p id=\"237FFCFB\" ord=\"21\">subsup: <equation>x_{i}^{2}</equation></p>",
+        "paragraphs": [
+          "F0000003"
+        ]
+      },
+      {
+        "markup": "<p id=\"58ED22F7\" ord=\"22\">prescripts: <equation>{}_{a}X</equation></p>",
+        "paragraphs": [
+          "F0000004"
+        ]
+      },
+      {
+        "markup": "<p id=\"65B5C986\" ord=\"23\">fraction: <equation>\\frac{a}{b}</equation></p>",
+        "paragraphs": [
+          "F0000005"
+        ]
+      },
+      {
+        "markup": "<p id=\"35502A25\" ord=\"24\">nobar: <equation>\\binom{n}{k}</equation></p>",
+        "paragraphs": [
+          "F0000006"
+        ]
+      },
+      {
+        "markup": "<p id=\"284EFEE5\" ord=\"25\">skew: <equation>{}^{a}/_{b}</equation></p>",
+        "paragraphs": [
+          "F0000007"
+        ]
+      },
+      {
+        "markup": "<p id=\"024A5EFD\" ord=\"26\">sqrt: <equation>\\sqrt{x}</equation></p>",
+        "paragraphs": [
+          "F0000008"
+        ]
+      },
+      {
+        "markup": "<p id=\"65CA14EF\" ord=\"27\">root: <equation>\\sqrt[3]{x}</equation></p>",
+        "paragraphs": [
+          "F0000009"
+        ]
+      },
+      {
+        "markup": "<p id=\"2D543CA1\" ord=\"28\">nary: <equation>\\sum^{N} x</equation></p>",
+        "paragraphs": [
+          "F000000A"
+        ]
+      },
+      {
+        "markup": "<p id=\"1B187524\" ord=\"29\">limlow: <equation>\\lim _{0}</equation></p>",
+        "paragraphs": [
+          "F000000B"
+        ]
+      },
+      {
+        "markup": "<p id=\"78F991DC\" ord=\"30\">limupp: <equation>\\max ^{N}</equation></p>",
+        "paragraphs": [
+          "F000000C"
+        ]
+      },
+      {
+        "markup": "<p id=\"3DBA0A7D\" ord=\"31\">function: <equation>\\sin  x</equation></p>",
+        "paragraphs": [
+          "F000000D"
+        ]
+      },
+      {
+        "markup": "<p id=\"246470C3\" ord=\"32\">accent: <equation>\\vec{v}</equation></p>",
+        "paragraphs": [
+          "F000000E"
+        ]
+      },
+      {
+        "markup": "<p id=\"5BF24182\" ord=\"33\">bar: <equation>\\overline{x}</equation></p>",
+        "paragraphs": [
+          "F000000F"
+        ]
+      },
+      {
+        "markup": "<p id=\"746C05B4\" ord=\"34\">underbar: <equation>\\underline{y}</equation></p>",
+        "paragraphs": [
+          "F0000010"
+        ]
+      },
+      {
+        "markup": "<p id=\"6B7986B8\" ord=\"35\">group-default: <equation>\\overbrace{x}</equation></p>",
+        "paragraphs": [
+          "F0000011"
+        ]
+      },
+      {
+        "markup": "<p id=\"7853450D\" ord=\"36\">underbrace: <equation>\\underbrace{x}</equation></p>",
+        "paragraphs": [
+          "F0000012"
+        ]
+      },
+      {
+        "markup": "<p id=\"3F5148AB\" ord=\"37\">delimiters: <equation>\\left[a;b\\right]</equation></p>",
+        "paragraphs": [
+          "F0000013"
+        ]
+      },
+      {
+        "markup": "<p id=\"6B642974\" ord=\"38\">matrix: <equation>\\begin{matrix}a &amp; b \\\\ c &amp; d\\end{matrix}</equation></p>",
+        "paragraphs": [
+          "F0000014"
+        ]
+      },
+      {
+        "markup": "<p id=\"36E8ADAF\" ord=\"39\">equation-array: <equation>\\begin{aligned}a=b \\\\ c=d\\end{aligned}</equation></p>",
+        "paragraphs": [
+          "F0000015"
+        ]
+      },
+      {
+        "markup": "<p id=\"57CDF34A\" ord=\"40\">box: <equation>x</equation></p>",
+        "paragraphs": [
+          "F0000016"
+        ]
+      },
+      {
+        "markup": "<p id=\"0E232A17\" ord=\"41\">borderbox: <equation>y</equation></p>",
+        "paragraphs": [
+          "F0000017"
+        ]
+      },
+      {
+        "markup": "<p id=\"12F2B191\" ord=\"42\">phantom: <equation>z</equation></p>",
+        "paragraphs": [
+          "F0000018"
+        ]
+      },
+      {
+        "markup": "<p id=\"0A504981\" ord=\"43\">deleted-run: <equation>Old math</equation></p>",
+        "paragraphs": [
+          "F0000019"
+        ]
+      },
+      {
+        "markup": "<p id=\"307A9CF5\" ord=\"44\">unknown: <equation>Retained unknown</equation></p>",
+        "paragraphs": [
+          "F000001A"
+        ]
+      },
+      {
+        "markup": "<p id=\"5B954590\" ord=\"45\"><equation>display</equation></p>",
+        "paragraphs": [
+          "FFFF0001"
+        ]
+      },
+      {
+        "markup": "<p id=\"0BBD43EC\" ord=\"46\">Section one end</p>",
+        "paragraphs": [
+          "BB000001"
+        ]
+      },
+      {
+        "markup": "<h2 id=\"19E0C67D\" ord=\"47\">Section two heading</h2>",
+        "paragraphs": [
+          "BB000002"
+        ]
+      }
+    ],
+    "equations": [
+      {
+        "at": "28B506BC",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "\\alpha  + \\beta \\sin"
+      },
+      {
+        "at": "4835B59D",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "x^{2}"
+      },
+      {
+        "at": "6C6C0863",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "x_{i}"
+      },
+      {
+        "at": "237FFCFB",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "x_{i}^{2}"
+      },
+      {
+        "at": "58ED22F7",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "{}_{a}X"
+      },
+      {
+        "at": "65B5C986",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "\\frac{a}{b}"
+      },
+      {
+        "at": "35502A25",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "\\binom{n}{k}"
+      },
+      {
+        "at": "284EFEE5",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "{}^{a}/_{b}"
+      },
+      {
+        "at": "024A5EFD",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "\\sqrt{x}"
+      },
+      {
+        "at": "65CA14EF",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "\\sqrt[3]{x}"
+      },
+      {
+        "at": "2D543CA1",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "\\sum^{N} x"
+      },
+      {
+        "at": "1B187524",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "\\lim _{0}"
+      },
+      {
+        "at": "78F991DC",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "\\max ^{N}"
+      },
+      {
+        "at": "3DBA0A7D",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "\\sin  x"
+      },
+      {
+        "at": "246470C3",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "\\vec{v}"
+      },
+      {
+        "at": "5BF24182",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "\\overline{x}"
+      },
+      {
+        "at": "746C05B4",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "\\underline{y}"
+      },
+      {
+        "at": "6B7986B8",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "\\overbrace{x}"
+      },
+      {
+        "at": "7853450D",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "\\underbrace{x}"
+      },
+      {
+        "at": "3F5148AB",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "\\left[a;b\\right]"
+      },
+      {
+        "at": "6B642974",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "\\begin{matrix}a & b \\\\ c & d\\end{matrix}"
+      },
+      {
+        "at": "36E8ADAF",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "\\begin{aligned}a=b \\\\ c=d\\end{aligned}"
+      },
+      {
+        "at": "57CDF34A",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "x"
+      },
+      {
+        "at": "0E232A17",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "y"
+      },
+      {
+        "at": "12F2B191",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "z"
+      },
+      {
+        "at": "0A504981",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "Old math"
+      },
+      {
+        "at": "307A9CF5",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "Retained unknown"
+      },
+      {
+        "at": "5B954590",
+        "display": true,
+        "editable": true,
+        "equation": 1,
+        "latex": "display"
+      }
+    ],
+    "idRepairsNeeded": 38,
+    "kind": "document",
+    "markup": "<section first-page/>\n<header>\n<p>header default</p>\n</header>\n<header first>\n<p>header first</p>\n</header>\n<header even>\n<p>header even</p>\n</header>\n<footer>\n<p>footer default</p>\n</footer>\n<footer first>\n<p>footer first</p>\n</footer>\n<footer even>\n<p>footer even</p>\n</footer>\n<p id=\"11111111\" ord=\"1\" class=\"CustomStyle\"><b>Bold</b><i> italic</i><u> underline</u><s> strike</s><sup> super</sup><sub> sub</sub><a href=\"https://example.com/?a=1&amp;b=2\">Safe link</a><a href=\"custom-scheme:opaque-target\">Opaque link</a><a href=\"#bookmark\">Internal link</a></p>\n<p id=\"22222222\" ord=\"2\"><field instr=\"AUTHOR\">Author result</field><field instr=\"REF source\">Complex result</field>Commented<b> changed-format</b> neutral-format</p>\n<p id=\"33333333\" ord=\"3\" num=\"III.\">Roman item</p>\n<p id=\"33333334\" ord=\"4\" num=\"a)\">Nested item</p>\n<p id=\"33333335\" ord=\"5\" num=\"IV.\">Next item</p>\n<p id=\"44444444\" ord=\"6\">Common inserted</p>\n<p id=\"55555555\" ord=\"7\"><image w=\"32\" h=\"24\" alt=\"Available picture\"/><image w=\"48\" h=\"36\" alt=\"Opaque picture\"/></p>\n<p id=\"66666666\" ord=\"8\">Unicode 😀 nonbreaking space literal\ttab\t<br/><br type=\"page\"/><br type=\"column\"/>Fallback content</p>\n<p id=\"77777777\" ord=\"9\"><field instr=\"REF joined\">Joined firstJoined second</field></p>\n<p id=\"4B101413\" ord=\"11\">Inserted break first</p>\n<p id=\"11543C1E\" ord=\"12\">Inserted break second</p>\n<table n=\"1\">\n<tr>\n<td colspan=\"2\" rowspan=\"2\">\n<p id=\"07B86923\" ord=\"13\">Merged cell</p>\n</td>\n<td>\n<p id=\"5B82D4E5\" ord=\"14\">Top cell</p>\n</td>\n</tr>\n<tr>\n<td>\n<table>\n<tr>\n<td>\n<p id=\"0BA5B732\" ord=\"16\">Nested cell</p>\n</td>\n</tr>\n</table>\n<p id=\"78B6F0A2\" ord=\"17\"></p>\n</td>\n</tr>\n</table>\n<p id=\"28B506BC\" ord=\"18\">runs: <equation>\\alpha  + \\beta \\sin</equation></p>\n<p id=\"4835B59D\" ord=\"19\">sup: <equation>x^{2}</equation></p>\n<p id=\"6C6C0863\" ord=\"20\">sub: <equation>x_{i}</equation></p>\n<p id=\"237FFCFB\" ord=\"21\">subsup: <equation>x_{i}^{2}</equation></p>\n<p id=\"58ED22F7\" ord=\"22\">prescripts: <equation>{}_{a}X</equation></p>\n<p id=\"65B5C986\" ord=\"23\">fraction: <equation>\\frac{a}{b}</equation></p>\n<p id=\"35502A25\" ord=\"24\">nobar: <equation>\\binom{n}{k}</equation></p>\n<p id=\"284EFEE5\" ord=\"25\">skew: <equation>{}^{a}/_{b}</equation></p>\n<p id=\"024A5EFD\" ord=\"26\">sqrt: <equation>\\sqrt{x}</equation></p>\n<p id=\"65CA14EF\" ord=\"27\">root: <equation>\\sqrt[3]{x}</equation></p>\n<p id=\"2D543CA1\" ord=\"28\">nary: <equation>\\sum^{N} x</equation></p>\n<p id=\"1B187524\" ord=\"29\">limlow: <equation>\\lim _{0}</equation></p>\n<p id=\"78F991DC\" ord=\"30\">limupp: <equation>\\max ^{N}</equation></p>\n<p id=\"3DBA0A7D\" ord=\"31\">function: <equation>\\sin  x</equation></p>\n<p id=\"246470C3\" ord=\"32\">accent: <equation>\\vec{v}</equation></p>\n<p id=\"5BF24182\" ord=\"33\">bar: <equation>\\overline{x}</equation></p>\n<p id=\"746C05B4\" ord=\"34\">underbar: <equation>\\underline{y}</equation></p>\n<p id=\"6B7986B8\" ord=\"35\">group-default: <equation>\\overbrace{x}</equation></p>\n<p id=\"7853450D\" ord=\"36\">underbrace: <equation>\\underbrace{x}</equation></p>\n<p id=\"3F5148AB\" ord=\"37\">delimiters: <equation>\\left[a;b\\right]</equation></p>\n<p id=\"6B642974\" ord=\"38\">matrix: <equation>\\begin{matrix}a &amp; b \\\\ c &amp; d\\end{matrix}</equation></p>\n<p id=\"36E8ADAF\" ord=\"39\">equation-array: <equation>\\begin{aligned}a=b \\\\ c=d\\end{aligned}</equation></p>\n<p id=\"57CDF34A\" ord=\"40\">box: <equation>x</equation></p>\n<p id=\"0E232A17\" ord=\"41\">borderbox: <equation>y</equation></p>\n<p id=\"12F2B191\" ord=\"42\">phantom: <equation>z</equation></p>\n<p id=\"0A504981\" ord=\"43\">deleted-run: <equation>Old math</equation></p>\n<p id=\"307A9CF5\" ord=\"44\">unknown: <equation>Retained unknown</equation></p>\n<p id=\"5B954590\" ord=\"45\"><equation>display</equation></p>\n<p id=\"0BBD43EC\" ord=\"46\">Section one end</p>\n<section/>\n<header>\n<p>header default</p>\n</header>\n<header first>\n<p>header first</p>\n</header>\n<header even>\n<p>header even</p>\n</header>\n<footer>\n<p>footer default</p>\n</footer>\n<footer first>\n<p>footer first</p>\n</footer>\n<footer even>\n<p>footer even</p>\n</footer>\n<h2 id=\"19E0C67D\" ord=\"47\">Section two heading</h2>",
+    "source": "sha256:c4c25d2dcc6c68c00c51b70db72c011cae5d58a0f84e891ca728b51858f754e7",
+    "view": "final"
+  },
+  "markup": {
+    "blocks": [
+      {
+        "markup": "<p id=\"11111111\" ord=\"1\" class=\"CustomStyle\"><b>Bold</b><i> italic</i><u> underline</u><s> strike</s><sup> super</sup><sub> sub</sub><a href=\"https://example.com/?a=1&amp;b=2\">Safe link</a><a href=\"custom-scheme:opaque-target\">Opaque link</a><a href=\"#bookmark\">Internal link</a></p>",
+        "paragraphs": [
+          "11111111"
+        ]
+      },
+      {
+        "markup": "<p id=\"22222222\" ord=\"2\"><field instr=\"AUTHOR\">Author result</field><field instr=\"REF source\">Complex result</field><comment-start id=\"0\"/>Commented<comment-end id=\"0\"/><b pending id=\"31\" author=\"Format Editor\"> changed-format</b><format pending id=\"32\" author=\"Format Editor\"> neutral-format</format></p>",
+        "paragraphs": [
+          "22222222"
+        ]
+      },
+      {
+        "markup": "<p id=\"33333333\" ord=\"3\" num=\"III.\">Roman item</p>",
+        "paragraphs": [
+          "33333333"
+        ]
+      },
+      {
+        "markup": "<p id=\"33333334\" ord=\"4\" num=\"a)\">Nested item</p>",
+        "paragraphs": [
+          "33333334"
+        ]
+      },
+      {
+        "markup": "<p id=\"33333335\" ord=\"5\" num=\"IV.\">Next item</p>",
+        "paragraphs": [
+          "33333335"
+        ]
+      },
+      {
+        "markup": "<p id=\"44444444\" ord=\"6\">Common <ins id=\"21\" author=\"Insert Editor\">inserted</ins><del id=\"22\" author=\"Delete Editor\">deleted</del><footnote>\n<p><b>Footnote body</b></p>\n<table>\n<tr>\n<td>\n<p>Footnote table</p>\n</td>\n</tr>\n</table>\n</footnote><endnote>\n<p><i>Endnote body</i></p>\n</endnote><del id=\"24\" author=\"Delete Editor\"><footnote>Deleted footnote body</footnote></del><ins id=\"25\" author=\"Insert Editor\"><endnote>Inserted endnote body</endnote></ins></p>",
+        "paragraphs": [
+          "44444444"
+        ]
+      },
+      {
+        "markup": "<p id=\"55555555\" ord=\"7\"><image w=\"32\" h=\"24\" alt=\"Available picture\"/><image w=\"48\" h=\"36\" alt=\"Opaque picture\"/></p>",
+        "paragraphs": [
+          "55555555"
+        ]
+      },
+      {
+        "markup": "<p id=\"66666666\" ord=\"8\">Unicode 😀 nonbreaking space literal\ttab\t<br/><br type=\"page\"/><br type=\"column\"/>Fallback content</p>",
+        "paragraphs": [
+          "66666666"
+        ]
+      },
+      {
+        "markup": "<p id=\"77777777\" ord=\"9\" break-del=\"23\"><field instr=\"REF joined\">Joined first</field></p>",
+        "paragraphs": [
+          "77777777"
+        ]
+      },
+      {
+        "markup": "<p id=\"1EDE45A3\" ord=\"10\">Joined second</p>",
+        "paragraphs": [
+          "88888888"
+        ]
+      },
+      {
+        "markup": "<p id=\"4B101413\" ord=\"11\" break-ins=\"26\">Inserted break first</p>",
+        "paragraphs": [
+          "99999999"
+        ]
+      },
+      {
+        "markup": "<p id=\"11543C1E\" ord=\"12\">Inserted break second</p>",
+        "paragraphs": [
+          "99999998"
+        ]
+      },
+      {
+        "markup": "<table n=\"1\">\n<tr>\n<td colspan=\"2\" rowspan=\"2\">\n<p id=\"07B86923\" ord=\"13\">Merged cell</p>\n</td>\n<td>\n<p id=\"5B82D4E5\" ord=\"14\">Top cell</p>\n</td>\n</tr>\n<tr>\n<td>\n<table>\n<tr>\n<td>\n<p id=\"0BA5B732\" ord=\"16\">Nested cell</p>\n</td>\n</tr>\n</table>\n<p id=\"78B6F0A2\" ord=\"17\"></p>\n</td>\n</tr>\n</table>",
+        "paragraphs": [
+          "AA000001",
+          "AA000002",
+          "AA000003"
+        ]
+      },
+      {
+        "markup": "<p id=\"28B506BC\" ord=\"18\">runs: <equation>\\alpha  + \\beta \\sin</equation></p>",
+        "paragraphs": [
+          "F0000000"
+        ]
+      },
+      {
+        "markup": "<p id=\"4835B59D\" ord=\"19\">sup: <equation>x^{2}</equation></p>",
+        "paragraphs": [
+          "F0000001"
+        ]
+      },
+      {
+        "markup": "<p id=\"6C6C0863\" ord=\"20\">sub: <equation>x_{i}</equation></p>",
+        "paragraphs": [
+          "F0000002"
+        ]
+      },
+      {
+        "markup": "<p id=\"237FFCFB\" ord=\"21\">subsup: <equation>x_{i}^{2}</equation></p>",
+        "paragraphs": [
+          "F0000003"
+        ]
+      },
+      {
+        "markup": "<p id=\"58ED22F7\" ord=\"22\">prescripts: <equation>{}_{a}X</equation></p>",
+        "paragraphs": [
+          "F0000004"
+        ]
+      },
+      {
+        "markup": "<p id=\"65B5C986\" ord=\"23\">fraction: <equation>\\frac{a}{b}</equation></p>",
+        "paragraphs": [
+          "F0000005"
+        ]
+      },
+      {
+        "markup": "<p id=\"35502A25\" ord=\"24\">nobar: <equation>\\binom{n}{k}</equation></p>",
+        "paragraphs": [
+          "F0000006"
+        ]
+      },
+      {
+        "markup": "<p id=\"284EFEE5\" ord=\"25\">skew: <equation>{}^{a}/_{b}</equation></p>",
+        "paragraphs": [
+          "F0000007"
+        ]
+      },
+      {
+        "markup": "<p id=\"024A5EFD\" ord=\"26\">sqrt: <equation>\\sqrt{x}</equation></p>",
+        "paragraphs": [
+          "F0000008"
+        ]
+      },
+      {
+        "markup": "<p id=\"65CA14EF\" ord=\"27\">root: <equation>\\sqrt[3]{x}</equation></p>",
+        "paragraphs": [
+          "F0000009"
+        ]
+      },
+      {
+        "markup": "<p id=\"2D543CA1\" ord=\"28\">nary: <equation>\\sum^{N} x</equation></p>",
+        "paragraphs": [
+          "F000000A"
+        ]
+      },
+      {
+        "markup": "<p id=\"1B187524\" ord=\"29\">limlow: <equation>\\lim _{0}</equation></p>",
+        "paragraphs": [
+          "F000000B"
+        ]
+      },
+      {
+        "markup": "<p id=\"78F991DC\" ord=\"30\">limupp: <equation>\\max ^{N}</equation></p>",
+        "paragraphs": [
+          "F000000C"
+        ]
+      },
+      {
+        "markup": "<p id=\"3DBA0A7D\" ord=\"31\">function: <equation>\\sin  x</equation></p>",
+        "paragraphs": [
+          "F000000D"
+        ]
+      },
+      {
+        "markup": "<p id=\"246470C3\" ord=\"32\">accent: <equation>\\vec{v}</equation></p>",
+        "paragraphs": [
+          "F000000E"
+        ]
+      },
+      {
+        "markup": "<p id=\"5BF24182\" ord=\"33\">bar: <equation>\\overline{x}</equation></p>",
+        "paragraphs": [
+          "F000000F"
+        ]
+      },
+      {
+        "markup": "<p id=\"746C05B4\" ord=\"34\">underbar: <equation>\\underline{y}</equation></p>",
+        "paragraphs": [
+          "F0000010"
+        ]
+      },
+      {
+        "markup": "<p id=\"6B7986B8\" ord=\"35\">group-default: <equation>\\overbrace{x}</equation></p>",
+        "paragraphs": [
+          "F0000011"
+        ]
+      },
+      {
+        "markup": "<p id=\"7853450D\" ord=\"36\">underbrace: <equation>\\underbrace{x}</equation></p>",
+        "paragraphs": [
+          "F0000012"
+        ]
+      },
+      {
+        "markup": "<p id=\"3F5148AB\" ord=\"37\">delimiters: <equation>\\left[a;b\\right]</equation></p>",
+        "paragraphs": [
+          "F0000013"
+        ]
+      },
+      {
+        "markup": "<p id=\"6B642974\" ord=\"38\">matrix: <equation>\\begin{matrix}a &amp; b \\\\ c &amp; d\\end{matrix}</equation></p>",
+        "paragraphs": [
+          "F0000014"
+        ]
+      },
+      {
+        "markup": "<p id=\"36E8ADAF\" ord=\"39\">equation-array: <equation>\\begin{aligned}a=b \\\\ c=d\\end{aligned}</equation></p>",
+        "paragraphs": [
+          "F0000015"
+        ]
+      },
+      {
+        "markup": "<p id=\"57CDF34A\" ord=\"40\">box: <equation>x</equation></p>",
+        "paragraphs": [
+          "F0000016"
+        ]
+      },
+      {
+        "markup": "<p id=\"0E232A17\" ord=\"41\">borderbox: <equation>y</equation></p>",
+        "paragraphs": [
+          "F0000017"
+        ]
+      },
+      {
+        "markup": "<p id=\"12F2B191\" ord=\"42\">phantom: <equation>z</equation></p>",
+        "paragraphs": [
+          "F0000018"
+        ]
+      },
+      {
+        "markup": "<p id=\"0A504981\" ord=\"43\">deleted-run: <equation>Old math</equation></p>",
+        "paragraphs": [
+          "F0000019"
+        ]
+      },
+      {
+        "markup": "<p id=\"307A9CF5\" ord=\"44\">unknown: <equation>Retained unknown</equation></p>",
+        "paragraphs": [
+          "F000001A"
+        ]
+      },
+      {
+        "markup": "<p id=\"5B954590\" ord=\"45\"><equation>display</equation></p>",
+        "paragraphs": [
+          "FFFF0001"
+        ]
+      },
+      {
+        "markup": "<p id=\"0BBD43EC\" ord=\"46\">Section one end</p>",
+        "paragraphs": [
+          "BB000001"
+        ]
+      },
+      {
+        "markup": "<h2 id=\"19E0C67D\" ord=\"47\">Section two heading</h2>",
+        "paragraphs": [
+          "BB000002"
+        ]
+      }
+    ],
+    "equations": [
+      {
+        "at": "28B506BC",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "\\alpha  + \\beta \\sin"
+      },
+      {
+        "at": "4835B59D",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "x^{2}"
+      },
+      {
+        "at": "6C6C0863",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "x_{i}"
+      },
+      {
+        "at": "237FFCFB",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "x_{i}^{2}"
+      },
+      {
+        "at": "58ED22F7",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "{}_{a}X"
+      },
+      {
+        "at": "65B5C986",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "\\frac{a}{b}"
+      },
+      {
+        "at": "35502A25",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "\\binom{n}{k}"
+      },
+      {
+        "at": "284EFEE5",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "{}^{a}/_{b}"
+      },
+      {
+        "at": "024A5EFD",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "\\sqrt{x}"
+      },
+      {
+        "at": "65CA14EF",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "\\sqrt[3]{x}"
+      },
+      {
+        "at": "2D543CA1",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "\\sum^{N} x"
+      },
+      {
+        "at": "1B187524",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "\\lim _{0}"
+      },
+      {
+        "at": "78F991DC",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "\\max ^{N}"
+      },
+      {
+        "at": "3DBA0A7D",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "\\sin  x"
+      },
+      {
+        "at": "246470C3",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "\\vec{v}"
+      },
+      {
+        "at": "5BF24182",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "\\overline{x}"
+      },
+      {
+        "at": "746C05B4",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "\\underline{y}"
+      },
+      {
+        "at": "6B7986B8",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "\\overbrace{x}"
+      },
+      {
+        "at": "7853450D",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "\\underbrace{x}"
+      },
+      {
+        "at": "3F5148AB",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "\\left[a;b\\right]"
+      },
+      {
+        "at": "6B642974",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "\\begin{matrix}a & b \\\\ c & d\\end{matrix}"
+      },
+      {
+        "at": "36E8ADAF",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "\\begin{aligned}a=b \\\\ c=d\\end{aligned}"
+      },
+      {
+        "at": "57CDF34A",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "x"
+      },
+      {
+        "at": "0E232A17",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "y"
+      },
+      {
+        "at": "12F2B191",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "z"
+      },
+      {
+        "at": "0A504981",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "Old math"
+      },
+      {
+        "at": "307A9CF5",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "Retained unknown"
+      },
+      {
+        "at": "5B954590",
+        "display": true,
+        "editable": true,
+        "equation": 1,
+        "latex": "display"
+      }
+    ],
+    "idRepairsNeeded": 38,
+    "kind": "document",
+    "markup": "<section first-page/>\n<header>\n<p>header default</p>\n</header>\n<header first>\n<p>header first</p>\n</header>\n<header even>\n<p>header even</p>\n</header>\n<footer>\n<p>footer default</p>\n</footer>\n<footer first>\n<p>footer first</p>\n</footer>\n<footer even>\n<p>footer even</p>\n</footer>\n<p id=\"11111111\" ord=\"1\" class=\"CustomStyle\"><b>Bold</b><i> italic</i><u> underline</u><s> strike</s><sup> super</sup><sub> sub</sub><a href=\"https://example.com/?a=1&amp;b=2\">Safe link</a><a href=\"custom-scheme:opaque-target\">Opaque link</a><a href=\"#bookmark\">Internal link</a></p>\n<p id=\"22222222\" ord=\"2\"><field instr=\"AUTHOR\">Author result</field><field instr=\"REF source\">Complex result</field><comment-start id=\"0\"/>Commented<comment-end id=\"0\"/><b pending id=\"31\" author=\"Format Editor\"> changed-format</b><format pending id=\"32\" author=\"Format Editor\"> neutral-format</format></p>\n<p id=\"33333333\" ord=\"3\" num=\"III.\">Roman item</p>\n<p id=\"33333334\" ord=\"4\" num=\"a)\">Nested item</p>\n<p id=\"33333335\" ord=\"5\" num=\"IV.\">Next item</p>\n<p id=\"44444444\" ord=\"6\">Common <ins id=\"21\" author=\"Insert Editor\">inserted</ins><del id=\"22\" author=\"Delete Editor\">deleted</del><footnote>\n<p><b>Footnote body</b></p>\n<table>\n<tr>\n<td>\n<p>Footnote table</p>\n</td>\n</tr>\n</table>\n</footnote><endnote>\n<p><i>Endnote body</i></p>\n</endnote><del id=\"24\" author=\"Delete Editor\"><footnote>Deleted footnote body</footnote></del><ins id=\"25\" author=\"Insert Editor\"><endnote>Inserted endnote body</endnote></ins></p>\n<p id=\"55555555\" ord=\"7\"><image w=\"32\" h=\"24\" alt=\"Available picture\"/><image w=\"48\" h=\"36\" alt=\"Opaque picture\"/></p>\n<p id=\"66666666\" ord=\"8\">Unicode 😀 nonbreaking space literal\ttab\t<br/><br type=\"page\"/><br type=\"column\"/>Fallback content</p>\n<p id=\"77777777\" ord=\"9\" break-del=\"23\"><field instr=\"REF joined\">Joined first</field></p>\n<p id=\"1EDE45A3\" ord=\"10\">Joined second</p>\n<p id=\"4B101413\" ord=\"11\" break-ins=\"26\">Inserted break first</p>\n<p id=\"11543C1E\" ord=\"12\">Inserted break second</p>\n<table n=\"1\">\n<tr>\n<td colspan=\"2\" rowspan=\"2\">\n<p id=\"07B86923\" ord=\"13\">Merged cell</p>\n</td>\n<td>\n<p id=\"5B82D4E5\" ord=\"14\">Top cell</p>\n</td>\n</tr>\n<tr>\n<td>\n<table>\n<tr>\n<td>\n<p id=\"0BA5B732\" ord=\"16\">Nested cell</p>\n</td>\n</tr>\n</table>\n<p id=\"78B6F0A2\" ord=\"17\"></p>\n</td>\n</tr>\n</table>\n<p id=\"28B506BC\" ord=\"18\">runs: <equation>\\alpha  + \\beta \\sin</equation></p>\n<p id=\"4835B59D\" ord=\"19\">sup: <equation>x^{2}</equation></p>\n<p id=\"6C6C0863\" ord=\"20\">sub: <equation>x_{i}</equation></p>\n<p id=\"237FFCFB\" ord=\"21\">subsup: <equation>x_{i}^{2}</equation></p>\n<p id=\"58ED22F7\" ord=\"22\">prescripts: <equation>{}_{a}X</equation></p>\n<p id=\"65B5C986\" ord=\"23\">fraction: <equation>\\frac{a}{b}</equation></p>\n<p id=\"35502A25\" ord=\"24\">nobar: <equation>\\binom{n}{k}</equation></p>\n<p id=\"284EFEE5\" ord=\"25\">skew: <equation>{}^{a}/_{b}</equation></p>\n<p id=\"024A5EFD\" ord=\"26\">sqrt: <equation>\\sqrt{x}</equation></p>\n<p id=\"65CA14EF\" ord=\"27\">root: <equation>\\sqrt[3]{x}</equation></p>\n<p id=\"2D543CA1\" ord=\"28\">nary: <equation>\\sum^{N} x</equation></p>\n<p id=\"1B187524\" ord=\"29\">limlow: <equation>\\lim _{0}</equation></p>\n<p id=\"78F991DC\" ord=\"30\">limupp: <equation>\\max ^{N}</equation></p>\n<p id=\"3DBA0A7D\" ord=\"31\">function: <equation>\\sin  x</equation></p>\n<p id=\"246470C3\" ord=\"32\">accent: <equation>\\vec{v}</equation></p>\n<p id=\"5BF24182\" ord=\"33\">bar: <equation>\\overline{x}</equation></p>\n<p id=\"746C05B4\" ord=\"34\">underbar: <equation>\\underline{y}</equation></p>\n<p id=\"6B7986B8\" ord=\"35\">group-default: <equation>\\overbrace{x}</equation></p>\n<p id=\"7853450D\" ord=\"36\">underbrace: <equation>\\underbrace{x}</equation></p>\n<p id=\"3F5148AB\" ord=\"37\">delimiters: <equation>\\left[a;b\\right]</equation></p>\n<p id=\"6B642974\" ord=\"38\">matrix: <equation>\\begin{matrix}a &amp; b \\\\ c &amp; d\\end{matrix}</equation></p>\n<p id=\"36E8ADAF\" ord=\"39\">equation-array: <equation>\\begin{aligned}a=b \\\\ c=d\\end{aligned}</equation></p>\n<p id=\"57CDF34A\" ord=\"40\">box: <equation>x</equation></p>\n<p id=\"0E232A17\" ord=\"41\">borderbox: <equation>y</equation></p>\n<p id=\"12F2B191\" ord=\"42\">phantom: <equation>z</equation></p>\n<p id=\"0A504981\" ord=\"43\">deleted-run: <equation>Old math</equation></p>\n<p id=\"307A9CF5\" ord=\"44\">unknown: <equation>Retained unknown</equation></p>\n<p id=\"5B954590\" ord=\"45\"><equation>display</equation></p>\n<p id=\"0BBD43EC\" ord=\"46\">Section one end</p>\n<section/>\n<header>\n<p>header default</p>\n</header>\n<header first>\n<p>header first</p>\n</header>\n<header even>\n<p>header even</p>\n</header>\n<footer>\n<p>footer default</p>\n</footer>\n<footer first>\n<p>footer first</p>\n</footer>\n<footer even>\n<p>footer even</p>\n</footer>\n<h2 id=\"19E0C67D\" ord=\"47\">Section two heading</h2>",
+    "source": "sha256:c4c25d2dcc6c68c00c51b70db72c011cae5d58a0f84e891ca728b51858f754e7",
+    "view": "markup"
+  },
+  "original": {
+    "blocks": [
+      {
+        "markup": "<p id=\"11111111\" ord=\"1\" class=\"CustomStyle\"><b>Bold</b><i> italic</i><u> underline</u><s> strike</s><sup> super</sup><sub> sub</sub><a href=\"https://example.com/?a=1&amp;b=2\">Safe link</a><a href=\"custom-scheme:opaque-target\">Opaque link</a><a href=\"#bookmark\">Internal link</a></p>",
+        "paragraphs": [
+          "11111111"
+        ]
+      },
+      {
+        "markup": "<p id=\"22222222\" ord=\"2\"><field instr=\"AUTHOR\">Author result</field><field instr=\"REF source\">Complex result</field>Commented<b> changed-format</b> neutral-format</p>",
+        "paragraphs": [
+          "22222222"
+        ]
+      },
+      {
+        "markup": "<p id=\"33333333\" ord=\"3\" num=\"III.\">Roman item</p>",
+        "paragraphs": [
+          "33333333"
+        ]
+      },
+      {
+        "markup": "<p id=\"33333334\" ord=\"4\" num=\"a)\">Nested item</p>",
+        "paragraphs": [
+          "33333334"
+        ]
+      },
+      {
+        "markup": "<p id=\"33333335\" ord=\"5\" num=\"IV.\">Next item</p>",
+        "paragraphs": [
+          "33333335"
+        ]
+      },
+      {
+        "markup": "<p id=\"44444444\" ord=\"6\">Common deleted</p>",
+        "paragraphs": [
+          "44444444"
+        ]
+      },
+      {
+        "markup": "<p id=\"55555555\" ord=\"7\"><image w=\"32\" h=\"24\" alt=\"Available picture\"/><image w=\"48\" h=\"36\" alt=\"Opaque picture\"/></p>",
+        "paragraphs": [
+          "55555555"
+        ]
+      },
+      {
+        "markup": "<p id=\"66666666\" ord=\"8\">Unicode 😀 nonbreaking space literal\ttab\t<br/><br type=\"page\"/><br type=\"column\"/>Fallback content</p>",
+        "paragraphs": [
+          "66666666"
+        ]
+      },
+      {
+        "markup": "<p id=\"77777777\" ord=\"9\"><field instr=\"REF joined\">Joined first</field></p>",
+        "paragraphs": [
+          "77777777"
+        ]
+      },
+      {
+        "markup": "<p id=\"1EDE45A3\" ord=\"10\">Joined second</p>",
+        "paragraphs": [
+          "88888888"
+        ]
+      },
+      {
+        "markup": "<p id=\"4B101413\" ord=\"11\">Inserted break firstInserted break second</p>",
+        "paragraphs": [
+          "99999999",
+          "99999998"
+        ]
+      },
+      {
+        "markup": "<table n=\"1\">\n<tr>\n<td colspan=\"2\" rowspan=\"2\">\n<p id=\"07B86923\" ord=\"13\">Merged cell</p>\n</td>\n<td>\n<p id=\"5B82D4E5\" ord=\"14\">Top cell</p>\n</td>\n</tr>\n<tr>\n<td>\n<table>\n<tr>\n<td>\n<p id=\"0BA5B732\" ord=\"16\">Nested cell</p>\n</td>\n</tr>\n</table>\n<p id=\"78B6F0A2\" ord=\"17\"></p>\n</td>\n</tr>\n</table>",
+        "paragraphs": [
+          "AA000001",
+          "AA000002",
+          "AA000003"
+        ]
+      },
+      {
+        "markup": "<p id=\"28B506BC\" ord=\"18\">runs: <equation>\\alpha  + \\beta \\sin</equation></p>",
+        "paragraphs": [
+          "F0000000"
+        ]
+      },
+      {
+        "markup": "<p id=\"4835B59D\" ord=\"19\">sup: <equation>x^{2}</equation></p>",
+        "paragraphs": [
+          "F0000001"
+        ]
+      },
+      {
+        "markup": "<p id=\"6C6C0863\" ord=\"20\">sub: <equation>x_{i}</equation></p>",
+        "paragraphs": [
+          "F0000002"
+        ]
+      },
+      {
+        "markup": "<p id=\"237FFCFB\" ord=\"21\">subsup: <equation>x_{i}^{2}</equation></p>",
+        "paragraphs": [
+          "F0000003"
+        ]
+      },
+      {
+        "markup": "<p id=\"58ED22F7\" ord=\"22\">prescripts: <equation>{}_{a}X</equation></p>",
+        "paragraphs": [
+          "F0000004"
+        ]
+      },
+      {
+        "markup": "<p id=\"65B5C986\" ord=\"23\">fraction: <equation>\\frac{a}{b}</equation></p>",
+        "paragraphs": [
+          "F0000005"
+        ]
+      },
+      {
+        "markup": "<p id=\"35502A25\" ord=\"24\">nobar: <equation>\\binom{n}{k}</equation></p>",
+        "paragraphs": [
+          "F0000006"
+        ]
+      },
+      {
+        "markup": "<p id=\"284EFEE5\" ord=\"25\">skew: <equation>{}^{a}/_{b}</equation></p>",
+        "paragraphs": [
+          "F0000007"
+        ]
+      },
+      {
+        "markup": "<p id=\"024A5EFD\" ord=\"26\">sqrt: <equation>\\sqrt{x}</equation></p>",
+        "paragraphs": [
+          "F0000008"
+        ]
+      },
+      {
+        "markup": "<p id=\"65CA14EF\" ord=\"27\">root: <equation>\\sqrt[3]{x}</equation></p>",
+        "paragraphs": [
+          "F0000009"
+        ]
+      },
+      {
+        "markup": "<p id=\"2D543CA1\" ord=\"28\">nary: <equation>\\sum^{N} x</equation></p>",
+        "paragraphs": [
+          "F000000A"
+        ]
+      },
+      {
+        "markup": "<p id=\"1B187524\" ord=\"29\">limlow: <equation>\\lim _{0}</equation></p>",
+        "paragraphs": [
+          "F000000B"
+        ]
+      },
+      {
+        "markup": "<p id=\"78F991DC\" ord=\"30\">limupp: <equation>\\max ^{N}</equation></p>",
+        "paragraphs": [
+          "F000000C"
+        ]
+      },
+      {
+        "markup": "<p id=\"3DBA0A7D\" ord=\"31\">function: <equation>\\sin  x</equation></p>",
+        "paragraphs": [
+          "F000000D"
+        ]
+      },
+      {
+        "markup": "<p id=\"246470C3\" ord=\"32\">accent: <equation>\\vec{v}</equation></p>",
+        "paragraphs": [
+          "F000000E"
+        ]
+      },
+      {
+        "markup": "<p id=\"5BF24182\" ord=\"33\">bar: <equation>\\overline{x}</equation></p>",
+        "paragraphs": [
+          "F000000F"
+        ]
+      },
+      {
+        "markup": "<p id=\"746C05B4\" ord=\"34\">underbar: <equation>\\underline{y}</equation></p>",
+        "paragraphs": [
+          "F0000010"
+        ]
+      },
+      {
+        "markup": "<p id=\"6B7986B8\" ord=\"35\">group-default: <equation>\\overbrace{x}</equation></p>",
+        "paragraphs": [
+          "F0000011"
+        ]
+      },
+      {
+        "markup": "<p id=\"7853450D\" ord=\"36\">underbrace: <equation>\\underbrace{x}</equation></p>",
+        "paragraphs": [
+          "F0000012"
+        ]
+      },
+      {
+        "markup": "<p id=\"3F5148AB\" ord=\"37\">delimiters: <equation>\\left[a;b\\right]</equation></p>",
+        "paragraphs": [
+          "F0000013"
+        ]
+      },
+      {
+        "markup": "<p id=\"6B642974\" ord=\"38\">matrix: <equation>\\begin{matrix}a &amp; b \\\\ c &amp; d\\end{matrix}</equation></p>",
+        "paragraphs": [
+          "F0000014"
+        ]
+      },
+      {
+        "markup": "<p id=\"36E8ADAF\" ord=\"39\">equation-array: <equation>\\begin{aligned}a=b \\\\ c=d\\end{aligned}</equation></p>",
+        "paragraphs": [
+          "F0000015"
+        ]
+      },
+      {
+        "markup": "<p id=\"57CDF34A\" ord=\"40\">box: <equation>x</equation></p>",
+        "paragraphs": [
+          "F0000016"
+        ]
+      },
+      {
+        "markup": "<p id=\"0E232A17\" ord=\"41\">borderbox: <equation>y</equation></p>",
+        "paragraphs": [
+          "F0000017"
+        ]
+      },
+      {
+        "markup": "<p id=\"12F2B191\" ord=\"42\">phantom: <equation>z</equation></p>",
+        "paragraphs": [
+          "F0000018"
+        ]
+      },
+      {
+        "markup": "<p id=\"0A504981\" ord=\"43\">deleted-run: <equation>Old math</equation></p>",
+        "paragraphs": [
+          "F0000019"
+        ]
+      },
+      {
+        "markup": "<p id=\"307A9CF5\" ord=\"44\">unknown: <equation>Retained unknown</equation></p>",
+        "paragraphs": [
+          "F000001A"
+        ]
+      },
+      {
+        "markup": "<p id=\"5B954590\" ord=\"45\"><equation>display</equation></p>",
+        "paragraphs": [
+          "FFFF0001"
+        ]
+      },
+      {
+        "markup": "<p id=\"0BBD43EC\" ord=\"46\">Section one end</p>",
+        "paragraphs": [
+          "BB000001"
+        ]
+      },
+      {
+        "markup": "<h2 id=\"19E0C67D\" ord=\"47\">Section two heading</h2>",
+        "paragraphs": [
+          "BB000002"
+        ]
+      }
+    ],
+    "equations": [
+      {
+        "at": "28B506BC",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "\\alpha  + \\beta \\sin"
+      },
+      {
+        "at": "4835B59D",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "x^{2}"
+      },
+      {
+        "at": "6C6C0863",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "x_{i}"
+      },
+      {
+        "at": "237FFCFB",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "x_{i}^{2}"
+      },
+      {
+        "at": "58ED22F7",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "{}_{a}X"
+      },
+      {
+        "at": "65B5C986",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "\\frac{a}{b}"
+      },
+      {
+        "at": "35502A25",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "\\binom{n}{k}"
+      },
+      {
+        "at": "284EFEE5",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "{}^{a}/_{b}"
+      },
+      {
+        "at": "024A5EFD",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "\\sqrt{x}"
+      },
+      {
+        "at": "65CA14EF",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "\\sqrt[3]{x}"
+      },
+      {
+        "at": "2D543CA1",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "\\sum^{N} x"
+      },
+      {
+        "at": "1B187524",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "\\lim _{0}"
+      },
+      {
+        "at": "78F991DC",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "\\max ^{N}"
+      },
+      {
+        "at": "3DBA0A7D",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "\\sin  x"
+      },
+      {
+        "at": "246470C3",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "\\vec{v}"
+      },
+      {
+        "at": "5BF24182",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "\\overline{x}"
+      },
+      {
+        "at": "746C05B4",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "\\underline{y}"
+      },
+      {
+        "at": "6B7986B8",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "\\overbrace{x}"
+      },
+      {
+        "at": "7853450D",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "\\underbrace{x}"
+      },
+      {
+        "at": "3F5148AB",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "\\left[a;b\\right]"
+      },
+      {
+        "at": "6B642974",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "\\begin{matrix}a & b \\\\ c & d\\end{matrix}"
+      },
+      {
+        "at": "36E8ADAF",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "\\begin{aligned}a=b \\\\ c=d\\end{aligned}"
+      },
+      {
+        "at": "57CDF34A",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "x"
+      },
+      {
+        "at": "0E232A17",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "y"
+      },
+      {
+        "at": "12F2B191",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "z"
+      },
+      {
+        "at": "0A504981",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "Old math"
+      },
+      {
+        "at": "307A9CF5",
+        "display": false,
+        "editable": true,
+        "equation": 1,
+        "latex": "Retained unknown"
+      },
+      {
+        "at": "5B954590",
+        "display": true,
+        "editable": true,
+        "equation": 1,
+        "latex": "display"
+      }
+    ],
+    "idRepairsNeeded": 38,
+    "kind": "document",
+    "markup": "<section first-page/>\n<header>\n<p>header default</p>\n</header>\n<header first>\n<p>header first</p>\n</header>\n<header even>\n<p>header even</p>\n</header>\n<footer>\n<p>footer default</p>\n</footer>\n<footer first>\n<p>footer first</p>\n</footer>\n<footer even>\n<p>footer even</p>\n</footer>\n<p id=\"11111111\" ord=\"1\" class=\"CustomStyle\"><b>Bold</b><i> italic</i><u> underline</u><s> strike</s><sup> super</sup><sub> sub</sub><a href=\"https://example.com/?a=1&amp;b=2\">Safe link</a><a href=\"custom-scheme:opaque-target\">Opaque link</a><a href=\"#bookmark\">Internal link</a></p>\n<p id=\"22222222\" ord=\"2\"><field instr=\"AUTHOR\">Author result</field><field instr=\"REF source\">Complex result</field>Commented<b> changed-format</b> neutral-format</p>\n<p id=\"33333333\" ord=\"3\" num=\"III.\">Roman item</p>\n<p id=\"33333334\" ord=\"4\" num=\"a)\">Nested item</p>\n<p id=\"33333335\" ord=\"5\" num=\"IV.\">Next item</p>\n<p id=\"44444444\" ord=\"6\">Common deleted</p>\n<p id=\"55555555\" ord=\"7\"><image w=\"32\" h=\"24\" alt=\"Available picture\"/><image w=\"48\" h=\"36\" alt=\"Opaque picture\"/></p>\n<p id=\"66666666\" ord=\"8\">Unicode 😀 nonbreaking space literal\ttab\t<br/><br type=\"page\"/><br type=\"column\"/>Fallback content</p>\n<p id=\"77777777\" ord=\"9\"><field instr=\"REF joined\">Joined first</field></p>\n<p id=\"1EDE45A3\" ord=\"10\">Joined second</p>\n<p id=\"4B101413\" ord=\"11\">Inserted break firstInserted break second</p>\n<table n=\"1\">\n<tr>\n<td colspan=\"2\" rowspan=\"2\">\n<p id=\"07B86923\" ord=\"13\">Merged cell</p>\n</td>\n<td>\n<p id=\"5B82D4E5\" ord=\"14\">Top cell</p>\n</td>\n</tr>\n<tr>\n<td>\n<table>\n<tr>\n<td>\n<p id=\"0BA5B732\" ord=\"16\">Nested cell</p>\n</td>\n</tr>\n</table>\n<p id=\"78B6F0A2\" ord=\"17\"></p>\n</td>\n</tr>\n</table>\n<p id=\"28B506BC\" ord=\"18\">runs: <equation>\\alpha  + \\beta \\sin</equation></p>\n<p id=\"4835B59D\" ord=\"19\">sup: <equation>x^{2}</equation></p>\n<p id=\"6C6C0863\" ord=\"20\">sub: <equation>x_{i}</equation></p>\n<p id=\"237FFCFB\" ord=\"21\">subsup: <equation>x_{i}^{2}</equation></p>\n<p id=\"58ED22F7\" ord=\"22\">prescripts: <equation>{}_{a}X</equation></p>\n<p id=\"65B5C986\" ord=\"23\">fraction: <equation>\\frac{a}{b}</equation></p>\n<p id=\"35502A25\" ord=\"24\">nobar: <equation>\\binom{n}{k}</equation></p>\n<p id=\"284EFEE5\" ord=\"25\">skew: <equation>{}^{a}/_{b}</equation></p>\n<p id=\"024A5EFD\" ord=\"26\">sqrt: <equation>\\sqrt{x}</equation></p>\n<p id=\"65CA14EF\" ord=\"27\">root: <equation>\\sqrt[3]{x}</equation></p>\n<p id=\"2D543CA1\" ord=\"28\">nary: <equation>\\sum^{N} x</equation></p>\n<p id=\"1B187524\" ord=\"29\">limlow: <equation>\\lim _{0}</equation></p>\n<p id=\"78F991DC\" ord=\"30\">limupp: <equation>\\max ^{N}</equation></p>\n<p id=\"3DBA0A7D\" ord=\"31\">function: <equation>\\sin  x</equation></p>\n<p id=\"246470C3\" ord=\"32\">accent: <equation>\\vec{v}</equation></p>\n<p id=\"5BF24182\" ord=\"33\">bar: <equation>\\overline{x}</equation></p>\n<p id=\"746C05B4\" ord=\"34\">underbar: <equation>\\underline{y}</equation></p>\n<p id=\"6B7986B8\" ord=\"35\">group-default: <equation>\\overbrace{x}</equation></p>\n<p id=\"7853450D\" ord=\"36\">underbrace: <equation>\\underbrace{x}</equation></p>\n<p id=\"3F5148AB\" ord=\"37\">delimiters: <equation>\\left[a;b\\right]</equation></p>\n<p id=\"6B642974\" ord=\"38\">matrix: <equation>\\begin{matrix}a &amp; b \\\\ c &amp; d\\end{matrix}</equation></p>\n<p id=\"36E8ADAF\" ord=\"39\">equation-array: <equation>\\begin{aligned}a=b \\\\ c=d\\end{aligned}</equation></p>\n<p id=\"57CDF34A\" ord=\"40\">box: <equation>x</equation></p>\n<p id=\"0E232A17\" ord=\"41\">borderbox: <equation>y</equation></p>\n<p id=\"12F2B191\" ord=\"42\">phantom: <equation>z</equation></p>\n<p id=\"0A504981\" ord=\"43\">deleted-run: <equation>Old math</equation></p>\n<p id=\"307A9CF5\" ord=\"44\">unknown: <equation>Retained unknown</equation></p>\n<p id=\"5B954590\" ord=\"45\"><equation>display</equation></p>\n<p id=\"0BBD43EC\" ord=\"46\">Section one end</p>\n<section/>\n<header>\n<p>header default</p>\n</header>\n<header first>\n<p>header first</p>\n</header>\n<header even>\n<p>header even</p>\n</header>\n<footer>\n<p>footer default</p>\n</footer>\n<footer first>\n<p>footer first</p>\n</footer>\n<footer even>\n<p>footer even</p>\n</footer>\n<h2 id=\"19E0C67D\" ord=\"47\">Section two heading</h2>",
+    "source": "sha256:c4c25d2dcc6c68c00c51b70db72c011cae5d58a0f84e891ca728b51858f754e7",
+    "view": "original"
+  }
+}

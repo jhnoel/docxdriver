@@ -1,0 +1,61 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release-linux:
+    name: Release x86_64-unknown-linux-gnu
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+      - name: Build CLI
+        run: cargo build --release --target x86_64-unknown-linux-gnu -p docxdriver-cli
+      - name: Package binary
+        shell: bash
+        run: |
+          mkdir release
+          cp target/x86_64-unknown-linux-gnu/release/docxdriver release/docxdriver
+          tar -czf docxdriver-x86_64-unknown-linux-gnu.tar.gz -C release docxdriver
+      - name: Create release and upload Linux binary
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          ASSET: docxdriver-x86_64-unknown-linux-gnu.tar.gz
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$ASSET" --clobber
+          else
+            gh release create "$TAG" "$ASSET" --generate-notes
+          fi
+
+  release-windows:
+    name: Release x86_64-pc-windows-msvc
+    needs: release-linux
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - name: Build CLI
+        run: cargo build --release --target x86_64-pc-windows-msvc -p docxdriver-cli
+      - name: Package binary
+        shell: bash
+        run: |
+          mkdir release
+          cp target/x86_64-pc-windows-msvc/release/docxdriver.exe release/docxdriver.exe
+          tar -czf docxdriver-x86_64-pc-windows-msvc.tar.gz -C release docxdriver.exe
+      - name: Upload Windows binary
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: gh release upload "$env:TAG" docxdriver-x86_64-pc-windows-msvc.tar.gz --clobber
