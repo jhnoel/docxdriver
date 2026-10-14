@@ -47,6 +47,11 @@ fn selection_projection(xml: &DocxXml, paragraph: NodeId) -> SelectionProjection
     SelectionProjection { current, to_all }
 }
 
+/// A paragraph's selectable text: its visible text without tracked deletions.
+pub(super) fn visible_text(xml: &DocxXml, paragraph: NodeId) -> String {
+    selection_projection(xml, paragraph).current
+}
+
 fn select_in_paragraph(
     xml: &DocxXml,
     paragraph: NodeId,
@@ -137,6 +142,14 @@ pub(super) fn resolve_paragraph_by_para_id(
     source_hash: Option<[u8; 32]>,
     at: &str,
 ) -> Result<NodeId, Outcome> {
+    let needle = at.to_uppercase();
+    // Fast path: when every paragraph already carries a valid, unique id
+    // (always true after the plan's up-front repair unless an operation
+    // created an unaddressed paragraph), repair would be a no-op and one walk
+    // finds the target.
+    if let Some(found) = find_with_clean_ids(xml, &needle) {
+        return found.ok_or_else(|| missing_paragraph(&needle));
+    }
     let part = package.document_part_name();
     let seed = match source_hash {
         Some(hash) => hash,
@@ -151,19 +164,45 @@ pub(super) fn resolve_paragraph_by_para_id(
     };
     let index = xml.resolve_paragraph_ids(&part, &seed);
     xml.apply_paragraph_ids(&index).map_err(Outcome::error)?;
-    let needle = at.to_uppercase();
     xml.all_paragraphs()
         .into_iter()
         .find(|&node| {
             xml.para_id(node)
                 .is_some_and(|value| value.to_uppercase() == needle)
         })
-        .ok_or_else(|| {
-            blocked_at(
-                &needle,
-                "no paragraph with this paraId in word/document.xml — paragraph IDs in headers, footers, footnotes, endnotes, and comment bodies are outside the typed mutation surface",
-            )
-        })
+        .ok_or_else(|| missing_paragraph(&needle))
+}
+
+/// One walk over the part: `None` when some paragraph would need id repair,
+/// otherwise the first paragraph whose id matches `needle` (if any).
+fn find_with_clean_ids(xml: &DocxXml, needle: &str) -> Option<Option<NodeId>> {
+    let root = xml.doc.root_element()?;
+    let mut seen: Vec<u32> = Vec::new();
+    let mut target = None;
+    for node in xml.doc.descendants(root) {
+        if !xml.is_w(node, "p") {
+            continue;
+        }
+        let value = xml
+            .para_id(node)
+            .filter(|value| crate::document::is_valid_para_id(value))?;
+        seen.push(u32::from_str_radix(value, 16).ok()?);
+        if target.is_none() && value.eq_ignore_ascii_case(needle) {
+            target = Some(node);
+        }
+    }
+    seen.sort_unstable();
+    if seen.windows(2).any(|pair| pair[0] == pair[1]) {
+        return None;
+    }
+    Some(target)
+}
+
+fn missing_paragraph(needle: &str) -> Outcome {
+    blocked_at(
+        needle,
+        "no paragraph with this paraId in word/document.xml — paragraph IDs in headers, footers, footnotes, endnotes, and comment bodies are outside the typed mutation surface",
+    )
 }
 
 /// Track hyperlink context across `with` atoms: the whole content must either
@@ -403,7 +442,50 @@ pub fn replace_text_typed(
     let (start, end, _current, matched) = select_in_paragraph(xml, paragraph, &select, occurrence)
         .map_err(|outcome| blocked_at(&address, outcome.summary))?;
 
-    if !input.tracked {
+    replace_range(
+        package,
+        xml,
+        paragraph,
+        &address,
+        (start, end),
+        (&pieces, link_href),
+        &input.author,
+        input.tracked,
+        ctx,
+    )?;
+
+    let summary = match occurrence {
+        Some(n) => format!("replaced occurrence {n} of {matched} in paragraph {address}"),
+        None => format!("replaced 1 of 1 match in paragraph {address}"),
+    };
+    let result = json!({
+        "paraId": address,
+        "matched": matched,
+        "occurrence": occurrence,
+        "tracked": input.tracked,
+    });
+    Ok((summary, result))
+}
+
+/// Replace the `[start, end)` range of `paragraph` (all-text offsets, as
+/// returned by [`select_in_paragraph`]) with parsed `with` pieces: a tracked
+/// deletion plus insertion, or a direct rewrite. Offsets to the left of the
+/// range stay valid afterwards, so callers editing several ranges of one
+/// paragraph apply them right to left.
+#[allow(clippy::too_many_arguments)]
+fn replace_range(
+    package: &mut Package,
+    xml: &mut DocxXml,
+    paragraph: NodeId,
+    address: &str,
+    (start, end): (usize, usize),
+    (pieces, link_href): (&[InsPiece], Option<String>),
+    author: &str,
+    tracked: bool,
+    ctx: &ExecCtx,
+) -> Result<(), Outcome> {
+    let address = address.to_string();
+    if !tracked {
         let segments = build_segments(xml, paragraph);
         let overlaps_revision = segments
             .iter()
@@ -448,9 +530,9 @@ pub fn replace_text_typed(
         ));
     }
 
-    if input.tracked {
+    if tracked {
         let del_id = xml.next_revision_id();
-        delete_tracked_range(xml, paragraph, start, end, del_id, &input.author, &ctx.now)
+        delete_tracked_range(xml, paragraph, start, end, del_id, author, &ctx.now)
             .map_err(Outcome::error)?;
         let del_node = xml
             .doc
@@ -472,9 +554,9 @@ pub fn replace_text_typed(
                 xml,
                 paragraph,
                 ins_offset,
-                &pieces,
+                pieces,
                 ins_id,
-                &input.author,
+                author,
                 &ctx.now,
                 false,
             )
@@ -493,21 +575,282 @@ pub fn replace_text_typed(
             package,
             paragraph,
             insert_before,
-            &pieces,
+            pieces,
             link_href.as_deref(),
         )
         .map_err(Outcome::error)?;
     }
 
-    let summary = match occurrence {
-        Some(n) => format!("replaced occurrence {n} of {matched} in paragraph {address}"),
-        None => format!("replaced 1 of 1 match in paragraph {address}"),
+    Ok(())
+}
+
+#[derive(Debug, Clone)]
+pub struct ReviseTextArgs {
+    pub at: Option<String>,
+    pub within: Option<String>,
+    pub occurrence: Option<usize>,
+    pub edits: Vec<crate::api::TextEdit>,
+    pub author: String,
+    pub tracked: bool,
+}
+
+/// One paragraph region a `revise_text` scope covers, in the paragraph's
+/// current-text character offsets.
+struct ScopeRegion {
+    paragraph: NodeId,
+    address: String,
+    projection: SelectionProjection,
+    start: usize,
+    end: usize,
+}
+
+/// Character-offset spans of every non-overlapping `needle` match in `text`.
+fn char_matches(text: &str, needle: &str) -> Vec<(usize, usize)> {
+    let len = needle.chars().count();
+    let mut chars_before = 0;
+    let mut last_byte = 0;
+    text.match_indices(needle)
+        .map(|(byte, _)| {
+            chars_before += text[last_byte..byte].chars().count();
+            last_byte = byte;
+            (chars_before, chars_before + len)
+        })
+        .collect()
+}
+
+fn preview(text: &str) -> String {
+    const LIMIT: usize = 240;
+    if text.chars().count() <= LIMIT {
+        format!("{text:?}")
+    } else {
+        let head: String = text.chars().take(LIMIT).collect();
+        format!("{head:?}…")
+    }
+}
+
+/// Every addressable paragraph in the part with its canonical id, repairing
+/// ids first when some paragraph lacks a valid unique one.
+fn addressable_paragraphs(
+    xml: &mut DocxXml,
+    package: &Package,
+    source_hash: Option<[u8; 32]>,
+) -> Result<Vec<(NodeId, String)>, Outcome> {
+    if find_with_clean_ids(xml, "").is_none() {
+        let part = package.document_part_name();
+        let seed = source_hash.unwrap_or_else(|| {
+            use sha2::{Digest, Sha256};
+            Sha256::digest(package.get(&part).unwrap_or_default()).into()
+        });
+        let index = xml.resolve_paragraph_ids(&part, &seed);
+        xml.apply_paragraph_ids(&index).map_err(Outcome::error)?;
+    }
+    Ok(xml
+        .all_paragraphs()
+        .into_iter()
+        .filter_map(|node| xml.para_id(node).map(|id| (node, id.to_uppercase())))
+        .collect())
+}
+
+/// `revise_text`: several exact replacements inside one bounded scope. The
+/// scope and every edit resolve against the text as it stands when the
+/// operation starts, so earlier edits never shift later selectors.
+pub fn revise_text_typed(
+    package: &mut Package,
+    xml: &mut DocxXml,
+    args: &ReviseTextArgs,
+    ctx: &ExecCtx,
+    source_hash: Option<[u8; 32]>,
+) -> Result<(String, Value), Outcome> {
+    let fail = |at: Option<&str>, message: String| match at {
+        Some(at) => blocked_at(at, message),
+        None => Outcome::blocked(message),
     };
+    let at = args.at.as_deref().map(str::to_uppercase);
+    let mut parsed = Vec::with_capacity(args.edits.len());
+    for (index, edit) in args.edits.iter().enumerate() {
+        if edit.select.contains('<') {
+            return Err(fail(
+                at.as_deref(),
+                format!("edits[{index}].select must be plain text without HTML markup — it addresses visible text, never markup"),
+            ));
+        }
+        let (pieces, link) = parse_with(&edit.with).map_err(|outcome| {
+            fail(at.as_deref(), format!("edits[{index}].with: {}", outcome.summary))
+        })?;
+        parsed.push((pieces, link));
+    }
+
+    let candidates = match &at {
+        Some(address) => {
+            vec![(resolve_paragraph_by_para_id(xml, package, source_hash, address)?, address.clone())]
+        }
+        None => addressable_paragraphs(xml, package, source_hash)?,
+    };
+    let mut regions: Vec<ScopeRegion> = Vec::new();
+    match &args.within {
+        Some(within) => {
+            let mut found = Vec::new();
+            for (paragraph, address) in &candidates {
+                let projection = selection_projection(xml, *paragraph);
+                for (start, end) in char_matches(&projection.current, within) {
+                    found.push((*paragraph, address.clone(), start, end));
+                }
+            }
+            let place = if at.is_some() { "this paragraph" } else { "the document" };
+            let chosen = match (found.len(), args.occurrence) {
+                (0, _) => {
+                    let detail = match &at {
+                        Some(_) => format!(
+                            " (current visible text: {})",
+                            preview(&selection_projection(xml, candidates[0].0).current)
+                        ),
+                        None => String::new(),
+                    };
+                    return Err(fail(
+                        at.as_deref(),
+                        format!("within {within:?} matched nothing in {place}{detail} — hidden deleted text is not selectable"),
+                    ));
+                }
+                (count, Some(n)) if n >= 1 && n <= count => n - 1,
+                (count, Some(n)) => {
+                    return Err(fail(
+                        at.as_deref(),
+                        format!("occurrence {n} is out of range: within matched {count} times in {place}"),
+                    ))
+                }
+                (1, None) => 0,
+                (count, None) => {
+                    let mut ids: Vec<&str> = found.iter().map(|f| f.1.as_str()).collect();
+                    ids.dedup();
+                    ids.truncate(8);
+                    return Err(fail(
+                        at.as_deref(),
+                        format!(
+                            "within {within:?} matched {count} times in {place} (paragraphs {}) — lengthen it, pass at, or pass occurrence (1-based)",
+                            ids.join(", ")
+                        ),
+                    ));
+                }
+            };
+            let (paragraph, address, start, end) = found.swap_remove(chosen);
+            let projection = selection_projection(xml, paragraph);
+            regions.push(ScopeRegion { paragraph, address, projection, start, end });
+        }
+        None => {
+            for (paragraph, address) in candidates {
+                let projection = selection_projection(xml, paragraph);
+                let end = projection.current.chars().count();
+                regions.push(ScopeRegion { paragraph, address, projection, start: 0, end });
+            }
+        }
+    }
+    let scope = match (&args.within, &at) {
+        (Some(within), _) => format!("within {within:?}"),
+        (None, Some(_)) => format!(
+            "this paragraph (current visible text: {})",
+            preview(&regions[0].projection.current)
+        ),
+        (None, None) => "the document".to_string(),
+    };
+
+    // (region, start, end, edit) in current-text offsets.
+    let mut spans: Vec<(usize, usize, usize, usize)> = Vec::new();
+    for (index, edit) in args.edits.iter().enumerate() {
+        let mut matches = Vec::new();
+        for (region_index, region) in regions.iter().enumerate() {
+            let slice: String = region
+                .projection
+                .current
+                .chars()
+                .skip(region.start)
+                .take(region.end - region.start)
+                .collect();
+            for (start, end) in char_matches(&slice, &edit.select) {
+                matches.push((region_index, region.start + start, region.start + end, index));
+            }
+        }
+        let select = &edit.select;
+        match (matches.len(), edit.occurrence, edit.all) {
+            (0, _, _) => {
+                return Err(fail(
+                    at.as_deref(),
+                    format!("edits[{index}].select {select:?} matched nothing in {scope}"),
+                ))
+            }
+            (_, _, true) => spans.extend(matches),
+            (count, Some(n), _) if (n as usize) >= 1 && (n as usize) <= count => {
+                spans.push(matches[n as usize - 1])
+            }
+            (count, Some(n), _) => {
+                return Err(fail(
+                    at.as_deref(),
+                    format!("edits[{index}].occurrence {n} is out of range: select {select:?} matched {count} times in {scope}"),
+                ))
+            }
+            (1, None, false) => spans.push(matches[0]),
+            (count, None, false) => {
+                return Err(fail(
+                    at.as_deref(),
+                    format!("edits[{index}].select {select:?} matched {count} times in {scope} — narrow the scope with within, lengthen select, or pass occurrence or all"),
+                ))
+            }
+        }
+    }
+
+    // Each paragraph is exactly one region, and regions are in document order.
+    spans.sort_by_key(|&(region, start, end, _)| (region, start, end));
+    for pair in spans.windows(2) {
+        let (a, b) = (pair[0], pair[1]);
+        if a.0 == b.0 && b.1 < a.2 {
+            return Err(fail(
+                Some(&regions[a.0].address),
+                format!(
+                    "edits[{}] and edits[{}] select overlapping text; combine them into one edit",
+                    a.3.min(b.3),
+                    a.3.max(b.3)
+                ),
+            ));
+        }
+    }
+
+    // Right to left within each paragraph keeps the remaining offsets valid.
+    for &(region, start, end, index) in spans.iter().rev() {
+        let region = &regions[region];
+        let all_start = region.projection.to_all[start];
+        let all_end = region.projection.to_all[end - 1] + 1;
+        let (pieces, link) = &parsed[index];
+        replace_range(
+            package,
+            xml,
+            region.paragraph,
+            &region.address,
+            (all_start, all_end),
+            (pieces, link.clone()),
+            &args.author,
+            args.tracked,
+            ctx,
+        )?;
+    }
+
+    let mut paragraphs: Vec<String> = Vec::new();
+    for &(region, ..) in &spans {
+        let address = &regions[region].address;
+        if paragraphs.last() != Some(address) {
+            paragraphs.push(address.clone());
+        }
+    }
+    let summary = format!(
+        "revised {} span{} in {} paragraph{} ({}) {scope}",
+        spans.len(),
+        if spans.len() == 1 { "" } else { "s" },
+        paragraphs.len(),
+        if paragraphs.len() == 1 { "" } else { "s" },
+        paragraphs.join(", ")
+    );
     let result = json!({
-        "paraId": address,
-        "matched": matched,
-        "occurrence": occurrence,
-        "tracked": input.tracked,
+        "paragraphs": paragraphs,
+        "replacements": spans.len(),
+        "tracked": args.tracked,
     });
     Ok((summary, result))
 }
@@ -730,23 +1073,40 @@ fn wrap_all_content_in_del(
     if content.is_empty() {
         return Ok(());
     }
-    let del = xml.doc.create_element("w:del");
-    xml.doc.set_attribute(del, "w:id", &id.to_string());
-    xml.doc.set_attribute(del, "w:author", author);
-    xml.doc.set_attribute(del, "w:date", date);
-    xml.doc.insert_before(content[0], del);
+    // Adjacent runs share one deletion, so milestones between them keep their
+    // positions; a hyperlink is never wrapped (a
+    // deletion holds runs only), so its runs are deleted inside it.
+    let mut del: Option<NodeId> = None;
     for node in content {
+        if xml.is_w(node, "hyperlink") {
+            move_content_into_del(xml, node, id, author, date)?;
+            del = None;
+            continue;
+        }
+        let adjacent = del.filter(|&wrapper| xml.doc.prev_sibling(node) == Some(wrapper));
+        let wrapper = match adjacent {
+            Some(wrapper) => wrapper,
+            None => {
+                let wrapper = xml.doc.create_element("w:del");
+                xml.doc.set_attribute(wrapper, "w:id", &id.to_string());
+                xml.doc.set_attribute(wrapper, "w:author", author);
+                xml.doc.set_attribute(wrapper, "w:date", date);
+                xml.doc.insert_before(node, wrapper);
+                del = Some(wrapper);
+                wrapper
+            }
+        };
         xml.doc.detach(node);
-        xml.doc.append_child(del, node);
-    }
-    let leaves: Vec<NodeId> = xml
-        .doc
-        .descendants(del)
-        .filter(|&node| xml.is_w(node, "t"))
-        .collect();
-    for leaf in leaves {
-        let name = crate::segments::rename_for(xml, leaf, true);
-        xml.doc.rename_element(leaf, name);
+        xml.doc.append_child(wrapper, node);
+        let leaves: Vec<NodeId> = xml
+            .doc
+            .descendants(node)
+            .filter(|&leaf| xml.is_w(leaf, "t"))
+            .collect();
+        for leaf in leaves {
+            let name = crate::segments::rename_for(xml, leaf, true);
+            xml.doc.rename_element(leaf, name);
+        }
     }
     Ok(())
 }
@@ -1802,7 +2162,11 @@ pub fn format_paragraph_typed(
     let snapshot = xml.doc.create_element("w:pPr");
     if let Some(ppr) = xml.child_w(paragraph, "pPr") {
         for child in xml.doc.children(ppr).collect::<Vec<_>>() {
-            if xml.is_w(child, "pPrChange") {
+            // The snapshot is CT_PPrBase: no rPr, sectPr or pPrChange.
+            if ["rPr", "sectPr", "pPrChange"]
+                .iter()
+                .any(|name| xml.is_w(child, name))
+            {
                 continue;
             }
             let clone = xml.doc.clone_node(child, true);
@@ -2175,6 +2539,20 @@ fn move_content_into_del(
     author: &str,
     date: &str,
 ) -> Result<(), String> {
+    // A tracked deletion holds runs, never a hyperlink (CT_RunTrackChange);
+    // the deletion goes inside the hyperlink instead.
+    if xml.is_w(node, "hyperlink") {
+        let inner: Vec<NodeId> = xml.doc.children(node).collect();
+        for child in inner {
+            if xml.is_rev_del(child) {
+                continue;
+            }
+            if xml.is_w(child, "r") || xml.is_w(child, "hyperlink") || xml.is_w(child, "smartTag") {
+                move_content_into_del(xml, child, id, author, date)?;
+            }
+        }
+        return Ok(());
+    }
     let del = xml.doc.create_element("w:del");
     xml.doc.set_attribute(del, "w:id", &id.to_string());
     xml.doc.set_attribute(del, "w:author", author);
@@ -2298,7 +2676,8 @@ pub fn delete_paragraphs_typed(
         let rev_id = xml.next_revision_id();
         wrap_live_content_in_del(xml, *node, rev_id, &author, &ctx.now)
             .map_err(|e| blocked_at(address, e))?;
-        if next_block_is_mergeable_paragraph(xml, *node) {
+        // A paragraph mark that is already a tracked deletion stays as it is.
+        if next_block_is_mergeable_paragraph(xml, *node) && xml.paragraph_mark_del(*node).is_none() {
             xml.add_paragraph_mark_marker(*node, "del", rev_id, &author, &ctx.now);
             break_marks += 1;
         }

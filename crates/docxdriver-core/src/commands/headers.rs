@@ -193,7 +193,23 @@ fn chrome_part_xml(scope: &str, inner: &str) -> String {
 fn ensure_title_pg(xml: &mut DocxXml, sect: NodeId) {
     if xml.child_w(sect, "titlePg").is_none() {
         let node = xml.doc.create_element("w:titlePg");
-        xml.doc.append_child(sect, node);
+        // CT_SectPr is a sequence; titlePg precedes these.
+        const SUCCESSORS: &[&str] = &[
+            "textDirection",
+            "bidi",
+            "rtlGutter",
+            "docGrid",
+            "printerSettings",
+            "sectPrChange",
+        ];
+        let successor = xml
+            .doc
+            .children(sect)
+            .find(|&child| SUCCESSORS.iter().any(|local| xml.is_w(child, local)));
+        match successor {
+            Some(next) => xml.doc.insert_before(next, node),
+            None => xml.doc.append_child(sect, node),
+        }
     }
 }
 
@@ -251,7 +267,14 @@ fn set_chrome_typed(
     let ref_node = xml.doc.create_element(&format!("w:{ref_tag}"));
     xml.doc.set_attribute(ref_node, "w:type", kind_str);
     xml.doc.set_attribute(ref_node, "r:id", &rid);
-    xml.doc.append_child(sect, ref_node);
+    // Header and footer references lead CT_SectPr: insert after the last one.
+    let successor = xml.doc.children(sect).find(|&child| {
+        !xml.is_w(child, "headerReference") && !xml.is_w(child, "footerReference")
+    });
+    match successor {
+        Some(next) => xml.doc.insert_before(next, ref_node),
+        None => xml.doc.append_child(sect, ref_node),
+    }
 
     Ok((
         format!("section {section} {kind_str} {scope} set"),
@@ -345,7 +368,34 @@ pub fn set_even_and_odd_headers_typed(
     match (even_odd, existing) {
         (true, None) => {
             let node = settings.doc.create_element("w:evenAndOddHeaders");
-            settings.doc.append_child(root, node);
+            // CT_Settings is a sequence: insert before the first later element.
+            const SUCCESSORS: &[&str] = &[
+                "bookFoldRevPrinting", "bookFoldPrinting", "bookFoldPrintingSheets",
+                "drawingGridHorizontalSpacing", "drawingGridVerticalSpacing",
+                "displayHorizontalDrawingGridEvery", "displayVerticalDrawingGridEvery",
+                "doNotUseMarginsForDrawingGridOrigin", "drawingGridHorizontalOrigin",
+                "drawingGridVerticalOrigin", "doNotShadeFormData", "noPunctuationKerning",
+                "characterSpacingControl", "printTwoOnOne", "strictFirstAndLastChars",
+                "noLineBreaksAfter", "noLineBreaksBefore", "savePreviewPicture",
+                "doNotValidateAgainstSchema", "saveInvalidXml", "ignoreMixedContent",
+                "alwaysShowPlaceholderText", "doNotDemarcateInvalidXml", "saveXmlDataOnly",
+                "useXSLTWhenSaving", "saveThroughXslt", "showXMLTags",
+                "alwaysMergeEmptyNamespace", "updateFields", "hdrShapeDefaults", "footnotePr",
+                "endnotePr", "compat", "docVars", "rsids", "mathPr", "attachedSchema",
+                "themeFontLang", "clrSchemeMapping", "doNotIncludeSubdocsInStats",
+                "doNotAutoCompressPictures", "forceUpgrade", "captions", "readModeInkLockDown",
+                "smartTagType", "schemaLibrary", "shapeDefaults", "doNotEmbedSmartTags",
+                "decimalSymbol", "listSeparator",
+            ];
+            let successor = settings.doc.children(root).find(|&child| {
+                settings
+                    .local_name(child)
+                    .is_some_and(|local| SUCCESSORS.contains(&local))
+            });
+            match successor {
+                Some(next) => settings.doc.insert_before(next, node),
+                None => settings.doc.append_child(root, node),
+            }
         }
         (true, Some(node)) => {
             if settings

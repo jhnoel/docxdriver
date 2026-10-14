@@ -17,6 +17,7 @@
 export const PLAN_CAPABILITIES = {
   ops: [
     'replace_text',
+    'revise_text',
     'replace_paragraph',
     'replace_equation',
     'delete_equation',
@@ -33,13 +34,16 @@ export const PLAN_CAPABILITIES = {
     'comment_reply',
     'comment_set_status',
     'comment_delete',
+    'revision_settle',
   ],
   docs: {
     replace_text:
       'Replace an exact occurrence of `select` in the paragraph at `at` with `with`; `occurrence` picks the nth match (1-based).',
-    replace_equation: 'Replace a current equation using plain LaTeX. Read docx_read(path).equations for at and equation (1-based). Omit equation only when the paragraph has one. Display mode is preserved by default. Settle existing revisions before editing their equations.',
+    replace_equation: 'Replace a current equation using presentation MathML. Read docx_read(path).equations for at and equation (1-based). Omit equation only when the paragraph has one. Display mode is preserved by default. Settle existing revisions before editing their equations.',
     delete_equation:
       'Delete a current equation while preserving the paragraph. Read docx_read(path).equations for at and equation (1-based). Omit equation only when the paragraph has one. Tracked mode keeps the equation recoverable until the deletion is accepted.',
+    revise_text:
+      'Several exact replacements inside one bounded scope; prefer the chainable `Revise(within, at=None, occurrence=None).replace(select, with_, occurrence=None, all=False)` builder. Scope: `within` (a phrase unique in paragraph `at`, or in the whole document when `at` is omitted; `occurrence` picks a repeated one), else the paragraph `at`, else the whole document. Each edit must match exactly once in the scope unless it sets `occurrence` or `all`. All edits resolve against the scope as it stands when the operation starts, must not overlap, and become separate minimal tracked changes.',
     replace_paragraph: 'Replace the entire paragraph at `at` with `with`.',
     format_text:
       'Apply character formatting to an exact occurrence of `select` in the paragraph at `at`: boolean attributes (`bold`, `italic`, `underline`, `strike`, `superscript`, `subscript`), `color` (#RRGGBB), `font_size` (points), `occurrence`, or `clear`.',
@@ -67,5 +71,7 @@ export const PLAN_CAPABILITIES = {
       'Set a comment\'s status to `open` or `resolved` by decimal `comment_id`.',
     comment_delete:
       'Delete a comment by decimal `comment_id`.',
+    revision_settle:
+      'Accept or reject tracked changes: `target` is a decimal revision id from `docx_read(path, kind="revisions")` or `all`; `action` is `accept` or `reject`. Prefer the `AcceptRevision(target)` / `RejectRevision(target)` shorthands. Settling `all` also settles tracked changes made by earlier operations in the same plan, and later selectors address the settled text.',
   },
 };

@@ -639,6 +639,37 @@
       ],
       "type": "object"
     },
+    "TextEdit": {
+      "additionalProperties": false,
+      "description": "One replacement inside a `revise_text` scope.",
+      "properties": {
+        "all": {
+          "description": "Replace every match within the scope.",
+          "type": "boolean"
+        },
+        "occurrence": {
+          "default": null,
+          "description": "1-based match within the scope; omit when `select` is unique there.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "select": {
+          "type": "string"
+        },
+        "with": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "select",
+        "with"
+      ],
+      "type": "object"
+    },
     "editOp": {
       "oneOf": [
         {
@@ -743,6 +774,56 @@
             "op",
             "select",
             "with"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Several exact replacements inside one bounded scope: the paragraph `at`, the unique `within` span (in `at`, or anywhere in the body when `at` is omitted), or the whole body. Every edit resolves against the scope as it stands when this operation starts.",
+          "properties": {
+            "at": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ParagraphAddress"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "edits": {
+              "items": {
+                "$ref": "#/$defs/TextEdit"
+              },
+              "type": "array"
+            },
+            "occurrence": {
+              "default": null,
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "op": {
+              "enum": [
+                "revise_text"
+              ],
+              "type": "string"
+            },
+            "within": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "edits",
+            "op"
           ],
           "type": "object"
         },

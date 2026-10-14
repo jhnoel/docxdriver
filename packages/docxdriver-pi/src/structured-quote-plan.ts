@@ -102,6 +102,14 @@ export async function resolveStructuredPlan(
     }
     const next = { ...op };
     if ('with' in next) next.with = await resolveNode(next.with);
+    if (Array.isArray(next.edits)) {
+      const edits: unknown[] = [];
+      for (const value of next.edits) {
+        const edit = record(value);
+        edits.push(edit && 'with' in edit ? { ...edit, with: await resolveNode(edit.with) } : value);
+      }
+      next.edits = edits;
+    }
     ops.push(next);
   }
   return {

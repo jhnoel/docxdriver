@@ -8,6 +8,8 @@ pub(crate) mod readonly;
 pub(crate) mod revisions;
 pub(crate) mod typed;
 
+use std::collections::HashMap;
+
 use serde_json::Value;
 use sha2::Digest;
 
@@ -103,6 +105,17 @@ pub(crate) fn emit(mut state: WorkState, outcome: Outcome, ctx: &ExecCtx) -> Out
 /// Typed edit entry point used by the public Request API. The operation
 /// identity is carried by `EditOp`; this adapter is intentionally adjacent to
 /// the operation implementations rather than part of the public API module.
+/// Seed for deterministic per-plan allocations (inserted paragraph ids):
+/// the sha256 of the canonical plan JSON. Computed once per plan.
+pub(crate) fn plan_seed(plan: &crate::api::Plan) -> [u8; 32] {
+    sha2::Sha256::digest(
+        crate::api::canonical_json(plan)
+            .unwrap_or_default()
+            .as_bytes(),
+    )
+    .into()
+}
+
 pub(crate) fn run_typed_edit(
     state: &mut WorkState,
     op: &crate::api::EditOp,
@@ -110,7 +123,7 @@ pub(crate) fn run_typed_edit(
     mode: crate::api::ChangeMode,
     index: usize,
     _source: &[u8; 32],
-    plan: &crate::api::Plan,
+    plan_seed: &[u8; 32],
     ctx: &ExecCtx,
 ) -> Outcome {
     use crate::api::{
@@ -132,12 +145,7 @@ pub(crate) fn run_typed_edit(
         };
     }
     let tracked = matches!(mode, crate::api::ChangeMode::Track);
-    let plan_seed: [u8; 32] = sha2::Sha256::digest(
-        crate::api::canonical_json(plan)
-            .unwrap_or_default()
-            .as_bytes(),
-    )
-    .into();
+    let plan_seed = *plan_seed;
     match op {
         EditOp::ReplaceEquation {
             at,
@@ -174,6 +182,27 @@ pub(crate) fn run_typed_edit(
             };
             mutate(state, |pkg, xml, source| {
                 typed::replace_text_typed(pkg, xml, &args, ctx, source)
+            })
+        }
+        EditOp::ReviseText {
+            at,
+            within,
+            occurrence,
+            edits,
+        } => {
+            let args = typed::ReviseTextArgs {
+                at: match at {
+                    Some(address) => Some(para_id!(address)),
+                    None => None,
+                },
+                within: within.clone(),
+                occurrence: occurrence.map(|v| v as usize),
+                edits: edits.clone(),
+                author: author.into(),
+                tracked,
+            };
+            mutate(state, |pkg, xml, source| {
+                typed::revise_text_typed(pkg, xml, &args, ctx, source)
             })
         }
         EditOp::ReplaceParagraph { at, with } => {
@@ -412,84 +441,104 @@ pub(crate) fn run_typed_edit(
     }
 }
 
-/// Mutation harness: snapshot, run, roll back on failure. Operations may fail
-/// after partially editing (e.g. replaceText erroring on a later paragraph), so
-/// the snapshot is what makes skip-on-failure safe. Both halves stay in memory —
-/// document.xml re-serializes and the parts vector memcpys; no zip round-trip.
+/// Mutation harness. A failed operation stops the plan and its working state
+/// is discarded (`fold_typed` returns no bytes), so there is no per-operation
+/// rollback snapshot: serializing the whole part before every operation made
+/// plans quadratic in document size.
 fn mutate(
     state: &mut WorkState,
     run: impl FnOnce(&mut Package, &mut DocxXml, Option<[u8; 32]>) -> Result<(String, Value), Outcome>,
 ) -> Outcome {
-    let doc_snapshot = state.xml.serialize();
-    let package_snapshot = state.package.clone();
     let source_hash = state.source_hash;
     match run(&mut state.package, &mut state.xml, source_hash) {
         Ok((summary, result)) => {
             state.mutated = true;
             Outcome::ok(summary, result)
         }
-        Err(outcome) => {
-            state.package = package_snapshot;
-            match DocxXml::parse(&doc_snapshot) {
-                Ok(xml) => state.xml = xml,
-                // Unreachable: doc_snapshot is our own serializer's output.
-                Err(error) => return Outcome::error(format!("rollback failed: {error}")),
-            }
-            outcome
-        }
+        Err(outcome) => outcome,
     }
 }
 
-/// Attach the current markup of the affected paragraph(s) to a per-op report:
-/// the single `paraId` address or the `delete_paragraphs` paragraphs array.
-pub(crate) fn attach_affected_markup(state: &WorkState, mut report: Value) -> Value {
-    if let Some(ids) = report
-        .get("result")
+/// The selectable text of paragraph `para_id` in the unmodified input
+/// package, for explaining selectors that stopped matching mid-plan.
+pub(crate) fn base_visible_text(input: &[u8], para_id: &str) -> Option<String> {
+    let mut state = WorkState::parse(input).ok()?;
+    let paragraph = typed::resolve_paragraph_by_para_id(
+        &mut state.xml,
+        &state.package,
+        state.source_hash,
+        para_id,
+    )
+    .ok()?;
+    Some(typed::visible_text(&state.xml, paragraph))
+}
+
+/// The paragraph ids a per-op report affects: the single `paraId` address or
+/// the `delete_paragraphs` paragraphs array.
+pub(crate) fn affected_para_ids(report: &Value) -> Vec<String> {
+    let result = report.get("result");
+    if let Some(ids) = result
         .and_then(|r| r.get("paragraphs"))
         .and_then(Value::as_array)
     {
-        let markups: Vec<Value> = ids
+        return ids
             .iter()
-            .filter_map(|v| {
-                v.as_str()
-                    .and_then(|id| affected_markup(state, id))
-                    .map(Value::String)
-            })
+            .filter_map(|v| v.as_str().map(str::to_owned))
             .collect();
-        if !markups.is_empty() {
-            if let Some(object) = report.as_object_mut() {
-                object.insert("markup".into(), Value::Array(markups));
-            }
-        }
-    } else if let Some(para_id) = report
-        .get("result")
+    }
+    result
         .and_then(|r| r.get("paraId"))
         .and_then(Value::as_str)
-    {
-        if let Some(markup) = affected_markup(state, para_id) {
-            if let Some(object) = report.as_object_mut() {
-                object.insert("markup".into(), Value::String(markup));
-            }
-        }
-    }
-    report
+        .map(|id| vec![id.to_owned()])
+        .unwrap_or_default()
 }
 
-/// The markup block carrying this paragraph's `w14:paraId` in the current
-/// in-memory state — the "current affected markup" diagnostic.
-fn affected_markup(state: &WorkState, para_id: &str) -> Option<String> {
+/// The markup block carrying each requested `w14:paraId` in the current
+/// in-memory state — the "current affected markup" diagnostic. One render
+/// serves every id, so a plan pays for a single document render however many
+/// operations it reports on.
+pub(crate) fn affected_markup(
+    state: &WorkState,
+    para_ids: &std::collections::BTreeSet<String>,
+) -> HashMap<String, String> {
     use crate::html::render::RenderView;
     use crate::html::surface::render_document;
+    let mut found = HashMap::new();
+    if para_ids.is_empty() {
+        return found;
+    }
     let doc = render_document(
         &state.package,
         &state.xml,
         RenderView::Markup,
         state.source_hash.as_ref(),
     );
-    let needle = format!("id=\"{}\"", para_id);
     let body = &doc.body;
-    body.blocks
-        .iter()
-        .find(|block| body.html[block.start..block.end].contains(&needle))
-        .map(|block| crate::html::compact::model_html(&body.html[block.start..block.end]))
+    let mut block_of: HashMap<&str, usize> = HashMap::new();
+    for (index, block) in body.blocks.iter().enumerate() {
+        for &node in &block.paragraphs {
+            if let Some(id) = state.xml.para_id(node) {
+                block_of.entry(id).or_insert(index);
+            }
+        }
+    }
+    let mut rendered: HashMap<usize, String> = HashMap::new();
+    for para_id in para_ids {
+        let index = block_of.get(para_id.as_str()).copied().or_else(|| {
+            // Nested paragraphs a block does not list (textboxes, alternate
+            // content) are still located by their rendered id attribute.
+            let needle = format!("id=\"{para_id}\"");
+            body.blocks
+                .iter()
+                .position(|block| body.html[block.start..block.end].contains(&needle))
+        });
+        if let Some(index) = index {
+            let markup = rendered.entry(index).or_insert_with(|| {
+                let block = &body.blocks[index];
+                crate::html::compact::model_html(&body.html[block.start..block.end])
+            });
+            found.insert(para_id.clone(), markup.clone());
+        }
+    }
+    found
 }

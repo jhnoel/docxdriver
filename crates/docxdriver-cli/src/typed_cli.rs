@@ -439,6 +439,22 @@ pub fn dispatch(cli: Cli) -> Result<ExitCode, String> {
                 })
             })(),
         ),
+        Commands::ReviseText(a) => dispatch_parsed(
+            &ctx,
+            &a.common,
+            (|| {
+                Ok(EditOp::ReviseText {
+                    at: a.at.map(address).transpose()?,
+                    within: a.within,
+                    occurrence: a.occurrence,
+                    edits: serde_json::from_str(&a.edits).map_err(|e| ParseError {
+                        code: "invalid_edits",
+                        path: "edits",
+                        message: format!("edits must be a JSON array of {{select, with, occurrence?, all?}}: {e}"),
+                    })?,
+                })
+            })(),
+        ),
         Commands::ReplaceParagraph(a) => dispatch_parsed(
             &ctx,
             &a.common,

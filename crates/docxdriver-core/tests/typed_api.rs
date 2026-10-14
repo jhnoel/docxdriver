@@ -11,7 +11,7 @@ use docxdriver_core::{
     CommandRequest, CommandResult, CommentStatus, CreateCommand, EditCommand, EditOp, FindCommand,
     InsertAnchor, InsertPosition, LineSpacing, ParagraphAddress, Plan, PlanRequest, PlanResult,
     Points, PreviewKey, ReadCommand, Request, RequestResult, RevisionAction, RevisionTarget,
-    SourceHash,
+    SourceHash, TextEdit,
 };
 
 const SOURCE_ID: &str = "11111111";
@@ -512,6 +512,36 @@ fn every_edit_op_and_command_variant_has_strict_stable_json_and_toml() {
             select: "old".into(),
             with: "new".into(),
             occurrence: Some(1),
+        },
+        EditOp::ReviseText {
+            at: Some(id.clone()),
+            within: Some("old text".into()),
+            occurrence: Some(1),
+            edits: vec![
+                TextEdit {
+                    select: "old".into(),
+                    with: "new".into(),
+                    occurrence: None,
+                    all: true,
+                },
+                TextEdit {
+                    select: "text".into(),
+                    with: "words".into(),
+                    occurrence: Some(1),
+                    all: false,
+                },
+            ],
+        },
+        EditOp::ReviseText {
+            at: None,
+            within: None,
+            occurrence: None,
+            edits: vec![TextEdit {
+                select: "a".into(),
+                with: "b".into(),
+                occurrence: None,
+                all: true,
+            }],
         },
         EditOp::ReplaceParagraph {
             at: id.clone(),
@@ -1941,4 +1971,301 @@ fn deleting_sole_equation_removes_the_complete_math_object() {
         assert!(!xml.contains("<m:oMath"), "{xml}");
         assert!(!read_markup(&accepted).contains("<math"));
     }
+}
+
+#[test]
+fn tracked_plan_allocates_unique_revision_ids_and_reports_final_markup() {
+    let bytes = document(&[(SOURCE_ID, "one two three"), (SECOND_ID, "four five")]);
+    let mut p = plan(
+        &bytes,
+        vec![
+            EditOp::ReplaceText {
+                at: ParagraphAddress::id(SOURCE_ID),
+                select: "one".into(),
+                with: "uno".into(),
+                occurrence: None,
+            },
+            EditOp::ReplaceText {
+                at: ParagraphAddress::id(SECOND_ID),
+                select: "four".into(),
+                with: "cuatro".into(),
+                occurrence: None,
+            },
+            EditOp::ReplaceText {
+                at: ParagraphAddress::id(SOURCE_ID),
+                select: "three".into(),
+                with: "tres".into(),
+                occurrence: None,
+            },
+        ],
+    );
+    p.change_mode = ChangeMode::Track;
+    let key = PreviewKey::new(&p);
+    let PlanResult::Committed { bytes: out, report, .. } = execute_plan(
+        &bytes,
+        &PlanRequest {
+            plan: p,
+            preview_key: Some(key),
+        },
+    ) else {
+        panic!("plan did not commit");
+    };
+    let xml = document_xml(&out);
+    let mut ids: Vec<&str> = xml
+        .split("<w:")
+        .filter(|tag| tag.starts_with("ins ") || tag.starts_with("del "))
+        .filter_map(|tag| tag.split("w:id=\"").nth(1)?.split('"').next())
+        .collect();
+    assert_eq!(ids.len(), 6, "{xml}");
+    ids.sort_unstable();
+    ids.dedup();
+    assert_eq!(ids.len(), 6, "revision ids must be unique: {xml}");
+    // Affected markup comes from one render of the plan's resulting state, so
+    // the first edit's paragraph already shows the third edit.
+    let first = serde_json::to_string(&report.ops[0].affected).unwrap();
+    assert!(first.contains("uno") && first.contains("tres"), "{first}");
+    assert_eq!(report.ops[0].affected, report.ops[2].affected);
+}
+
+fn edit(select: &str, with: &str) -> TextEdit {
+    TextEdit {
+        select: select.into(),
+        with: with.into(),
+        occurrence: None,
+        all: false,
+    }
+}
+
+fn revise(at: Option<&str>, within: Option<&str>, edits: Vec<TextEdit>) -> EditOp {
+    EditOp::ReviseText {
+        at: at.map(ParagraphAddress::id),
+        within: within.map(str::to_string),
+        occurrence: None,
+        edits,
+    }
+}
+
+/// Commit in the given mode, returning the final-view text of the document.
+fn revise_final(bytes: &[u8], mode: ChangeMode, ops: Vec<EditOp>) -> Result<String, String> {
+    let mut p = plan(bytes, ops);
+    p.change_mode = mode;
+    let key = PreviewKey::new(&p);
+    match execute_plan(bytes, &PlanRequest { plan: p, preview_key: Some(key) }) {
+        PlanResult::Committed { bytes, .. } => {
+            let markup = read_markup_view(&bytes, Some("final"));
+            let text = markup
+                .split('<')
+                .map(|piece| piece.split_once('>').map_or(piece, |(_, text)| text))
+                .collect::<String>();
+            Ok(text)
+        }
+        PlanResult::Rejected { diagnostic, .. } => Err(diagnostic.message),
+        other => panic!("unexpected {other:?}"),
+    }
+}
+
+const CLAUSES: &[(&str, &str)] = &[
+    (SOURCE_ID, "The tenant shall pay the rent within thirty days of the notice."),
+    (SECOND_ID, "The landlord shall repair the roof within thirty days of the request."),
+];
+
+#[test]
+fn revise_text_scopes_short_selectors_to_a_unique_phrase_without_paragraph_ids() {
+    let bytes = document(CLAUSES);
+    for mode in [ChangeMode::Track, ChangeMode::Direct] {
+        // "the" and "thirty" are ambiguous document-wide; the phrase is not.
+        let text = revise_final(
+            &bytes,
+            mode,
+            vec![revise(
+                None,
+                Some("repair the roof within thirty days"),
+                vec![edit("thirty", "sixty"), edit("the roof", "the <b>roof</b> and gutters")],
+            )],
+        )
+        .unwrap();
+        assert!(
+            text.contains("The landlord shall repair the roof and gutters within sixty days of the request."),
+            "{mode:?}: {text}"
+        );
+        assert!(text.contains("pay the rent within thirty days"), "{mode:?}: {text}");
+    }
+}
+
+#[test]
+fn revise_text_edits_resolve_against_one_snapshot_and_apply_adjacent_spans() {
+    let bytes = document(CLAUSES);
+    // The second edit's select would not exist if the first applied first.
+    let text = revise_final(
+        &bytes,
+        ChangeMode::Track,
+        vec![revise(
+            Some(SOURCE_ID),
+            None,
+            vec![edit("tenant", "lessee"), edit(" shall", " must"), edit("lessee", "never-present")],
+        )],
+    );
+    assert!(text.unwrap_err().contains("edits[2].select \"lessee\" matched nothing"));
+    let text = revise_final(
+        &bytes,
+        ChangeMode::Track,
+        vec![revise(Some(SOURCE_ID), None, vec![edit("tenant", "lessee"), edit(" shall", " must")])],
+    )
+    .unwrap();
+    assert!(text.contains("The lessee must pay the rent"), "{text}");
+}
+
+#[test]
+fn revise_text_all_replaces_every_match_in_scope_and_document() {
+    let bytes = document(CLAUSES);
+    let mut all = edit("thirty", "forty-five");
+    all.all = true;
+    let text = revise_final(&bytes, ChangeMode::Track, vec![revise(None, None, vec![all.clone()])]).unwrap();
+    assert_eq!(text.matches("forty-five days").count(), 2, "{text}");
+    let mut the = edit("the", "a");
+    the.all = true;
+    let text = revise_final(&bytes, ChangeMode::Direct, vec![revise(Some(SECOND_ID), None, vec![the])]).unwrap();
+    assert!(text.contains("repair a roof within thirty days of a request"), "{text}");
+    assert!(text.contains("pay the rent"), "{text}");
+}
+
+#[test]
+fn revise_text_rejects_ambiguity_overlap_and_explains_scope() {
+    let bytes = document(CLAUSES);
+    let error = revise_final(&bytes, ChangeMode::Track, vec![revise(None, Some("within thirty days"), vec![edit("thirty", "sixty")])])
+        .unwrap_err();
+    assert!(error.contains("matched 2 times in the document"), "{error}");
+    assert!(error.contains(SOURCE_ID) && error.contains(SECOND_ID), "{error}");
+
+    // "tenant" is in the paragraph but outside the scope.
+    let error = revise_final(&bytes, ChangeMode::Track, vec![revise(Some(SOURCE_ID), Some("the rent within"), vec![edit("tenant", "lessee")])])
+        .unwrap_err();
+    assert!(error.contains("edits[0].select \"tenant\" matched nothing in within \"the rent within\""), "{error}");
+
+    let error = revise_final(&bytes, ChangeMode::Track, vec![revise(Some(SOURCE_ID), None, vec![edit("the", "a")])]).unwrap_err();
+    assert!(error.contains("matched 2 times in this paragraph"), "{error}");
+
+    let error = revise_final(
+        &bytes,
+        ChangeMode::Track,
+        vec![revise(Some(SOURCE_ID), None, vec![edit("pay the rent", "remit"), edit("the rent within", "rent in")])],
+    )
+    .unwrap_err();
+    assert!(error.contains("overlapping"), "{error}");
+
+    let mut within = revise(None, Some("within thirty days"), vec![edit("thirty", "sixty")]);
+    if let EditOp::ReviseText { occurrence, .. } = &mut within {
+        *occurrence = Some(2);
+    }
+    let text = revise_final(&bytes, ChangeMode::Track, vec![within]).unwrap();
+    assert!(text.contains("pay the rent within thirty days"), "{text}");
+    assert!(text.contains("repair the roof within sixty days"), "{text}");
+}
+
+#[test]
+fn stale_selector_after_an_earlier_op_names_the_operations_that_changed_the_text() {
+    let bytes = document(CLAUSES);
+    let error = revise_final(
+        &bytes,
+        ChangeMode::Track,
+        vec![
+            EditOp::ReplaceText {
+                at: ParagraphAddress::id(SOURCE_ID),
+                select: "thirty days".into(),
+                with: "sixty days".into(),
+                occurrence: None,
+            },
+            EditOp::RevisionSettle {
+                target: RevisionTarget::All,
+                action: RevisionAction::Accept,
+            },
+            EditOp::FormatText {
+                at: ParagraphAddress::id(SOURCE_ID),
+                select: "thirty days".into(),
+                occurrence: None,
+                bold: Some(true),
+                italic: None,
+                underline: None,
+                strike: None,
+                superscript: None,
+                subscript: None,
+                color: None,
+                font_size: None,
+                clear: Vec::new(),
+            },
+        ],
+    )
+    .unwrap_err();
+    assert!(error.contains("matched nothing"), "{error}");
+    assert!(
+        error.contains("ops[0] replace_text, ops[1] revision_settle changed the text first"),
+        "{error}"
+    );
+}
+
+/// Element order the ECMA-376 sequences require, for edits that create
+/// structure (see scripts/ooxml-conformance.py for the schema gate).
+#[test]
+fn created_structure_follows_schema_sequence_order() {
+    let body = format!(
+        "<w:p w14:paraId=\"{SOURCE_ID}\"><w:pPr><w:rPr><w:b/></w:rPr></w:pPr><w:hyperlink r:id=\"rId9\"><w:r><w:t>linked</w:t></w:r></w:hyperlink><w:r><w:t> text</w:t></w:r></w:p>\
+         <w:p w14:paraId=\"{SECOND_ID}\"><w:r><w:t>next</w:t></w:r></w:p>\
+         <w:sectPr><w:pgSz w:w=\"12240\" w:h=\"15840\"/><w:docGrid w:linePitch=\"360\"/></w:sectPr>"
+    );
+    let bytes = package_with_body(&format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?><w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:w14=\"http://schemas.microsoft.com/office/word/2010/wordml\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"><w:body>{body}</w:body></w:document>"
+    ));
+    let mut deleted = plan(&bytes, vec![EditOp::DeleteParagraphs { at: vec![ParagraphAddress::id(SOURCE_ID)] }]);
+    deleted.change_mode = ChangeMode::Track;
+    let key = PreviewKey::new(&deleted);
+    let PlanResult::Committed { bytes: out, .. } = execute_plan(&bytes, &PlanRequest { plan: deleted, preview_key: Some(key) }) else {
+        panic!("delete did not commit");
+    };
+    let xml = document_xml(&out);
+    // The paragraph-mark deletion leads CT_ParaRPr; a hyperlink is never inside w:del.
+    assert!(xml.contains("<w:rPr><w:del "), "{xml}");
+    assert!(!xml.contains("<w:del w:id=\"1\" w:author=\"test-agent\" w:date=\"2000-01-01T00:00:00Z\"><w:hyperlink"), "{xml}");
+    assert!(xml.contains("<w:hyperlink r:id=\"rId9\"><w:del "), "{xml}");
+
+    let chrome = commit_plan(
+        &bytes,
+        vec![
+            EditOp::SetPageMargins { section: None, top: Some(Points::from_points(36.0).unwrap()), right: None, bottom: None, left: None, header: None, footer: None, gutter: None },
+            EditOp::SetHeader { section: None, kind: Some(ChromeKind::First), with: "<p>First</p>".into() },
+            EditOp::SetFooter { section: None, kind: None, with: "<p>Footer</p>".into() },
+            EditOp::SetEvenAndOddHeaders { even_and_odd: true },
+        ],
+    );
+    let xml = document_xml(&chrome);
+    let sect = &xml[xml.find("<w:sectPr").unwrap()..];
+    let at = |tag: &str| sect.find(tag).unwrap_or_else(|| panic!("{tag} missing: {sect}"));
+    assert!(at("<w:headerReference") < at("<w:pgSz"), "{sect}");
+    assert!(at("<w:footerReference") < at("<w:pgSz"), "{sect}");
+    assert!(at("<w:pgSz") < at("<w:pgMar") && at("<w:pgMar") < at("<w:titlePg"), "{sect}");
+    assert!(at("<w:titlePg") < at("<w:docGrid"), "{sect}");
+    for attr in ["w:top=\"720\"", "w:right=", "w:bottom=", "w:left=", "w:header=", "w:footer=", "w:gutter="] {
+        assert!(sect.contains(attr), "pgMar lacks {attr}: {sect}");
+    }
+
+    let formatted = commit_plan(
+        &bytes,
+        vec![EditOp::FormatParagraph {
+            at: ParagraphAddress::id(SOURCE_ID),
+            style: None,
+            alignment: Some("center".into()),
+            indent_left: None,
+            indent_right: None,
+            space_before: None,
+            space_after: Some(Points::from_points(6.0).unwrap()),
+            line_spacing: None,
+            clear: vec![],
+        }],
+    );
+    let xml = document_xml(&formatted);
+    let ppr = &xml[xml.find("<w:pPr>").unwrap()..xml.find("</w:pPr>").unwrap()];
+    let at = |tag: &str| ppr.find(tag).unwrap_or_else(|| panic!("{tag} missing: {ppr}"));
+    // CT_PPr: spacing, jc, rPr, pPrChange; the snapshot is CT_PPrBase (no rPr).
+    assert!(at("<w:spacing") < at("<w:jc") && at("<w:jc") < at("<w:rPr>"), "{ppr}");
+    assert!(at("<w:rPr>") < at("<w:pPrChange"), "{ppr}");
+    assert!(xml.contains("<w:pPrChange") && !xml.contains("<w:pPr><w:rPr><w:b/></w:rPr></w:pPr></w:pPrChange>"), "{xml}");
 }

@@ -11,6 +11,7 @@ export type EditOp =
   | { op: 'replace_equation'; at: ParagraphAddress; mathml: string; equation?: number; display?: boolean }
   | { op: 'delete_equation'; at: ParagraphAddress; equation?: number }
   | { op: 'replace_text'; at: ParagraphAddress; select: string; with: string; occurrence?: number }
+  | { op: 'revise_text'; at?: ParagraphAddress; within?: string; occurrence?: number; edits: [TextEdit, ...TextEdit[]] }
   | { op: 'replace_paragraph'; at: ParagraphAddress; with: string }
   | { op: 'format_text'; at: ParagraphAddress; select: string; occurrence?: number; bold?: boolean; italic?: boolean; underline?: boolean; strike?: boolean; superscript?: boolean; subscript?: boolean; color?: string; font_size?: Point; clear?: string[] }
   | { op: 'format_paragraph'; at: ParagraphAddress; style?: string; alignment?: 'left'|'center'|'right'|'justify'; indent_left?: Point; indent_right?: Point; space_before?: Point; space_after?: Point; line_spacing?: LineSpacing; clear?: string[] }
@@ -27,6 +28,7 @@ export type EditOp =
   | { op: 'comment_set_status'; comment_id: string; status: 'open'|'resolved' }
   | { op: 'comment_delete'; comment_id: string }
   | { op: 'revision_settle'; target: string; action: 'accept'|'reject' };
+export type TextEdit = { select: string; with: string; occurrence?: number; all?: boolean };
 export type CreateCommand = { kind: 'create'; paragraphs?: string[]; html?: string };
 export type ReadCommand = { kind: 'read'; read_kind?: 'document'|'document_ui'|'styles'|'comments'|'revisions'|'assets'; view?: 'markup'|'final'|'original' };
 export type FindCommand = { kind: 'find'; query: string; ignore_case?: boolean; view?: 'markup'|'final'|'original' };

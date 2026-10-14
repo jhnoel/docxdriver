@@ -269,6 +269,36 @@ class ReplaceText:
         return value
 
 @dataclass
+class ReviseText:
+    edits: list
+    at: str | None = None
+    occurrence: int | None = None
+    within: str | None = None
+    def to_dict(self):
+        value = {"op": "revise_text"}
+        if self.edits is not None:
+            value["edits"] = self.edits
+        if self.at is not None:
+            value["at"] = self.at
+        if self.occurrence is not None:
+            value["occurrence"] = self.occurrence
+        if self.within is not None:
+            value["within"] = self.within
+        return value
+
+@dataclass
+class RevisionSettle:
+    action: str
+    target: str
+    def to_dict(self):
+        value = {"op": "revision_settle"}
+        if self.action is not None:
+            value["action"] = self.action
+        if self.target is not None:
+            value["target"] = self.target
+        return value
+
+@dataclass
 class SetEvenAndOddHeaders:
     even_and_odd: bool
     def to_dict(self):
@@ -308,6 +338,29 @@ class SetHeader:
         return value
 
 # END GENERATED DATACLASSES
+
+@dataclass
+class Revise:
+    within: str | None = None
+    at: str | None = None
+    occurrence: int | None = None
+    edits: list = None
+    def replace(self, select: str, with_, occurrence: int | None = None, all: bool = False):
+        edit = {"select": select, "with": with_.to_dict() if hasattr(with_, "to_dict") else with_}
+        if occurrence is not None:
+            edit["occurrence"] = occurrence
+        if all:
+            edit["all"] = True
+        self.edits = (self.edits or []) + [edit]
+        return self
+    def to_dict(self):
+        return ReviseText(edits=self.edits or [], at=self.at, occurrence=self.occurrence, within=self.within).to_dict()
+
+def AcceptRevision(target: str) -> RevisionSettle:
+    return RevisionSettle(action="accept", target=str(target))
+
+def RejectRevision(target: str) -> RevisionSettle:
+    return RevisionSettle(action="reject", target=str(target))
 
 @dataclass
 class ReviewResult:
@@ -500,6 +553,20 @@ class ReplaceText:
     occurrence: int | None
     def to_dict(self) -> dict: ...
 
+class ReviseText:
+    def __init__(self, edits: list, at: str | None = None, occurrence: int | None = None, within: str | None = None): ...
+    edits: list
+    at: str | None
+    occurrence: int | None
+    within: str | None
+    def to_dict(self) -> dict: ...
+
+class RevisionSettle:
+    def __init__(self, action: str, target: str): ...
+    action: str
+    target: str
+    def to_dict(self) -> dict: ...
+
 class SetEvenAndOddHeaders:
     def __init__(self, even_and_odd: bool): ...
     even_and_odd: bool
@@ -520,6 +587,18 @@ class SetHeader:
     def to_dict(self) -> dict: ...
 
 # END GENERATED TYPE STUBS
+
+class Revise:
+    def __init__(self, within: str | None = None, at: str | None = None, occurrence: int | None = None, edits: list | None = None): ...
+    within: str | None
+    at: str | None
+    occurrence: int | None
+    edits: list | None
+    def replace(self, select: str, with_: str | Inline | Quote | Term, occurrence: int | None = None, all: bool = False) -> Revise: ...
+    def to_dict(self) -> dict: ...
+
+def AcceptRevision(target: str) -> RevisionSettle: ...
+def RejectRevision(target: str) -> RevisionSettle: ...
 
 class Plan:
     def __init__(self, author: str = "docxdriver", change_mode: str = "track", operations: list = []): ...
@@ -761,6 +840,30 @@ Replace an exact occurrence of \`select\` in the paragraph at \`at\` with \`with
 | \`with_\` (schema key \`with\`) | \`str | Inline | Quote | Term\` | yes |
 | \`occurrence\` | \`int | None\` | no |
 
+### ReviseText
+
+\`ReviseText(edits: list, at: str | None = None, occurrence: int | None = None, within: str | None = None)\`
+
+Several exact replacements inside one bounded scope; prefer the chainable \`Revise(within, at=None, occurrence=None).replace(select, with_, occurrence=None, all=False)\` builder. Scope: \`within\` (a phrase unique in paragraph \`at\`, or in the whole document when \`at\` is omitted; \`occurrence\` picks a repeated one), else the paragraph \`at\`, else the whole document. Each edit must match exactly once in the scope unless it sets \`occurrence\` or \`all\`. All edits resolve against the scope as it stands when the operation starts, must not overlap, and become separate minimal tracked changes.
+
+| Field | Type | Required |
+| --- | --- | --- |
+| \`edits\` | \`list\` | yes |
+| \`at\` | \`str | None\` | no |
+| \`occurrence\` | \`int | None\` | no |
+| \`within\` | \`str | None\` | no |
+
+### RevisionSettle
+
+\`RevisionSettle(action: str, target: str)\`
+
+Accept or reject tracked changes: \`target\` is a decimal revision id from \`docx_read(path, kind="revisions")\` or \`all\`; \`action\` is \`accept\` or \`reject\`. Prefer the \`AcceptRevision(target)\` / \`RejectRevision(target)\` shorthands. Settling \`all\` also settles tracked changes made by earlier operations in the same plan, and later selectors address the settled text.
+
+| Field | Type | Required |
+| --- | --- | --- |
+| \`action\` | \`str\` | yes |
+| \`target\` | \`str\` | yes |
+
 ### SetEvenAndOddHeaders
 
 \`SetEvenAndOddHeaders(even_and_odd: bool)\`
@@ -796,6 +899,30 @@ Set section header chrome from inner HTML (\`with\`); optional \`section\` (defa
 | \`section\` | \`int | None\` | no |
 
 # END GENERATED OPERATION DOCS
+
+## Scoped revisions
+
+\`Revise(within=None, at=None, occurrence=None)\` builds one \`ReviseText\`
+operation; chain \`.replace(select, with_, occurrence=None, all=False)\` for each
+change. The scope bounds every \`select\`, so short selectors stay unambiguous
+in long documents and each change becomes a minimal tracked change:
+
+    # unique phrase, no paragraph id needed:
+    Revise("the tenant shall pay rent within thirty days").replace("thirty", "sixty").replace("rent", "the rent")
+    Revise(at="2673269E").replace("Tenant", "Lessee", all=True)  # whole paragraph
+    Revise("Section 4(b)", at="2673269E", occurrence=2).replace("4(b)", "4(c)")
+    Revise().replace("Acme Corp.", "Acme, Inc.", all=True)       # whole document
+
+\`within\` must occur exactly once in its paragraph (\`at\`) or document unless
+\`occurrence\` picks one. Each \`select\` must occur exactly once in the scope
+unless it passes \`occurrence\` or \`all=True\`. All selectors resolve against the
+scope as it stands when the operation starts, so later replacements never see
+earlier ones; overlapping selections are rejected.
+
+\`AcceptRevision(target)\` and \`RejectRevision(target)\` build \`RevisionSettle\`
+operations; \`target\` is a revision id from \`docx_read(path, kind="revisions")\`
+or \`"all"\`. Put settle operations first: \`"all"\` also settles tracked changes
+made earlier in the same plan.
 
 Every operation dataclass has \`to_dict()\`, omitting optional fields whose
 value is \`None\`; \`Plan.to_dict()\` returns \`{"author": ..., "change_mode": ..., "ops": [...]}\`.

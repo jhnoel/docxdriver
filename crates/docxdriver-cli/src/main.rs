@@ -46,6 +46,20 @@ struct ReplaceTextArgs {
     occurrence: Option<u32>,
 }
 #[derive(Args, Debug, Clone)]
+struct ReviseTextArgs {
+    #[command(flatten)]
+    common: MutArgs,
+    #[arg(long)]
+    at: Option<String>,
+    #[arg(long)]
+    within: Option<String>,
+    #[arg(long)]
+    occurrence: Option<u32>,
+    /// JSON array of {"select", "with", "occurrence"?, "all"?} edits.
+    #[arg(long)]
+    edits: String,
+}
+#[derive(Args, Debug, Clone)]
 struct ReplaceParagraphArgs {
     #[command(flatten)]
     common: MutArgs,
@@ -266,6 +280,7 @@ enum Commands {
         output: Option<PathBuf>,
     },
     ReplaceText(ReplaceTextArgs),
+    ReviseText(ReviseTextArgs),
     ReplaceParagraph(ReplaceParagraphArgs),
     FormatText(FormatTextArgs),
     FormatParagraph(FormatParagraphArgs),

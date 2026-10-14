@@ -175,24 +175,31 @@ def resolve_plan(state, resolver):
         bindings[(binding['path'], binding['hash'])] = binding
         trusted.append({'kind': 'quote', 'text': resolved['text'], 'quote_id': resolved['quote_id']})
         return resolved
+    def resolve(node):
+        if not (isinstance(node, dict) and '$kind' in node):
+            return node
+        kind = node['$kind']
+        if kind == 'quote':
+            return quote(node)['text']
+        if kind == 'term':
+            text = render_term(node)['text']
+            trusted.append({'kind': 'term', 'text': text})
+            return text
+        if kind == 'inline':
+            text = compile_inline(node.get('parts'), 'error', quote)['text']
+            trusted.extend({'kind': 'term', 'text': render_term(part)['text']} for part in node['parts']
+                           if isinstance(part, dict) and part.get('$kind') == 'term')
+            return text
+        raise ValueError(f'unknown structured inline kind {kind}')
     ops = []
     for authored in state['plan']['ops']:
         operation = dict(authored) if isinstance(authored, dict) else authored
-        node = operation.get('with') if isinstance(operation, dict) else None
-        if isinstance(node, dict) and '$kind' in node:
-            kind = node['$kind']
-            if kind == 'quote':
-                operation['with'] = quote(node)['text']
-            elif kind == 'term':
-                text = render_term(node)['text']
-                trusted.append({'kind': 'term', 'text': text})
-                operation['with'] = text
-            elif kind == 'inline':
-                operation['with'] = compile_inline(node.get('parts'), 'error', quote)['text']
-                trusted.extend({'kind': 'term', 'text': render_term(part)['text']} for part in node['parts']
-                               if isinstance(part, dict) and part.get('$kind') == 'term')
-            else:
-                raise ValueError(f'unknown structured inline kind {kind}')
+        if isinstance(operation, dict):
+            if 'with' in operation:
+                operation['with'] = resolve(operation['with'])
+            if isinstance(operation.get('edits'), list):
+                operation['edits'] = [{**edit, 'with': resolve(edit['with'])} if isinstance(edit, dict) and 'with' in edit else edit
+                                      for edit in operation['edits']]
         ops.append(operation)
     return {**state, 'plan': {**state['plan'], 'ops': ops}}, list(bindings.values()), trusted
 

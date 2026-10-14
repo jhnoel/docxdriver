@@ -52,6 +52,15 @@ jobs:
         # DOCXDRIVER_E2E_SOFFICE=1 makes LibreOffice e2e required on this job.
         run: cargo test --workspace -- --skip conformance_corpus
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: ECMA-376 schema conformance of every edit operation
+        run: |
+          python -m pip install "lxml>=5,<7"
+          python scripts/ooxml-conformance.py
+
       - uses: actions/setup-node@v4
         with:
           node-version: "22"

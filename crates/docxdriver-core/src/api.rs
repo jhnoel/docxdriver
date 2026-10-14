@@ -342,6 +342,19 @@ pub enum EditOp {
         #[serde(default)]
         occurrence: Option<u32>,
     },
+    /// Several exact replacements inside one bounded scope: the paragraph
+    /// `at`, the unique `within` span (in `at`, or anywhere in the body when
+    /// `at` is omitted), or the whole body. Every edit resolves against the
+    /// scope as it stands when this operation starts.
+    ReviseText {
+        #[serde(default)]
+        at: Option<ParagraphAddress>,
+        #[serde(default)]
+        within: Option<String>,
+        #[serde(default)]
+        occurrence: Option<u32>,
+        edits: Vec<TextEdit>,
+    },
     ReplaceParagraph {
         at: ParagraphAddress,
         with: String,
@@ -472,6 +485,20 @@ pub enum EditOp {
         target: RevisionTarget,
         action: RevisionAction,
     },
+}
+
+/// One replacement inside a `revise_text` scope.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TextEdit {
+    pub select: String,
+    pub with: String,
+    /// 1-based match within the scope; omit when `select` is unique there.
+    #[serde(default)]
+    pub occurrence: Option<u32>,
+    /// Replace every match within the scope.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub all: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
@@ -970,6 +997,10 @@ fn validation_field(message: &str) -> Option<&'static str> {
         "mathml"
     } else if message.contains("equation must") {
         "equation"
+    } else if message.contains("edits") {
+        "edits"
+    } else if message.contains("within") {
+        "within"
     } else if message.contains("select") {
         "select"
     } else if message.contains("occurrence") {
@@ -1028,6 +1059,38 @@ fn normalize_op(op: &mut EditOp) -> Result<(), String> {
             }
             if occurrence == &Some(0) {
                 return Err("occurrence must be positive".into());
+            }
+        }
+        EditOp::ReviseText {
+            within,
+            occurrence,
+            edits,
+            ..
+        } => {
+            if within.as_deref() == Some("") {
+                return Err("within must be non-empty when given".into());
+            }
+            if occurrence == &Some(0) {
+                return Err("occurrence must be positive".into());
+            }
+            if occurrence.is_some() && within.is_none() {
+                return Err("occurrence picks a within match; it requires within".into());
+            }
+            if edits.is_empty() {
+                return Err("edits must list at least one replacement".into());
+            }
+            for (index, edit) in edits.iter().enumerate() {
+                if edit.select.is_empty() {
+                    return Err(format!("edits[{index}].select must be non-empty"));
+                }
+                if edit.occurrence == Some(0) {
+                    return Err(format!("edits[{index}].occurrence must be positive"));
+                }
+                if edit.all && edit.occurrence.is_some() {
+                    return Err(format!(
+                        "edits[{index}] sets both all and occurrence; choose one"
+                    ));
+                }
             }
         }
         EditOp::ReplaceParagraph { .. } => {}
@@ -1431,6 +1494,8 @@ fn fold_typed(
     }
     let mut aliases: BTreeMap<String, Value> = BTreeMap::new();
     let mut reports = Vec::new();
+    let mut affected_ids: Vec<Vec<String>> = Vec::new();
+    let plan_seed = crate::commands::plan_seed(plan);
     let mut allocated_ids = Vec::new();
     let ctx = crate::commands::ExecCtx {
         dry_run: !commit,
@@ -1459,33 +1524,27 @@ fn fold_typed(
             plan.change_mode,
             index,
             &seed,
-            plan,
+            &plan_seed,
             &ctx,
         );
-        let mut report_value = outcome.result_json();
-        report_value = crate::commands::attach_affected_markup(&state, report_value);
+        let report_value = outcome.result_json();
         let applied = outcome.status == crate::outcome::Status::Ok;
-        let affected = report_value
-            .get("markup")
-            .and_then(Value::as_str)
-            .map(|markup| {
-                let para_id = report_value
-                    .get("result")
-                    .and_then(|r| r.get("paraId"))
-                    .and_then(Value::as_str)
-                    .unwrap_or("");
-                vec![serde_json::json!({"para_id": para_id, "markup": markup})]
-            })
-            .unwrap_or_default();
+        affected_ids.push(crate::commands::affected_para_ids(&report_value));
         reports.push(OperationReport {
             index,
             op: name,
             outcome: if applied { "applied" } else { "rejected" }.into(),
             summary: outcome.summary.clone(),
-            affected,
+            affected: Vec::new(),
             context_truncated: false,
         });
         if !applied {
+            if let Some(note) = explain_selector_drift(input, plan, &resolved, index, &affected_ids) {
+                if let Some(report) = reports.last_mut() {
+                    report.summary.push_str(&note);
+                }
+            }
+            attach_affected(&state, &mut reports, &affected_ids);
             let report = PlanReport {
                 completed: index,
                 stopped_at: Some(index),
@@ -1494,15 +1553,12 @@ fn fold_typed(
                 allocated_ids: allocated_ids.clone(),
                 aliases: aliases.clone().into_iter().collect(),
             };
+            let message = report.ops[index].summary.clone();
             return (
                 report.clone(),
                 None,
                 Some((
-                    diag(
-                        "operation_rejected",
-                        outcome.summary,
-                        Some(format!("ops[{index}]")),
-                    ),
+                    diag("operation_rejected", message, Some(format!("ops[{index}]"))),
                     report,
                 )),
             );
@@ -1512,6 +1568,7 @@ fn fold_typed(
         } = op
         {
             if aliases.contains_key(alias) {
+                attach_affected(&state, &mut reports, &affected_ids);
                 let report = PlanReport {
                     completed: index,
                     stopped_at: Some(index),
@@ -1544,6 +1601,7 @@ fn fold_typed(
             }
         }
     }
+    attach_affected(&state, &mut reports, &affected_ids);
     let report = PlanReport {
         completed: plan.ops.len(),
         stopped_at: None,
@@ -1558,6 +1616,89 @@ fn fold_typed(
         &ctx,
     );
     (report, out.bytes, None)
+}
+/// When a selector matched nothing but matches the same paragraph as it was
+/// before the plan, name the earlier operations that changed that text:
+/// selectors address the text left by preceding operations, not the read.
+fn explain_selector_drift(
+    input: &[u8],
+    plan: &Plan,
+    op: &EditOp,
+    index: usize,
+    affected_ids: &[Vec<String>],
+) -> Option<String> {
+    let (at, selects): (&ParagraphAddress, Vec<&str>) = match op {
+        EditOp::ReplaceText { at, select, .. } | EditOp::FormatText { at, select, .. } => {
+            (at, vec![select.as_str()])
+        }
+        EditOp::CommentAdd {
+            at,
+            select: Some(select),
+            ..
+        } => (at, vec![select.as_str()]),
+        EditOp::ReviseText {
+            at: Some(at),
+            within,
+            edits,
+            ..
+        } => (
+            at,
+            within
+                .iter()
+                .map(String::as_str)
+                .chain(edits.iter().map(|e| e.select.as_str()))
+                .collect(),
+        ),
+        _ => return None,
+    };
+    if index == 0 {
+        return None;
+    }
+    let ParagraphAddress::Id(id) = at else {
+        return None;
+    };
+    let id = id.to_uppercase();
+    let base = crate::commands::base_visible_text(input, &id)?;
+    if !selects.iter().all(|select| base.contains(select)) {
+        return None;
+    }
+    let earlier: Vec<String> = plan.ops[..index]
+        .iter()
+        .enumerate()
+        .filter(|(i, earlier)| {
+            matches!(earlier, EditOp::RevisionSettle { .. })
+                || affected_ids[*i].iter().any(|touched| touched.eq_ignore_ascii_case(&id))
+        })
+        .map(|(i, earlier)| format!("ops[{i}] {}", operation_name(earlier)))
+        .collect();
+    if earlier.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "; it matches this paragraph as it was before the plan, but {} changed the text first — selectors address the text left by preceding operations (combine edits to one paragraph in a single revise_text, or settle revisions in a separate plan and re-read)",
+        earlier.join(", ")
+    ))
+}
+
+/// Fill each operation report with the rendered markup of the paragraphs it
+/// affected, as they stand in `state`, from one render of the document.
+fn attach_affected(
+    state: &crate::commands::WorkState,
+    reports: &mut [OperationReport],
+    affected_ids: &[Vec<String>],
+) {
+    let wanted = affected_ids.iter().flatten().cloned().collect();
+    let markup = crate::commands::affected_markup(state, &wanted);
+    for (report, ids) in reports.iter_mut().zip(affected_ids) {
+        report.affected = ids
+            .iter()
+            .filter_map(|id| {
+                markup
+                    .get(id)
+                    .map(|m| serde_json::json!({"para_id": id, "markup": m}))
+            })
+            .collect();
+    }
 }
 fn empty_report(_plan: &Plan) -> PlanReport {
     PlanReport {
@@ -1574,6 +1715,7 @@ fn operation_name(op: &EditOp) -> &'static str {
         EditOp::ReplaceEquation { .. } => "replace_equation",
         EditOp::DeleteEquation { .. } => "delete_equation",
         EditOp::ReplaceText { .. } => "replace_text",
+        EditOp::ReviseText { .. } => "revise_text",
         EditOp::ReplaceParagraph { .. } => "replace_paragraph",
         EditOp::FormatText { .. } => "format_text",
         EditOp::FormatParagraph { .. } => "format_paragraph",
@@ -1618,6 +1760,7 @@ fn resolve_typed_aliases(
         | EditOp::FormatText { at, .. }
         | EditOp::FormatParagraph { at, .. }
         | EditOp::CommentAdd { at, .. } => resolve(at)?,
+        EditOp::ReviseText { at: Some(at), .. } => resolve(at)?,
         EditOp::InsertParagraph { at, .. } => {
             if let InsertAnchor::Paragraph(addr) = at {
                 resolve(addr)?;

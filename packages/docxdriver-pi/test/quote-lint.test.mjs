@@ -42,3 +42,17 @@ test('Inline automatically lints text and renders only structured quote marks', 
     /unverified quotation mark|terminal punctuation/,
   );
 });
+
+test('structured values inside revise_text edits resolve like top-level with', async () => {
+  const { resolveStructuredPlan } = await import('../dist/structured-quote-plan.js');
+  const state = { plan: { ops: [{ op: 'revise_text', within: 'the word', edits: [
+    { select: 'word', with: { $kind: 'term', text: 'word' } },
+    { select: 'the', with: 'a' },
+  ] }] } };
+  const resolved = await resolveStructuredPlan(state, async () => { throw new Error('no quotes expected'); });
+  assert.deepEqual(resolved.state.plan.ops[0].edits, [
+    { select: 'word', with: '“word”' },
+    { select: 'the', with: 'a' },
+  ]);
+  assert.deepEqual(resolved.trustedRenderings, [{ kind: 'term', text: '“word”' }]);
+});

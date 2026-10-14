@@ -32,6 +32,19 @@ fn ensure_pg_mar(sect: NodeId, xml: &mut DocxXml) -> NodeId {
         return node;
     }
     let node = xml.doc.create_element("w:pgMar");
+    // CT_PageMar requires all seven attributes; start from Word's defaults
+    // (1in margins, 0.5in header/footer, no gutter) before applying values.
+    for (attr, twips) in [
+        ("top", 1440),
+        ("right", 1440),
+        ("bottom", 1440),
+        ("left", 1440),
+        ("header", 720),
+        ("footer", 720),
+        ("gutter", 0),
+    ] {
+        set_twips_attr(xml, node, attr, twips);
+    }
     if let Some(successor) = xml.doc.children(sect).find(|&child| {
         [
             "pgBorders",
@@ -42,6 +55,7 @@ fn ensure_pg_mar(sect: NodeId, xml: &mut DocxXml) -> NodeId {
             "formProtection",
             "vAlign",
             "noEndnote",
+            "titlePg",
             "textDirection",
             "bidi",
             "rtlGutter",
@@ -125,49 +139,62 @@ pub(crate) fn ensure_ppr(xml: &mut DocxXml, paragraph: NodeId) -> NodeId {
     ppr
 }
 
+/// `CT_PPr` child sequence (`CT_PPrBase` followed by `rPr`, `sectPr`,
+/// `pPrChange`).
+const PPR_SEQUENCE: &[&str] = &[
+    "pStyle",
+    "keepNext",
+    "keepLines",
+    "pageBreakBefore",
+    "framePr",
+    "widowControl",
+    "numPr",
+    "suppressLineNumbers",
+    "pBdr",
+    "shd",
+    "tabs",
+    "suppressAutoHyphens",
+    "kinsoku",
+    "wordWrap",
+    "overflowPunct",
+    "topLinePunct",
+    "autoSpaceDE",
+    "autoSpaceDN",
+    "bidi",
+    "adjustRightInd",
+    "snapToGrid",
+    "spacing",
+    "ind",
+    "contextualSpacing",
+    "mirrorIndents",
+    "suppressOverlap",
+    "jc",
+    "textDirection",
+    "textAlignment",
+    "textboxTightWrap",
+    "outlineLvl",
+    "divId",
+    "cnfStyle",
+    "rPr",
+    "sectPr",
+    "pPrChange",
+];
+
+/// Return the `w:pPr` child `local`, creating it at its schema sequence
+/// position.
 pub(crate) fn ensure_ppr_child(xml: &mut DocxXml, ppr: NodeId, local: &str) -> NodeId {
     if let Some(node) = xml.child_w(ppr, local) {
         return node;
     }
-    let successors: &[&str] = match local {
-        "pStyle" => &["*"],
-        "spacing" => &[
-            "ind",
-            "contextualSpacing",
-            "mirrorIndents",
-            "suppressOverlap",
-            "jc",
-            "textDirection",
-            "textAlignment",
-            "textboxTightWrap",
-            "outlineLvl",
-        ],
-        "ind" => &[
-            "contextualSpacing",
-            "mirrorIndents",
-            "suppressOverlap",
-            "jc",
-            "textDirection",
-            "textAlignment",
-            "textboxTightWrap",
-            "outlineLvl",
-        ],
-        "jc" => &[
-            "textDirection",
-            "textAlignment",
-            "textboxTightWrap",
-            "outlineLvl",
-        ],
-        _ => &[],
-    };
     let node = xml.doc.create_element(&format!("w:{local}"));
-    let successor = if successors.contains(&"*") {
-        xml.doc.children(ppr).next()
-    } else {
-        xml.doc
-            .children(ppr)
-            .find(|&child| successors.iter().any(|name| xml.is_w(child, name)))
-    };
+    let successors = PPR_SEQUENCE
+        .iter()
+        .position(|name| *name == local)
+        .map_or(&[][..], |index| &PPR_SEQUENCE[index + 1..]);
+    let successor = xml
+        .doc
+        .children(ppr)
+        .find(|&child| successors.iter().any(|name| xml.is_w(child, name)));
     if let Some(next) = successor {
         xml.doc.insert_before(next, node);
     } else {

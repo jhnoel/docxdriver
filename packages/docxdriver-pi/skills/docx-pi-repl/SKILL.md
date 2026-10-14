@@ -76,8 +76,27 @@ the deletion explicitly.
 In HTML, use native `<math display="inline">` or `<math display="block">` with
 presentation MathML operands. No LaTeX is required.
 
-Text/paragraph: `ReplaceText`, `ReplaceParagraph`, `FormatText`,
+Text/paragraph: `Revise`, `ReplaceText`, `ReplaceParagraph`, `FormatText`,
 `FormatParagraph`, `InsertParagraph`, `DeleteParagraphs`.
+
+Precise wording changes: prefer `Revise`. Change only the words that change,
+and bound short selectors with a scope instead of counting occurrences or
+rewriting whole sentences:
+
+```python
+Revise("repair the roof within thirty days").replace("thirty", "sixty").replace("roof", "roof and gutters")
+Revise(at="2673269E").replace("Tenant", "Lessee", all=True)
+Revise("Section 4(b)", at="2673269E", occurrence=2).replace("4(b)", "4(c)")
+Revise().replace("Acme Corp.", "Acme, Inc.", all=True)   # whole document
+```
+
+- Scope: `within` must be unique in paragraph `at`, or in the whole document
+  when `at` is omitted (no id lookup needed); `occurrence` picks a repeated
+  one. Without `within`, the scope is paragraph `at`, else the document.
+- Each `.replace(select, with_)` must match exactly once in the scope unless
+  it passes `occurrence=` or `all=True`. Selections may not overlap.
+- Every selector in one `Revise` sees the scope as it was before that
+  `Revise`; put all changes to one passage in one `Revise`.
 
 Header/footer: `SetHeader`, `SetFooter`, `ClearHeader`, `ClearFooter`
 (`section` default 1, `kind` `default`/`even`/`first`).
@@ -92,6 +111,19 @@ Comments:
   `CommentDelete(comment_id)` — `comment_id` is a decimal string. After add, the
   review `summary` includes the new id (`comment {id} anchored…`). Status is
   `open` or `resolved`.
+
+Tracked changes:
+
+- `AcceptRevision(target)` / `RejectRevision(target)` — `target` is a revision
+  id from `docx_read(path, kind="revisions")` or `"all"`. They build
+  `RevisionSettle(action, target)`.
+- Operations apply in order, and every selector matches the visible text
+  *as left by the preceding operations*. Settling changes that text:
+  rejecting restores deleted text and removes inserted text. Prefer a
+  settle-only plan: review, commit, re-read, then author edits against the
+  fresh read. A stale selector's error names the earlier operations that
+  changed its paragraph. `"all"` also settles tracked edits made earlier in the
+  same plan, so never put it after your own edits.
 
 `InsertParagraph` also accepts `table:N` anchors from body-level
 `<table data-docx-table="N">` markup and may set `as_="$name"` for later ops.

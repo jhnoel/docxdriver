@@ -29,11 +29,16 @@ plan or use a stale key.
 
 Operations use the generated schema and serialized Rust names (`op`, snake_case
 fields). Consult `docx_help` for the generated reference. Typical operations
-are `replace_text`, `replace_paragraph`, `format_text`, `format_paragraph`,
+are `revise_text`, `replace_text`, `replace_paragraph`, `format_text`, `format_paragraph`,
 `insert_paragraph`, `delete_paragraphs`, `set_header`, `set_footer`,
 `clear_header`, `clear_footer`, `set_even_and_odd_headers`, `comment_add`,
 `comment_reply`, `comment_set_status`, `comment_delete`, `set_page_margins`,
 and `revision_settle`.
+
+Prefer `revise_text` for precise wording changes: `within` names a phrase
+unique in paragraph `at` (or in the whole document when `at` is omitted), and
+`edits` lists `{select, with, occurrence?, all?}` replacements that resolve
+against that scope as it stood when the operation started.
 
 Equation operations are `replace_equation` and `delete_equation`. First read
 `docx_read(path).equations`; each entry gives `at`, a paragraph address, and a

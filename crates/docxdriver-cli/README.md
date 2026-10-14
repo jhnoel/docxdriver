@@ -9,6 +9,7 @@ only commands are `create`, `read`, `find`, `plan`, and one command for each
 typed edit operation:
 
 - `replace-text`
+- `revise-text`
 - `replace-paragraph`
 - `format-text`
 - `format-paragraph`
@@ -72,6 +73,9 @@ are eight uppercase hexadecimal characters. Comment and revision IDs are
 decimal strings. `insert-paragraph` uses exactly one of `--before` or `--after`
 (accepting a paragraph id, alias, or `table:N` body-level table anchor);
 `revision-settle` uses `--target ID|all` and `--action accept|reject`.
+`revise-text` takes optional `--at` and `--within` (plus `--occurrence` for a
+repeated `within`) and `--edits` as a JSON array of
+`{"select", "with", "occurrence"?, "all"?}` replacements.
 
 ## Plans
 

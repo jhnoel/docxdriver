@@ -113,6 +113,58 @@ test('v1: review validates, returns a compact key and edit neighborhoods, then c
   await shutdown();
 });
 
+test('v1: AcceptRevision and RejectRevision settle tracked changes through the typed surface', async () => {
+  const { tools, shutdown } = await makeExtension();
+  const cwd = join(baseCwd, 'settle'); await mkdir(cwd, { recursive: true });
+  const call = (code) => tools.get('python').execute('id', { code }, undefined, undefined, { cwd });
+  const firstId = await createFixture(call, cwd);
+  await reviewAndCommit(call, firstId);
+  const reviewed = await call([
+    'assert AcceptRevision("all").to_dict() == {"op": "revision_settle", "action": "accept", "target": "all"}',
+    'plan = Plan(author="Pi", operations=[RejectRevision("all")])',
+    'review = docx_review("contract.docx", plan)',
+    'commit_key = ""',
+    'if review is not None:',
+    '    commit_key = review.commit_key',
+    'print(commit_key if commit_key else "blocked")',
+  ].join('\n'));
+  assert.match(reviewed.content[0].text, COMMIT_KEY_RE);
+  await call('docx_commit(commit_key)');
+  const markup = await renderMarkup(join(cwd, 'contract.docx'));
+  assert.match(markup, /thirty days/);
+  assert.ok(!markup.includes('sixty days'));
+  assert.ok(!/<(ins|del)\b/.test(markup), markup);
+  await shutdown();
+});
+
+test('v1: Revise scopes several replacements to a unique phrase without a paragraph id', async () => {
+  const { tools, shutdown } = await makeExtension();
+  const cwd = join(baseCwd, 'revise'); await mkdir(cwd, { recursive: true });
+  const call = (code) => tools.get('python').execute('id', { code }, undefined, undefined, { cwd });
+  await call('docx_create("contract.docx", "<p>The tenant pays the rent within thirty days.</p><p>The landlord repairs the roof within thirty days.</p>")');
+  const reviewed = await call([
+    'plan = Plan(author="Pi", operations=[',
+    '    Revise("repairs the roof within thirty days").replace("thirty", "sixty").replace("the roof", "the roof and gutters"),',
+    '])',
+    'review = docx_review("contract.docx", plan)',
+    'commit_key = ""',
+    'if review is not None:',
+    '    commit_key = review.commit_key',
+    'print(commit_key if commit_key else "blocked")',
+  ].join('\n'));
+  assert.match(reviewed.content[0].text, COMMIT_KEY_RE, reviewed.content[0].text);
+  await call('docx_commit(commit_key)');
+  const finalView = await renderMarkup(join(cwd, 'contract.docx'), 'final');
+  assert.match(finalView, /repairs the roof and gutters within sixty days/);
+  assert.match(finalView, /pays the rent within thirty days/);
+  const ambiguous = await call([
+    'plan2 = Plan(operations=[Revise("the r").replace("the", "a")])',
+    'print(docx_review("contract.docx", plan2))',
+  ].join('\n'));
+  assert.match(ambiguous.content[0].text, /within "the r" matched 2 times in the document \(paragraphs [0-9A-F]{8}, [0-9A-F]{8}\)/);
+  await shutdown();
+});
+
 test('v1: structured Quote, Term, and Inline flow directly through plan review and commit', async () => {
   const { tools, shutdown } = await makeExtension({ hostOptions: { quoteAudit: { enabled: true } } });
   const cwd = join(baseCwd, 'structured-quotes'); await mkdir(cwd, { recursive: true });

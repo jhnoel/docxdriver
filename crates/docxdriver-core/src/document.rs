@@ -42,12 +42,24 @@ impl View {
 
 pub struct DocxXml {
     pub doc: Document,
+    /// Next revision id to hand out; 0 until the first allocation scans the
+    /// part. Allocation is monotonic from there, so a plan pays for one scan
+    /// rather than one per tracked change.
+    next_revision: std::sync::atomic::AtomicU64,
 }
 
 /// A projected paragraph: 1-based index plus its node.
 pub struct Paragraph {
     pub index: usize,
     pub node: NodeId,
+}
+
+/// `name` is `local` or `prefix:local`, without allocating the suffix.
+fn has_local_name(name: &str, local: &str) -> bool {
+    name == local
+        || name
+            .strip_suffix(local)
+            .is_some_and(|prefix| prefix.ends_with(':'))
 }
 
 /// Whether an element declares `xmlns:{prefix}` (either storage form).
@@ -166,7 +178,10 @@ impl DocxXml {
     pub fn parse(bytes: &[u8]) -> Result<Self, String> {
         let doc = Document::parse_bytes(bytes)
             .map_err(|error| format!("document.xml parse failed: {error}"))?;
-        Ok(DocxXml { doc })
+        Ok(DocxXml {
+            doc,
+            next_revision: std::sync::atomic::AtomicU64::new(0),
+        })
     }
 
     pub fn serialize(&self) -> Vec<u8> {
@@ -394,11 +409,10 @@ impl DocxXml {
     /// Attribute by local name, accepting parsed ("id" + prefix) and created
     /// qualified ("w:id", "w15:paraId", …) storage forms.
     pub fn attr(&self, node: NodeId, local: &str) -> Option<&str> {
-        let suffix = format!(":{local}");
         self.doc
             .attributes(node)
             .iter()
-            .find(|a| a.name == local || a.name.ends_with(&suffix))
+            .find(|a| has_local_name(&a.name, local))
             .map(|a| a.value.as_str())
     }
 
@@ -409,7 +423,7 @@ impl DocxXml {
             return false;
         }
         match self.doc.node_name(node) {
-            Some(name) => name == local || name.ends_with(&format!(":{local}")),
+            Some(name) => has_local_name(name, local),
             None => false,
         }
     }
@@ -548,11 +562,19 @@ impl DocxXml {
                 ppr
             }
         };
+        // CT_PPr: the paragraph-mark rPr precedes sectPr and pPrChange.
         let rpr = match self.child_w(ppr, "rPr") {
             Some(rpr) => rpr,
             None => {
                 let rpr = self.doc.create_element("w:rPr");
-                self.doc.append_child(ppr, rpr);
+                let successor = self
+                    .doc
+                    .children(ppr)
+                    .find(|&child| self.is_w(child, "sectPr") || self.is_w(child, "pPrChange"));
+                match successor {
+                    Some(next) => self.doc.insert_before(next, rpr),
+                    None => self.doc.append_child(ppr, rpr),
+                }
                 rpr
             }
         };
@@ -560,7 +582,19 @@ impl DocxXml {
         self.doc.set_attribute(marker, "w:id", &id.to_string());
         self.doc.set_attribute(marker, "w:author", author);
         self.doc.set_attribute(marker, "w:date", date);
-        self.doc.append_child(rpr, marker);
+        // CT_ParaRPr: ins, del, moveFrom, moveTo come first, in that order.
+        const MARKS: &[&str] = &["ins", "del", "moveFrom", "moveTo"];
+        let rank = MARKS.iter().position(|m| *m == kind).unwrap_or(MARKS.len());
+        let successor = self.doc.children(rpr).find(|&child| {
+            MARKS
+                .iter()
+                .position(|m| self.is_w(child, m))
+                .is_none_or(|child_rank| child_rank > rank)
+        });
+        match successor {
+            Some(next) => self.doc.insert_before(next, marker),
+            None => self.doc.append_child(rpr, marker),
+        }
         marker
     }
 
@@ -628,9 +662,18 @@ impl DocxXml {
     /// The next unused revision id in this part. Every element family that
     /// carries a revision w:id shares one numeric sequence (reference-engine
     /// parity), so the allocation must clear all of them, not just w:ins/w:del.
-    /// Scans the whole part (body or hdr/ftr root) so header/footer parts work.
+    /// The first call scans the whole part (body or hdr/ftr root) so
+    /// header/footer parts work; later calls continue the sequence without
+    /// rescanning. Every call returns a fresh id, so ids requested together
+    /// before insertion never collide.
     pub fn next_revision_id(&self) -> u64 {
-        self.max_revision_id().map(|m| m + 1).unwrap_or(1)
+        use std::sync::atomic::Ordering;
+        let mut next = self.next_revision.load(Ordering::Relaxed);
+        if next == 0 {
+            next = self.max_revision_id().map(|m| m + 1).unwrap_or(1);
+        }
+        self.next_revision.store(next + 1, Ordering::Relaxed);
+        next
     }
 
     /// Highest revision id present in this part, if any.
