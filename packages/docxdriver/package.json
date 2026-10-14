@@ -1,6 +1,6 @@
 {
   "name": "docxdriver",
-  "version": "0.2.6",
+  "version": "0.3.0",
   "description": "Typed source-bound DOCX Request and Plan engine compiled from Rust to WebAssembly",
   "license": "MIT",
   "repository": {

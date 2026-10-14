@@ -1,6 +1,6 @@
 {
   "name": "docxdriver-pi",
-  "version": "0.1.5",
+  "version": "0.2.0",
   "description": "Pi coding-agent extension: path-based DOCX tools over the docxdriver WASM engine",
   "license": "MIT",
   "type": "module",
