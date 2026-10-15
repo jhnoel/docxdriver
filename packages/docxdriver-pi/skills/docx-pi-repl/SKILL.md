@@ -79,6 +79,13 @@ presentation MathML operands. No LaTeX is required.
 Text/paragraph: `Revise`, `ReplaceText`, `ReplaceParagraph`, `FormatText`,
 `FormatParagraph`, `InsertParagraph`, `DeleteParagraphs`.
 
+For formatting, omitted properties preserve source settings. Boolean `False`
+explicitly turns the property off; `clear` removes its direct setting and
+inherits styles/defaults. Clear wins when also set. Superscript/subscript share
+one vertical-alignment property. Formatting is tracked even in direct plans.
+HTML table/row/cell styling returns a diagnostic; put supported paragraph/span
+styles inside cells. Containers without a style mapping also reject `style`.
+
 Precise wording changes: prefer `Revise`. Change only the words that change,
 and bound short selectors with a scope instead of counting occurrences or
 rewriting whole sentences:

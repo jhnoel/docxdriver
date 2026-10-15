@@ -18,7 +18,8 @@
       "default": "./dist/index.js"
     },
     "./docxdriver_bg.wasm": "./wasm/docxdriver_bg.wasm",
-    "./schema/typed-request.schema.json": "./schema/typed-request.schema.json"
+    "./schema/typed-request.schema.json": "./schema/typed-request.schema.json",
+    "./schema/formatting-capabilities.json": "./schema/formatting-capabilities.json"
   },
   "files": [
     "dist",

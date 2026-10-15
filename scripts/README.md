@@ -6,3 +6,8 @@
 | `build-wasm.sh` | Builds the WASM runtime from Rust, remaps build paths, and generates ignored runtime files for both npm packages. |
 | `audit-public-content.py` | Checks publishable files, including DOCX members, for personal paths, source-system metadata, and accidentally tracked compiled outputs. Run alongside a credential scanner before publication. |
 | `ooxml-conformance.py` | Applies every typed edit operation through a real plan to a synthetic document, the repository fixtures, and optionally `--corpus corpus/lo`, then validates each result against the ECMA-376 Transitional and OPC schemas in `ooxml-schemas/` (requires `lxml`). Fails when an operation introduces a schema error kind its source did not have, when a created document is invalid, or when any schema operation is never applied. Runs in CI. |
+
+For a full corpus run, pass `--jobs 4` to check independent documents in
+parallel. Each worker has its own temporary outputs and schema validator;
+all operation coverage and failures are aggregated. The default remains one
+worker. Parallel runs report progress every 100 documents.

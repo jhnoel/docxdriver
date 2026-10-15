@@ -279,25 +279,21 @@ fn disabled_properties(fmt: Fmt) -> Vec<(&'static str, &'static str)> {
 }
 pub fn append_extra_rpr(xml: &mut DocxXml, rpr: NodeId, fmt: Fmt) {
     for (name, value) in disabled_properties(fmt) {
-        let n = xml.doc.create_element(&format!("w:{name}"));
+        let n = crate::commands::layout::ensure_rpr_child(xml, rpr, name);
         xml.doc.set_attribute(n, "w:val", value);
-        xml.doc.append_child(rpr, n);
     }
     if let Some(color) = fmt.color {
-        let n = xml.doc.create_element("w:color");
+        let n = crate::commands::layout::ensure_rpr_child(xml, rpr, "color");
         xml.doc.set_attribute(n, "w:val", &format!("{color:06X}"));
-        xml.doc.append_child(rpr, n);
     }
     if let Some(size) = fmt.font_size {
-        let n = xml.doc.create_element("w:sz");
+        let n = crate::commands::layout::ensure_rpr_child(xml, rpr, "sz");
         xml.doc.set_attribute(n, "w:val", &size.to_string());
-        xml.doc.append_child(rpr, n);
     }
     if let Some(font) = fmt.font_family {
-        let n = xml.doc.create_element("w:rFonts");
+        let n = crate::commands::layout::ensure_rpr_child(xml, rpr, "rFonts");
         xml.doc.set_attribute(n, "w:ascii", font.as_str());
         xml.doc.set_attribute(n, "w:hAnsi", font.as_str());
-        xml.doc.append_child(rpr, n);
     }
 }
 
@@ -339,7 +335,8 @@ pub fn paragraph_properties(css: &str) -> Result<String, String> {
             }
             // Run properties are inherited by the paragraph's content.
             "color" | "font-size" | "font-family" | "font-weight" | "font-style"
-            | "text-decoration" | "vertical-align" | "white-space" => {}
+            | "text-decoration" | "vertical-align" => {}
+            "white-space" if matches!(value.as_str(), "pre-wrap" | "normal" | "pre") => {}
             _ => return Err(format!("unsupported paragraph CSS property {name}")),
         }
     }
@@ -502,7 +499,7 @@ fn collect_css(x: &DocxXml, p: NodeId, run: bool, map: &mut BTreeMap<String, Str
                 "b" => {
                     map.insert(
                         "font-weight".into(),
-                        if matches!(val, "0" | "false") {
+                        if matches!(val, "0" | "false" | "off") {
                             "normal"
                         } else {
                             "bold"
@@ -513,7 +510,7 @@ fn collect_css(x: &DocxXml, p: NodeId, run: bool, map: &mut BTreeMap<String, Str
                 "i" => {
                     map.insert(
                         "font-style".into(),
-                        if matches!(val, "0" | "false") {
+                        if matches!(val, "0" | "false" | "off") {
                             "normal"
                         } else {
                             "italic"
@@ -532,7 +529,7 @@ fn collect_css(x: &DocxXml, p: NodeId, run: bool, map: &mut BTreeMap<String, Str
                         .split_whitespace()
                         .filter(|v| *v != token && *v != "none")
                         .collect();
-                    if !matches!(val, "0" | "none" | "false") {
+                    if !matches!(val, "0" | "none" | "false" | "off") {
                         decoration.push(token);
                     }
                     map.insert(

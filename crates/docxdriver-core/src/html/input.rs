@@ -82,6 +82,54 @@ impl Lower<'_> {
         out
     }
     fn check_attrs(&self, node: NodeId) -> Result<(), String> {
+        let name = self.doc.node_name(node).unwrap_or("");
+        // These containers have no formatting lowering. Reject authored
+        // presentation rather than quietly dropping it; data-docx metadata
+        // and structural span attributes remain accepted for projected HTML.
+        if matches!(
+            name,
+            "table" | "tr" | "td" | "th" | "tbody" | "thead" | "tfoot"
+        ) {
+            for a in self.doc.attributes(node) {
+                if matches!(
+                    a.name.as_str(),
+                    "style"
+                        | "class"
+                        | "width"
+                        | "height"
+                        | "border"
+                        | "cellpadding"
+                        | "cellspacing"
+                        | "align"
+                        | "valign"
+                        | "bgcolor"
+                        | "rules"
+                        | "frame"
+                        | "background"
+                ) {
+                    return Err(format!(
+                        "unsupported table formatting attribute {} on <{name}>",
+                        a.name
+                    ));
+                }
+            }
+        }
+        let consumes_style = matches!(name, "p" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6")
+            || (matches!(
+                name,
+                "span" | "strong" | "b" | "em" | "i" | "u" | "s" | "strike" | "sup" | "sub"
+            ) && [
+                "data-docx-field",
+                "data-docx-comment-start",
+                "data-docx-comment-end",
+                "data-docx-format-change",
+                "pending",
+            ]
+            .iter()
+            .all(|attr| self.attr(node, attr).is_none()));
+        if self.attr(node, "style").is_some() && !consumes_style {
+            return Err(format!("unsupported HTML style attribute on <{name}>; apply formatting to paragraphs or inline spans"));
+        }
         for a in self.doc.attributes(node) {
             if a.name.starts_with("on") || matches!(a.name.as_str(), "srcdoc" | "srcset") {
                 return Err(format!("unsupported HTML attribute {}", a.name));

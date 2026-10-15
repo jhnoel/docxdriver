@@ -21,6 +21,7 @@ Requires lxml.
 """
 import argparse
 import collections
+from concurrent.futures import ProcessPoolExecutor
 import hashlib
 import html
 import io
@@ -57,6 +58,43 @@ SYNTHETIC_HTML = (
     '<p>The area is <math display="inline"><msup><mi>r</mi><mn>2</mn></msup></math> times pi in each region.</p>'
     '<p>Either party may terminate this agreement with written notice.</p>'
 )
+
+
+def rich_formatting_document(source):
+    """A valid property bag that exposes destructive normalization/order bugs."""
+    w = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+    ppr = f'''<w:pPr xmlns:w="{w}"><w:keepNext/><w:keepLines/>
+        <w:widowControl w:val="0"/><w:shd w:val="clear" w:fill="EEEEEE"/>
+        <w:tabs><w:tab w:val="right" w:leader="dot" w:pos="1440"/></w:tabs>
+        <w:spacing w:before="120" w:after="240" w:line="276" w:lineRule="auto"/>
+        <w:ind w:left="360" w:right="180" w:hanging="180"/>
+        <w:jc w:val="left"/><w:rPr><w:lang w:val="en-US"/></w:rPr>
+        <w:sectPr><w:pgSz w:w="12240" w:h="15840"/></w:sectPr></w:pPr>'''
+    rpr = f'''<w:rPr xmlns:w="{w}"><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/>
+        <w:b w:val="0"/><w:i w:val="false"/><w:smallCaps/>
+        <w:color w:val="auto" w:themeColor="accent1" w:themeTint="80"/>
+        <w:sz w:val="24"/><w:highlight w:val="yellow"/>
+        <w:u w:val="double" w:color="FF0000" w:themeColor="accent2"/>
+        <w:lang w:val="en-US"/></w:rPr>'''
+    with zipfile.ZipFile(io.BytesIO(source)) as package:
+        entries = {entry.filename: package.read(entry) for entry in package.infolist()}
+    root = etree.fromstring(entries['word/document.xml'], PARSER)
+    paragraph = root.find(f'.//{{{w}}}p')
+    old = paragraph.find(f'{{{w}}}pPr')
+    if old is not None:
+        paragraph.remove(old)
+    paragraph.insert(0, etree.fromstring(ppr.encode(), PARSER))
+    for run in paragraph.findall(f'{{{w}}}r'):
+        old = run.find(f'{{{w}}}rPr')
+        if old is not None:
+            run.remove(old)
+        run.insert(0, etree.fromstring(rpr.encode(), PARSER))
+    entries['word/document.xml'] = etree.tostring(root, xml_declaration=True, encoding='UTF-8')
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, 'w', compression=zipfile.ZIP_DEFLATED) as package:
+        for name, data in entries.items():
+            package.writestr(name, data)
+    return out.getvalue()
 
 
 class Validator:
@@ -218,6 +256,11 @@ def scenarios(read):
             ('revise_text', mode, [{'op': 'revise_text', 'edits': [{'select': second, 'with': second.upper(), 'all': True}]}]),
             ('replace_paragraph', mode, [{'op': 'replace_paragraph', 'at': other, 'with': 'Replaced <u>text</u>'}]),
             ('format_text', mode, [{'op': 'format_text', 'at': at, 'select': second, 'occurrence': 1, 'bold': True, 'color': '#AA0000'}]),
+            ('format_text', mode, [{'op': 'format_text', 'at': at, 'select': second, 'occurrence': 1, 'font_size': 15.0}]),
+            ('format_text', mode, [{'op': 'format_text', 'at': at, 'select': second, 'occurrence': 1,
+                                   'bold': False, 'italic': False, 'underline': False, 'strike': False, 'superscript': False}]),
+            ('format_text', mode, [{'op': 'format_text', 'at': at, 'select': second, 'occurrence': 1,
+                                   'clear': ['bold', 'italic', 'underline', 'strike', 'color', 'font_size', 'subscript']}]),
             ('format_paragraph', mode, [{'op': 'format_paragraph', 'at': at, 'alignment': 'center', 'space_after': 6.0,
                                          'line_spacing': {'mode': 'multiple', 'value': 1.5}}]),
             ('insert_paragraph', mode, [{'op': 'insert_paragraph', 'at': at, 'position': 'after', 'with': 'Inserted <b>text</b>', 'as': '$new'},
@@ -228,6 +271,13 @@ def scenarios(read):
     out.append(('revision_settle', 'track', [
         {'op': 'replace_text', 'at': at, 'select': first, 'with': 'Tracked', 'occurrence': 1},
         {'op': 'revision_settle', 'target': 'all', 'action': 'reject'}]))
+    for action in ('accept', 'reject'):
+        for formatting in (
+            {'op': 'format_text', 'at': at, 'select': second, 'occurrence': 1, 'color': '#123456'},
+            {'op': 'format_paragraph', 'at': at, 'alignment': 'center'},
+        ):
+            out.append(('revision_settle', 'track', [formatting,
+                {'op': 'revision_settle', 'target': 'all', 'action': action}]))
     return out
 
 
@@ -252,12 +302,51 @@ def comment_chain(cli, name):
     ]
 
 
+_process_validator = None
+
+
+def check_document(job):
+    """All scenarios for one source, with private package outputs/validator."""
+    global _process_validator
+    document, binary = job
+    if _process_validator is None:
+        _process_validator = Validator()
+    validator = _process_validator
+    work = Path(tempfile.mkdtemp(prefix='docxdriver-conformance-'))
+    cli = Cli(binary, work)
+    failures, applied, rejected = [], collections.Counter(), collections.Counter()
+    try:
+        name = 'source.docx'
+        shutil.copyfile(document, work / name)
+        read = cli.read(name)
+        if read is None:
+            return failures, applied, rejected
+        before = set(validator.errors((work / name).read_bytes()))
+        cases = scenarios(read) + [(label, 'track', ops) for label, ops in comment_chain(cli, name)]
+        for label, mode, ops in cases:
+            source = 'commented.docx' if label in ('comment_reply', 'comment_set_status', 'comment_delete') else name
+            reason = cli.commit(source, ops, 'out.docx', mode)
+            if reason:
+                rejected[label] += 1
+                continue
+            applied[label] += 1
+            baseline = before if source == name else set(validator.errors((work / source).read_bytes()))
+            for kind, message in sorted(set(validator.errors((work / 'out.docx').read_bytes())) - baseline):
+                failures.append(f'{document.name}: {label} ({mode}) introduced {kind}: {message[:240]}')
+        return failures, applied, rejected
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--cli', default=str(ROOT / 'target' / 'debug' / 'docxdriver'))
     parser.add_argument('--corpus', help='directory searched recursively for .docx inputs')
     parser.add_argument('--limit', type=int, default=0, help='use at most N corpus documents')
+    parser.add_argument('--jobs', type=int, default=1, help='independent document workers (default: 1)')
     args = parser.parse_args()
+    if args.jobs < 1:
+        parser.error('--jobs must be positive')
 
     validator = Validator()
     work = Path(tempfile.mkdtemp(prefix='docxdriver-conformance-'))
@@ -273,30 +362,31 @@ def main():
                 failures.append(f'created document is invalid: {kind}: {message}')
             applied['create'] += 1
             inputs = [work / 'synthetic.docx']
+            rich = rich_formatting_document((work / 'synthetic.docx').read_bytes())
+            (work / 'rich-formatting.docx').write_bytes(rich)
+            for kind, message in validator.errors(rich):
+                failures.append(f'rich formatting fixture is invalid: {kind}: {message}')
+            inputs.append(work / 'rich-formatting.docx')
         inputs += [ROOT / fixture for fixture in FIXTURES]
         if args.corpus:
             corpus = sorted(Path(args.corpus).rglob('*.docx'))
             inputs += corpus[: args.limit] if args.limit else corpus
 
-        for document in inputs:
-            name = 'source.docx'
-            if document != work / name:
-                shutil.copyfile(document, work / name)
-            read = cli.read(name)
-            if read is None:
-                continue
-            before = set(validator.errors((work / name).read_bytes()))
-            cases = scenarios(read) + [(label, 'track', ops) for label, ops in comment_chain(cli, name)]
-            for label, mode, ops in cases:
-                source = 'commented.docx' if label in ('comment_reply', 'comment_set_status', 'comment_delete') else name
-                reason = cli.commit(source, ops, 'out.docx', mode)
-                if reason:
-                    rejected[label] += 1
-                    continue
-                applied[label] += 1
-                baseline = before if source == name else set(validator.errors((work / source).read_bytes()))
-                for kind, message in sorted(set(validator.errors((work / 'out.docx').read_bytes())) - baseline):
-                    failures.append(f'{document.name}: {label} ({mode}) introduced {kind}: {message[:240]}')
+        jobs = [(document, str(Path(args.cli).resolve())) for document in inputs]
+        if args.jobs == 1:
+            results = map(check_document, jobs)
+            for failures_here, applied_here, rejected_here in results:
+                failures.extend(failures_here)
+                applied.update(applied_here)
+                rejected.update(rejected_here)
+        else:
+            with ProcessPoolExecutor(max_workers=args.jobs) as pool:
+                for count, (failures_here, applied_here, rejected_here) in enumerate(pool.map(check_document, jobs), 1):
+                    failures.extend(failures_here)
+                    applied.update(applied_here)
+                    rejected.update(rejected_here)
+                    if count % 100 == 0:
+                        print(f'{count}/{len(inputs)} documents checked', file=sys.stderr, flush=True)
     finally:
         shutil.rmtree(work, ignore_errors=True)
 

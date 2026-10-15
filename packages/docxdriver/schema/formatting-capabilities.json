@@ -1,0 +1,412 @@
+{
+  "version": 1,
+  "scope": "Bounded formatting contract, not full Word rendering parity.",
+  "semantics": {
+    "omitted": "Leave direct OOXML untouched.",
+    "false": "Write an explicit off override (baseline for superscript/subscript).",
+    "clear": "Remove the named direct property and inherit styles/defaults; clear wins over set.",
+    "revisions": "Text/paragraph formatting is tracked, including in direct plans."
+  },
+  "capabilities": [
+    {
+      "id": "bold",
+      "read": "supported",
+      "html_authoring": "supported",
+      "typed_edit": "supported",
+      "python_repl": "exposed",
+      "note": "Bounded direct property; false explicitly overrides, clear removes the direct setting.",
+      "operation": "format_text",
+      "fields": [
+        "bold"
+      ],
+      "html_example": "<p><span style=\"font-weight:bold\">sample text</span></p>",
+      "read_contains": "<b>"
+    },
+    {
+      "id": "italic",
+      "read": "supported",
+      "html_authoring": "supported",
+      "typed_edit": "supported",
+      "python_repl": "exposed",
+      "note": "Bounded direct property; false explicitly overrides, clear removes the direct setting.",
+      "operation": "format_text",
+      "fields": [
+        "italic"
+      ],
+      "html_example": "<p><span style=\"font-style:italic\">sample text</span></p>",
+      "read_contains": "<i>"
+    },
+    {
+      "id": "underline",
+      "read": "supported",
+      "html_authoring": "supported",
+      "typed_edit": "supported",
+      "python_repl": "exposed",
+      "note": "Bounded direct property; false explicitly overrides, clear removes the direct setting.",
+      "operation": "format_text",
+      "fields": [
+        "underline"
+      ],
+      "html_example": "<p><span style=\"text-decoration:underline\">sample text</span></p>",
+      "read_contains": "<u>"
+    },
+    {
+      "id": "strike",
+      "read": "supported",
+      "html_authoring": "supported",
+      "typed_edit": "supported",
+      "python_repl": "exposed",
+      "note": "Bounded direct property; false explicitly overrides, clear removes the direct setting.",
+      "operation": "format_text",
+      "fields": [
+        "strike"
+      ],
+      "html_example": "<p><span style=\"text-decoration:line-through\">sample text</span></p>",
+      "read_contains": "<s>"
+    },
+    {
+      "id": "superscript",
+      "read": "supported",
+      "html_authoring": "supported",
+      "typed_edit": "supported",
+      "python_repl": "exposed",
+      "note": "Bounded direct property; false explicitly overrides, clear removes the direct setting.",
+      "operation": "format_text",
+      "fields": [
+        "superscript"
+      ],
+      "html_example": "<p><span style=\"vertical-align:super\">sample text</span></p>",
+      "read_contains": "<sup>"
+    },
+    {
+      "id": "subscript",
+      "read": "supported",
+      "html_authoring": "supported",
+      "typed_edit": "supported",
+      "python_repl": "exposed",
+      "note": "Bounded direct property; false explicitly overrides, clear removes the direct setting.",
+      "operation": "format_text",
+      "fields": [
+        "subscript"
+      ],
+      "html_example": "<p><span style=\"vertical-align:sub\">sample text</span></p>",
+      "read_contains": "<sub>"
+    },
+    {
+      "id": "text_color",
+      "read": "supported",
+      "html_authoring": "supported",
+      "typed_edit": "supported",
+      "python_repl": "exposed",
+      "note": "Bounded direct property; false explicitly overrides, clear removes the direct setting.",
+      "operation": "format_text",
+      "fields": [
+        "color"
+      ],
+      "html_example": "<p><span style=\"color:#123456\">sample text</span></p>",
+      "read_contains": "color:#123456"
+    },
+    {
+      "id": "font_size",
+      "read": "supported",
+      "html_authoring": "supported",
+      "typed_edit": "supported",
+      "python_repl": "exposed",
+      "note": "Typed point sizes round to Word half-points; HTML font-size requires positive multiples of 0.5pt.",
+      "operation": "format_text",
+      "fields": [
+        "font_size"
+      ],
+      "html_example": "<p><span style=\"font-size:15pt\">sample text</span></p>",
+      "read_contains": "font-size:15pt"
+    },
+    {
+      "id": "paragraph_alignment",
+      "read": "supported",
+      "html_authoring": "supported",
+      "typed_edit": "supported",
+      "python_repl": "exposed",
+      "note": "Bounded paragraph property; clear removes direct settings.",
+      "operation": "format_paragraph",
+      "fields": [
+        "alignment"
+      ],
+      "html_example": "<p style=\"text-align:center\">sample text</p>",
+      "read_contains": "text-align:center"
+    },
+    {
+      "id": "paragraph_indents",
+      "read": "supported",
+      "html_authoring": "supported",
+      "typed_edit": "supported",
+      "python_repl": "exposed",
+      "note": "Bounded paragraph property; clear removes direct settings.",
+      "operation": "format_paragraph",
+      "fields": [
+        "indent_left",
+        "indent_right"
+      ],
+      "html_example": "<p style=\"margin-left:18pt\">sample text</p>",
+      "read_contains": "margin-left:18pt"
+    },
+    {
+      "id": "paragraph_spacing",
+      "read": "supported",
+      "html_authoring": "supported",
+      "typed_edit": "supported",
+      "python_repl": "exposed",
+      "note": "Bounded paragraph property; clear removes direct settings.",
+      "operation": "format_paragraph",
+      "fields": [
+        "space_before",
+        "space_after"
+      ],
+      "html_example": "<p style=\"margin-top:6pt\">sample text</p>",
+      "read_contains": "margin-top:6pt"
+    },
+    {
+      "id": "line_spacing",
+      "read": "supported",
+      "html_authoring": "supported",
+      "typed_edit": "supported",
+      "python_repl": "exposed",
+      "note": "Typed paragraph properties support set/clear; HTML line-height authoring accepts multiples only.",
+      "operation": "format_paragraph",
+      "fields": [
+        "line_spacing"
+      ],
+      "html_example": "<p style=\"line-height:1.5\">sample text</p>",
+      "read_contains": "line-height:1.5"
+    },
+    {
+      "id": "paragraph_style",
+      "read": "partial",
+      "html_authoring": "partial",
+      "typed_edit": "supported",
+      "python_repl": "exposed",
+      "note": "Only existing paragraph styles may be applied; the preview resolves a bounded subset of style properties.",
+      "operation": "format_paragraph",
+      "fields": [
+        "style"
+      ],
+      "html_example": "<p data-docx-style=\"Normal\">sample text</p>"
+    },
+    {
+      "id": "font_family",
+      "read": "supported",
+      "html_authoring": "supported",
+      "typed_edit": "unsupported",
+      "python_repl": "unsupported",
+      "note": "HTML can author ascii/hAnsi fonts; format_text has no font-family field.",
+      "html_example": "<p><span style=\"font-family:Arial\">sample text</span></p>",
+      "read_contains": "font-family:Arial"
+    },
+    {
+      "id": "first_line_indent",
+      "read": "supported",
+      "html_authoring": "supported",
+      "typed_edit": "unsupported",
+      "python_repl": "unsupported",
+      "note": "Positive HTML text-indent only; no typed field.",
+      "html_example": "<p style=\"text-indent:18pt\">sample text</p>",
+      "read_contains": "text-indent:18pt"
+    },
+    {
+      "id": "hanging_indent",
+      "read": "supported",
+      "html_authoring": "unsupported",
+      "typed_edit": "unsupported",
+      "python_repl": "unsupported",
+      "note": "Existing hanging indents project to negative text-indent; authoring negative lengths is rejected.",
+      "html_example": "<p style=\"text-indent:-18pt\">sample text</p>"
+    },
+    {
+      "id": "highlight",
+      "read": "preserved_only",
+      "html_authoring": "unsupported",
+      "typed_edit": "unsupported",
+      "python_repl": "unsupported",
+      "note": "Word highlight and RGB shading have no current authoring/edit contract.",
+      "html_example": "<p><span style=\"background-color:#FFFF00\">sample text</span></p>"
+    },
+    {
+      "id": "run_shading",
+      "read": "preserved_only",
+      "html_authoring": "unsupported",
+      "typed_edit": "unsupported",
+      "python_repl": "unsupported",
+      "note": "Existing shading survives unrelated selection edits; no current CSS mapping.",
+      "html_example": "<p><span style=\"background:#FFFF00\">sample text</span></p>"
+    },
+    {
+      "id": "small_caps",
+      "read": "preserved_only",
+      "html_authoring": "unsupported",
+      "typed_edit": "unsupported",
+      "python_repl": "unsupported",
+      "note": "Existing caps settings survive unrelated selection edits.",
+      "html_example": "<p><span style=\"font-variant:small-caps\">sample text</span></p>"
+    },
+    {
+      "id": "character_spacing",
+      "read": "preserved_only",
+      "html_authoring": "unsupported",
+      "typed_edit": "unsupported",
+      "python_repl": "unsupported",
+      "note": "No current CSS mapping or typed property.",
+      "html_example": "<p><span style=\"letter-spacing:1pt\">sample text</span></p>"
+    },
+    {
+      "id": "paragraph_pagination",
+      "read": "preserved_only",
+      "html_authoring": "unsupported",
+      "typed_edit": "unsupported",
+      "python_repl": "unsupported",
+      "note": "Keep/widow/page-break-before properties are preserved but have no typed controls.",
+      "html_example": "<p style=\"break-before:page\">sample text</p>"
+    },
+    {
+      "id": "paragraph_shading",
+      "read": "preserved_only",
+      "html_authoring": "unsupported",
+      "typed_edit": "unsupported",
+      "python_repl": "unsupported",
+      "note": "No current paragraph CSS mapping or typed property.",
+      "html_example": "<p style=\"background-color:#EEEEEE\">sample text</p>"
+    },
+    {
+      "id": "paragraph_borders",
+      "read": "preserved_only",
+      "html_authoring": "unsupported",
+      "typed_edit": "unsupported",
+      "python_repl": "unsupported",
+      "note": "No current paragraph CSS mapping or typed property.",
+      "html_example": "<p style=\"border:1pt solid #000000\">sample text</p>"
+    },
+    {
+      "id": "underline_variants",
+      "read": "partial",
+      "html_authoring": "unsupported",
+      "typed_edit": "unsupported",
+      "python_repl": "unsupported",
+      "note": "Read preview reduces variants to an underline; boolean edits intentionally set single/none. Unrelated edits preserve variant/color/theme metadata.",
+      "html_example": "<p><span style=\"text-decoration-style:double\">sample text</span></p>"
+    },
+    {
+      "id": "character_styles",
+      "read": "partial",
+      "html_authoring": "unsupported",
+      "typed_edit": "unsupported",
+      "python_repl": "unsupported",
+      "note": "Read resolves a bounded style cascade; typed assignment/definition is unavailable."
+    },
+    {
+      "id": "tab_stops",
+      "read": "preserved_only",
+      "html_authoring": "unsupported",
+      "typed_edit": "unsupported",
+      "python_repl": "unsupported",
+      "note": "Tab text is projected, but custom positions/alignment/leaders are not represented."
+    },
+    {
+      "id": "lists",
+      "read": "partial",
+      "html_authoring": "partial",
+      "typed_edit": "unsupported",
+      "python_repl": "unsupported",
+      "note": "Creation supports nested lists, types and starts, with one paragraph per item; no typed numbering controls.",
+      "html_example": "<ol start=\"3\"><li>sample text</li></ol>"
+    },
+    {
+      "id": "table_structure",
+      "read": "partial",
+      "html_authoring": "supported",
+      "typed_edit": "unsupported",
+      "python_repl": "unsupported",
+      "note": "Creation supports nested tables and spans; no typed row/column/grid editing.",
+      "html_example": "<table><tr><td colspan=\"2\">sample text</td></tr><tr><td>one</td><td>two</td></tr></table>"
+    },
+    {
+      "id": "table_formatting",
+      "read": "preserved_only",
+      "html_authoring": "unsupported",
+      "typed_edit": "unsupported",
+      "python_repl": "unsupported",
+      "note": "Table/row/cell presentation attributes are rejected; paragraph/inline styling inside cells is supported.",
+      "html_example": "<table style=\"width:100pt\"><tr><td>sample text</td></tr></table>"
+    },
+    {
+      "id": "page_margins",
+      "read": "preserved_only",
+      "html_authoring": "unsupported",
+      "typed_edit": "supported",
+      "python_repl": "not_exposed",
+      "note": "Core edits section margins; semantic preview does not lay out pages; V1 Python manifest omits the operation.",
+      "operation": "set_page_margins",
+      "fields": [
+        "section",
+        "top",
+        "right",
+        "bottom",
+        "left",
+        "header",
+        "footer",
+        "gutter"
+      ]
+    },
+    {
+      "id": "page_size_orientation_columns",
+      "read": "preserved_only",
+      "html_authoring": "unsupported",
+      "typed_edit": "unsupported",
+      "python_repl": "unsupported",
+      "note": "No typed layout operation or HTML authoring contract."
+    },
+    {
+      "id": "headers_footers",
+      "read": "partial",
+      "html_authoring": "supported",
+      "typed_edit": "supported",
+      "python_repl": "exposed",
+      "note": "Default/even/first stories and the even/odd switch; preview is semantic.",
+      "html_example": "<header><p>sample text</p></header><p>body text</p>",
+      "operations": [
+        "set_header",
+        "set_footer",
+        "clear_header",
+        "clear_footer",
+        "set_even_and_odd_headers"
+      ]
+    },
+    {
+      "id": "inline_images",
+      "read": "partial",
+      "html_authoring": "supported",
+      "typed_edit": "unsupported",
+      "python_repl": "unsupported",
+      "note": "Creation supports data-URI image dimensions; no typed resize/crop/position controls.",
+      "html_example": "<p><img src=\"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jV1kAAAAASUVORK5CYII=\" width=\"32\" height=\"32\" alt=\"sample\"></p>"
+    },
+    {
+      "id": "floating_drawings",
+      "read": "partial",
+      "html_authoring": "unsupported",
+      "typed_edit": "unsupported",
+      "python_repl": "unsupported",
+      "note": "Unsupported drawings render placeholders; existing OOXML remains authoritative."
+    },
+    {
+      "id": "equations",
+      "read": "partial",
+      "html_authoring": "partial",
+      "typed_edit": "supported",
+      "python_repl": "exposed",
+      "note": "Bounded presentation MathML; dedicated replace_equation/delete_equation operations.",
+      "html_example": "<p><math><msup><mi>x</mi><mn>2</mn></msup></math></p>",
+      "operations": [
+        "replace_equation",
+        "delete_equation"
+      ]
+    }
+  ]
+}

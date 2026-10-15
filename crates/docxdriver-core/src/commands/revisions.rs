@@ -236,15 +236,36 @@ fn resolve_property_change(xml: &mut DocxXml, node: NodeId, accept: bool) {
     if !accept {
         if let (Some(inner_name), Some(parent)) = (inner_name, xml.doc.parent(node)) {
             if let Some(snapshot) = xml.child_w(node, inner_name) {
-                // Replace the live container's content with the snapshot's.
+                // pPrChange snapshots contain CT_PPrBase only. The live
+                // paragraph-mark rPr and sectPr are independent and must
+                // survive rejecting a paragraph-format change.
                 let old: Vec<NodeId> = xml.doc.children(snapshot).collect();
                 let current: Vec<NodeId> = xml.doc.children(parent).collect();
+                let mut retained: Vec<NodeId> = current
+                    .iter()
+                    .copied()
+                    .filter(|&child| {
+                        inner_name == "pPr" && (xml.is_w(child, "rPr") || xml.is_w(child, "sectPr"))
+                    })
+                    .collect();
+                // Imported documents can put sectPr before rPr (or even
+                // before the base properties). Restore the CT_PPr tail in
+                // schema order, without changing either subtree's contents.
+                retained.sort_by_key(|&child| xml.is_w(child, "sectPr"));
+                for &child in &retained {
+                    xml.doc.detach(child);
+                }
                 for child in old {
                     xml.doc.detach(child);
                     xml.doc.append_child(parent, child);
                 }
                 for child in current {
-                    xml.doc.remove_node(child);
+                    if !retained.contains(&child) {
+                        xml.doc.remove_node(child);
+                    }
+                }
+                for child in retained {
+                    xml.doc.append_child(parent, child);
                 }
                 return;
             }

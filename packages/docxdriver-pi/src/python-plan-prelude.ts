@@ -754,7 +754,7 @@ Delete the paragraphs listed in \`at\` (tracked deletion by default).
 
 \`FormatParagraph(at: str, alignment: str | None = None, clear: list | None = None, indent_left: float | None = None, indent_right: float | None = None, line_spacing: dict | None = None, space_after: float | None = None, space_before: float | None = None, style: str | None = None)\`
 
-Apply paragraph formatting to the paragraph at \`at\`: \`style\`, \`alignment\` (left/center/right/justify), \`indent_left\`/\`indent_right\`, \`space_before\`/\`space_after\`, \`line_spacing\` (dict with \`mode\` multiple/exact/at_least and \`value\`), or \`clear\`.
+Apply paragraph formatting to the paragraph at \`at\`: \`style\`, \`alignment\` (left/center/right/justify), \`indent_left\`/\`indent_right\`, \`space_before\`/\`space_after\`, \`line_spacing\` (dict with \`mode\` multiple/exact/at_least and \`value\`), or \`clear\`. Omitted properties are untouched; clear removes direct settings and inherits styles/defaults, winning over set. Formatting changes are always tracked.
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -772,7 +772,7 @@ Apply paragraph formatting to the paragraph at \`at\`: \`style\`, \`alignment\` 
 
 \`FormatText(at: str, select: str, bold: bool | None = None, clear: list | None = None, color: str | None = None, font_size: float | None = None, italic: bool | None = None, occurrence: int | None = None, strike: bool | None = None, subscript: bool | None = None, superscript: bool | None = None, underline: bool | None = None)\`
 
-Apply character formatting to an exact occurrence of \`select\` in the paragraph at \`at\`: boolean attributes (\`bold\`, \`italic\`, \`underline\`, \`strike\`, \`superscript\`, \`subscript\`), \`color\` (#RRGGBB), \`font_size\` (points), \`occurrence\`, or \`clear\`.
+Apply character formatting to an exact occurrence of \`select\` in the paragraph at \`at\`: boolean attributes (\`bold\`, \`italic\`, \`underline\`, \`strike\`, \`superscript\`, \`subscript\`), \`color\` (#RRGGBB), \`font_size\` (points), \`occurrence\`, or \`clear\`. Omitted properties preserve source OOXML; false explicitly overrides inherited formatting (baseline for superscript/subscript). Clear removes the direct property and inherits styles/defaults, winning over set; superscript/subscript share one property. Formatting changes are always tracked.
 
 | Field | Type | Required |
 | --- | --- | --- |

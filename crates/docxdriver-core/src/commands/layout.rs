@@ -183,22 +183,38 @@ const PPR_SEQUENCE: &[&str] = &[
 /// Return the `w:pPr` child `local`, creating it at its schema sequence
 /// position.
 pub(crate) fn ensure_ppr_child(xml: &mut DocxXml, ppr: NodeId, local: &str) -> NodeId {
-    if let Some(node) = xml.child_w(ppr, local) {
+    ensure_property_child(xml, ppr, local, PPR_SEQUENCE)
+}
+
+/// EG_RPrBase is a repeated choice (not an ordered sequence). Keep its
+/// properties ahead of the trailing rPrChange required by EG_RPrContent;
+/// their existing relative order and unknown extension children are untouched.
+pub(crate) fn ensure_rpr_child(xml: &mut DocxXml, rpr: NodeId, local: &str) -> NodeId {
+    ensure_property_child(xml, rpr, local, &[local, "rPrChange"])
+}
+
+fn ensure_property_child(
+    xml: &mut DocxXml,
+    parent: NodeId,
+    local: &str,
+    sequence: &[&str],
+) -> NodeId {
+    if let Some(node) = xml.child_w(parent, local) {
         return node;
     }
     let node = xml.doc.create_element(&format!("w:{local}"));
-    let successors = PPR_SEQUENCE
+    let successors = sequence
         .iter()
         .position(|name| *name == local)
-        .map_or(&[][..], |index| &PPR_SEQUENCE[index + 1..]);
+        .map_or(&[][..], |index| &sequence[index + 1..]);
     let successor = xml
         .doc
-        .children(ppr)
+        .children(parent)
         .find(|&child| successors.iter().any(|name| xml.is_w(child, name)));
     if let Some(next) = successor {
         xml.doc.insert_before(next, node);
     } else {
-        xml.doc.append_child(ppr, node);
+        xml.doc.append_child(parent, node);
     }
     node
 }
@@ -240,4 +256,23 @@ pub(crate) fn paragraph_style_exists(package: &Package, style_id: &str) -> bool 
             && styles_xml.attr(node, "styleId") == Some(style_id)
             && styles_xml.attr(node, "type").unwrap_or("paragraph") == "paragraph"
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn property_insertion_respects_snapshot_tail_and_preserves_existing_siblings() {
+        let mut xml = DocxXml::parse(br#"<w:rPr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:highlight w:val="yellow"/><w:rPrChange w:id="1" w:author="test"><w:rPr/></w:rPrChange></w:rPr>"#).unwrap();
+        let rpr = xml.doc.root_element().unwrap();
+        let children: Vec<_> = xml.doc.children(rpr).collect();
+        let color = ensure_rpr_child(&mut xml, rpr, "color");
+        assert_eq!(
+            xml.doc.children(rpr).collect::<Vec<_>>(),
+            vec![children[0], color, children[1]]
+        );
+        assert_eq!(ensure_rpr_child(&mut xml, rpr, "color"), color);
+        assert_eq!(xml.attr(children[0], "val"), Some("yellow"));
+    }
 }

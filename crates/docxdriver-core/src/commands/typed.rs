@@ -14,7 +14,7 @@ use std::collections::BTreeSet;
 use xmloxide::tree::NodeId;
 
 use crate::document::{format_para_id, is_valid_para_id, DocxXml, ParaIdAllocator};
-use crate::html::{Atom, Fmt, Item, VertAlign};
+use crate::html::{Atom, Fmt, Item};
 use crate::outcome::{Outcome, Status};
 use crate::package::Package;
 use crate::segments::{
@@ -22,7 +22,7 @@ use crate::segments::{
 };
 
 use super::layout::{
-    ensure_ppr, ensure_ppr_child, paragraph_style_exists, set_attr, set_child_val,
+    ensure_ppr, ensure_ppr_child, ensure_rpr_child, paragraph_style_exists, set_attr, set_child_val,
 };
 use super::ExecCtx;
 
@@ -1325,7 +1325,8 @@ fn optional_twips(command: &Value, name: &str) -> Result<Option<i64>, Outcome> {
 
 /// One requested character-property change for the typed `format_text` op.
 /// Omitted fields are untouched; `clear` resets named properties to their
-/// defaults. Superscript and subscript cannot both be enabled.
+/// inherited values. False is an explicit off override. Superscript and
+/// subscript cannot both be enabled.
 struct CharFormat {
     bold: Option<bool>,
     italic: Option<bool>,
@@ -1445,115 +1446,96 @@ fn parse_char_format(command: &Value) -> Result<CharFormat, Outcome> {
     })
 }
 
-/// Whether a boolean-valued property element (w:b, w:i, …) is ON: absent or
-/// val of "false"/"0"/"none" means OFF, anything else means ON.
-fn prop_on(xml: &DocxXml, node: NodeId) -> bool {
-    !matches!(
-        xml.attr(node, "val"),
-        Some("false") | Some("0") | Some("none")
-    )
-}
-
-fn parse_hex_color(value: &str) -> Option<u32> {
-    let hex = value.trim_start_matches('#');
-    if hex.len() != 6 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
-        return None;
-    }
-    u32::from_str_radix(hex, 16).ok()
-}
-
-/// The modeled live character properties of one run (rPr children excluding
-/// any w:rPrChange). Color is normalized to `0xRRGGBB`, size to half-points.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-struct RunState {
-    bold: bool,
-    italic: bool,
-    underline: bool,
-    strike: bool,
-    vert_align: Option<VertAlign>,
-    color: Option<u32>,
-    font_size_halfpoints: Option<u32>,
-}
-
-fn run_state(xml: &DocxXml, run: NodeId) -> RunState {
-    let mut state = RunState::default();
-    let Some(rpr) = xml.run_rpr(run) else {
-        return state;
-    };
-    for child in xml.doc.children(rpr) {
-        if xml.is_w(child, "rPrChange") {
-            continue;
+/// Requested direct properties only. `false` writes an explicit override;
+/// `clear` removes the direct property so styles/defaults can supply it again.
+/// Clear wins when a property is also set in the same operation.
+fn char_format_properties(
+    fmt: &CharFormat,
+) -> std::collections::BTreeMap<&'static str, Option<String>> {
+    let mut properties = std::collections::BTreeMap::new();
+    for (name, value, on, off) in [
+        ("b", fmt.bold, "1", "0"),
+        ("i", fmt.italic, "1", "0"),
+        ("u", fmt.underline, "single", "none"),
+        ("strike", fmt.strike, "1", "0"),
+        ("vertAlign", fmt.superscript, "superscript", "baseline"),
+        ("vertAlign", fmt.subscript, "subscript", "baseline"),
+    ] {
+        if let Some(value) = value {
+            properties.insert(name, Some(if value { on } else { off }.to_owned()));
         }
-        if xml.is_w(child, "b") {
-            state.bold = prop_on(xml, child);
-        } else if xml.is_w(child, "i") {
-            state.italic = prop_on(xml, child);
-        } else if xml.is_w(child, "u") {
-            state.underline = prop_on(xml, child);
-        } else if xml.is_w(child, "strike") {
-            state.strike = prop_on(xml, child);
-        } else if xml.is_w(child, "vertAlign") {
-            state.vert_align = xml.attr(child, "val").and_then(VertAlign::from_docx);
-        } else if xml.is_w(child, "color") {
-            if let Some(val) = xml.attr(child, "val") {
-                state.color = parse_hex_color(val);
-            }
-        } else if xml.is_w(child, "sz") {
-            if let Some(val) = xml.attr(child, "val").and_then(|v| v.parse::<u32>().ok()) {
-                state.font_size_halfpoints = Some(val);
-            }
-        }
-    }
-    state
-}
-
-/// The target run state after applying the request to `current`.
-fn char_format_target(current: &RunState, fmt: &CharFormat) -> RunState {
-    let mut target = *current;
-    if let Some(b) = fmt.bold {
-        target.bold = b;
-    }
-    if let Some(b) = fmt.italic {
-        target.italic = b;
-    }
-    if let Some(b) = fmt.underline {
-        target.underline = b;
-    }
-    if let Some(b) = fmt.strike {
-        target.strike = b;
-    }
-    if let Some(b) = fmt.superscript {
-        target.vert_align = b.then_some(VertAlign::Superscript);
-    }
-    if let Some(b) = fmt.subscript {
-        target.vert_align = b.then_some(VertAlign::Subscript);
     }
     if let Some(color) = &fmt.color {
-        if let Some(value) = parse_hex_color(color) {
-            target.color = Some(value);
-        }
+        properties.insert("color", Some(color.trim_start_matches('#').to_uppercase()));
     }
     if let Some(size) = fmt.font_size {
-        target.font_size_halfpoints = Some((size * 2.0).round().max(1.0) as u32);
+        properties.insert("sz", Some((size * 2.0).round().max(1.0).to_string()));
     }
     for name in &fmt.clear {
-        match name.as_str() {
-            "bold" => target.bold = false,
-            "italic" => target.italic = false,
-            "underline" => target.underline = false,
-            "strike" => target.strike = false,
-            "superscript" | "subscript" => target.vert_align = None,
-            "color" => target.color = None,
-            "font_size" => target.font_size_halfpoints = None,
-            _ => {}
-        }
+        let tag = match name.as_str() {
+            "bold" => "b",
+            "italic" => "i",
+            "underline" => "u",
+            "strike" => "strike",
+            "superscript" | "subscript" => "vertAlign",
+            "color" => "color",
+            "font_size" => "sz",
+            _ => continue,
+        };
+        properties.insert(tag, None);
     }
-    target
+    properties
 }
 
-/// Rewrite the run's modeled properties to `target`, preserving every other
-/// rPr child (fonts, highlight, …). The caller attaches the rPrChange last.
-fn write_run_state(xml: &mut DocxXml, run: NodeId, target: &RunState) {
+/// Filter out requests already represented by the direct property bag. Never
+/// reduce an unrequested property to a bool/RGB/size: that would lose explicit
+/// off values, themed colors, underline variants and other source metadata.
+fn changed_run_properties(
+    xml: &DocxXml,
+    run: NodeId,
+    requested: &std::collections::BTreeMap<&'static str, Option<String>>,
+) -> Vec<(&'static str, Option<String>)> {
+    requested
+        .iter()
+        .filter_map(|(&name, value)| {
+            let nodes = xml
+                .run_rpr(run)
+                .map(|rpr| {
+                    xml.doc
+                        .children(rpr)
+                        .filter(|&n| xml.is_w(n, name))
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            let matches = match (nodes.as_slice(), value) {
+                ([], None) => true,
+                ([node], Some(value)) => {
+                    // An explicit set replaces metadata on the requested property
+                    // (e.g. a theme color), but leaves all other properties intact.
+                    let attributes = xml.doc.attributes(*node);
+                    let direct_value = xml.attr(*node, "val");
+                    let same_value = if matches!(name, "b" | "i" | "strike") {
+                        matches!(
+                            (direct_value, value.as_str()),
+                            (None | Some("1" | "true" | "on"), "1")
+                                | (Some("0" | "false" | "off"), "0")
+                        )
+                    } else {
+                        direct_value == Some(value.as_str())
+                    };
+                    same_value
+                        && (attributes.is_empty()
+                            || (attributes.len() == 1 && direct_value.is_some()))
+                        && xml.doc.children(*node).next().is_none()
+                }
+                _ => false,
+            };
+            (!matches).then(|| (name, value.clone()))
+        })
+        .collect()
+}
+
+fn write_run_properties(xml: &mut DocxXml, run: NodeId, changes: &[(&str, Option<String>)]) {
     let rpr = match xml.run_rpr(run) {
         Some(rpr) => rpr,
         None => {
@@ -1566,53 +1548,19 @@ fn write_run_state(xml: &mut DocxXml, run: NodeId, target: &RunState) {
             rpr
         }
     };
-    let drop: Vec<NodeId> = xml
-        .doc
-        .children(rpr)
-        .filter(|&n| {
-            xml.is_w(n, "b")
-                || xml.is_w(n, "i")
-                || xml.is_w(n, "u")
-                || xml.is_w(n, "strike")
-                || xml.is_w(n, "vertAlign")
-                || xml.is_w(n, "color")
-                || xml.is_w(n, "sz")
-        })
-        .collect();
-    for node in drop {
-        xml.doc.remove_node(node);
-    }
-    if target.bold {
-        let b = xml.doc.create_element("w:b");
-        xml.doc.append_child(rpr, b);
-    }
-    if target.italic {
-        let i = xml.doc.create_element("w:i");
-        xml.doc.append_child(rpr, i);
-    }
-    if target.strike {
-        let s = xml.doc.create_element("w:strike");
-        xml.doc.append_child(rpr, s);
-    }
-    if let Some(color) = target.color {
-        let c = xml.doc.create_element("w:color");
-        xml.doc.set_attribute(c, "w:val", &format!("{color:06X}"));
-        xml.doc.append_child(rpr, c);
-    }
-    if let Some(halfpoints) = target.font_size_halfpoints {
-        let sz = xml.doc.create_element("w:sz");
-        xml.doc.set_attribute(sz, "w:val", &halfpoints.to_string());
-        xml.doc.append_child(rpr, sz);
-    }
-    if target.underline {
-        let u = xml.doc.create_element("w:u");
-        xml.doc.set_attribute(u, "w:val", "single");
-        xml.doc.append_child(rpr, u);
-    }
-    if let Some(align) = target.vert_align {
-        let vert = xml.doc.create_element("w:vertAlign");
-        xml.doc.set_attribute(vert, "w:val", align.docx_val());
-        xml.doc.append_child(rpr, vert);
+    for (name, value) in changes {
+        let old: Vec<_> = xml
+            .doc
+            .children(rpr)
+            .filter(|&n| xml.is_w(n, name))
+            .collect();
+        for node in old {
+            xml.doc.remove_node(node);
+        }
+        if let Some(value) = value {
+            let node = ensure_rpr_child(xml, rpr, name);
+            xml.doc.set_attribute(node, "w:val", value);
+        }
     }
 }
 
@@ -1646,6 +1594,7 @@ fn apply_char_format(
     if runs.is_empty() {
         return Err("format_text matched no runs".into());
     }
+    let requested = char_format_properties(fmt);
     let mut changed = 0usize;
     for run in runs {
         if xml
@@ -1657,9 +1606,8 @@ fn apply_char_format(
                     .into(),
             );
         }
-        let current = run_state(xml, run);
-        let target = char_format_target(&current, fmt);
-        if target == current {
+        let changes = changed_run_properties(xml, run, &requested);
+        if changes.is_empty() {
             continue;
         }
         let snapshot = xml.doc.create_element("w:rPr");
@@ -1672,7 +1620,7 @@ fn apply_char_format(
                 xml.doc.append_child(snapshot, clone);
             }
         }
-        write_run_state(xml, run, &target);
+        write_run_properties(xml, run, &changes);
         let rpr = xml.run_rpr(run).expect("just ensured");
         let change = xml.doc.create_element("w:rPrChange");
         xml.doc.set_attribute(change, "w:id", &id.to_string());

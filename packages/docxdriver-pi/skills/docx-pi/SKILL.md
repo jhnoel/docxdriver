@@ -63,6 +63,14 @@ Paragraph addresses are uppercase eight-digit IDs from `docx_read`;
 later operations. Measurements are points, colors are uppercase `#RRGGBB`, and
 alignment is `justify`.
 
+Formatting: omit a property to leave its source setting untouched. Boolean
+`false` explicitly overrides inherited formatting; `clear` removes the direct
+setting and inherits styles/defaults. Clear wins if also set. Superscript and
+subscript share one vertical-alignment setting. Formatting changes remain
+tracked even in direct plans. Unrelated formatting, including rich underlines,
+is preserved. HTML table/row/cell styling is rejected; format paragraphs/spans
+inside cells instead. Containers without a style mapping also reject `style`.
+
 Replacement content accepts safe inline HTML: `<strong>`, `<em>`, `<b>`, `<i>`,
 `<u>`, `<s>`, `<sup>`, `<sub>`, `<a>`, `<br>`, styled `<span>`, and native `<math>`.
 Do not include block wrappers, images, notes, fields, comments or revision tags.

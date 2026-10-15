@@ -42,14 +42,6 @@ impl VertAlign {
             VertAlign::Subscript => "subscript",
         }
     }
-
-    pub fn from_docx(value: &str) -> Option<VertAlign> {
-        match value {
-            "superscript" => Some(VertAlign::Superscript),
-            "subscript" => Some(VertAlign::Subscript),
-            _ => None,
-        }
-    }
 }
 
 /// Bold/italic/underline/strike/super/sub formatting state of a character.

@@ -76,6 +76,38 @@ revision markup and generated document objects require their dedicated operation
 HTML entities and quoted or unquoted attributes follow HTML5 rules. Scripts,
 unsafe URLs and unsupported styles return diagnostics.
 
+### Formatting contract
+
+The [machine-readable capability matrix](schema/formatting-capabilities.json)
+distinguishes HTML authoring, typed editing, preview fidelity and V1 Python
+REPL exposure. `preserved_only` means source OOXML survives unrelated edits
+but the formatting is not represented in the preview. `partial` means the
+bounded behavior described in that entry; it does not promise Word rendering
+parity. The matrix is also exported as `docxdriver/schema/formatting-capabilities.json`.
+
+For `format_text`, omitted fields leave their direct OOXML untouched, including
+underline variants/colors, themed colors and explicit off values. A boolean
+`false` writes an explicit off override; superscript/subscript `false` writes
+baseline alignment. `clear` removes the named direct property so the effective
+style/default can supply it again. Clearing either superscript or subscript
+removes the shared vertical-alignment property. If a property is both set and
+cleared, clearing wins. An explicit set replaces metadata on that requested
+property: `underline: true` sets single underline and a color sets literal RGB.
+
+`format_paragraph` follows the same omission and clear/inherit rules for its
+supported properties. Clearing a style removes the explicit paragraph-style
+reference and allows the default paragraph style. It preserves independent
+paragraph-mark and section properties when changes are rejected. Text and
+paragraph formatting always record property revisions when changed, even in
+a direct-mode plan; accept/reject them with `revision_settle`.
+
+Table, row and cell styling attributes (including `style`, `class`, dimensions,
+borders, fills and alignment) are rejected during HTML authoring. Apply supported
+paragraph/inline formatting inside a cell instead. Inline `style` is also rejected
+on containers without a formatting mapping, such as lists, links, images and
+section wrappers. Put supported text formatting on the contained paragraph/span.
+These rejections return diagnostics and no document output.
+
 ### Editing equations
 
 Canonical equations are presentation MathML:
