@@ -416,7 +416,7 @@ dependencies = [
 
 [[package]]
 name = "docxdriver-cli"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "clap",
  "docxdriver-core",
@@ -427,7 +427,7 @@ dependencies = [
 
 [[package]]
 name = "docxdriver-core"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "hex",
  "latex2mathml",
@@ -444,7 +444,7 @@ dependencies = [
 
 [[package]]
 name = "docxdriver-mcp"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "axum",
  "cap-std",
@@ -462,7 +462,7 @@ dependencies = [
 
 [[package]]
 name = "docxdriver-python"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "docxdriver-core",
  "pyo3",
@@ -471,7 +471,7 @@ dependencies = [
 
 [[package]]
 name = "docxdriver-wasm"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "docxdriver-core",
  "js-sys",
