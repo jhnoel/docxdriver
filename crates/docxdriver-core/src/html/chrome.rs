@@ -69,7 +69,9 @@ pub fn chrome_map(package: &Package, xml: &DocxXml) -> ChromeMap {
         };
         let Some(sect_pr) = sect_pr else { continue };
         n += 1;
-        let title_page = xml.doc.children(sect_pr).any(|c| xml.is_w(c, "titlePg"));
+        let title_page = xml.child_w(sect_pr, "titlePg").is_some_and(|node| {
+            !matches!(xml.attr(node, "val"), Some("0" | "false" | "off"))
+        });
         let mut slots = Vec::new();
         // Slot order: hdr default/first/even, then ftr default/first/even.
         for (scope_i, (scope, tag)) in [("hdr", "headerReference"), ("ftr", "footerReference")]

@@ -191,26 +191,8 @@ fn chrome_part_xml(scope: &str, inner: &str) -> String {
 }
 
 fn ensure_title_pg(xml: &mut DocxXml, sect: NodeId) {
-    if xml.child_w(sect, "titlePg").is_none() {
-        let node = xml.doc.create_element("w:titlePg");
-        // CT_SectPr is a sequence; titlePg precedes these.
-        const SUCCESSORS: &[&str] = &[
-            "textDirection",
-            "bidi",
-            "rtlGutter",
-            "docGrid",
-            "printerSettings",
-            "sectPrChange",
-        ];
-        let successor = xml
-            .doc
-            .children(sect)
-            .find(|&child| SUCCESSORS.iter().any(|local| xml.is_w(child, local)));
-        match successor {
-            Some(next) => xml.doc.insert_before(next, node),
-            None => xml.doc.append_child(sect, node),
-        }
-    }
+    let node = super::layout::ensure_sect_pr_child(xml, sect, "titlePg");
+    super::layout::set_attr(xml, node, "w:val", "1");
 }
 
 fn set_chrome_typed(

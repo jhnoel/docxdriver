@@ -54,6 +54,9 @@ pub fn paragraph_entries(
             if let Some(number) = ctx.markers.get(&paragraph.node) {
                 entry.insert("number".into(), json!(number));
             }
+            if let Some(list) = ctx.lists.get(&paragraph.node) {
+                entry.insert("list".into(), json!({"num_id":list.id,"level":list.level,"format":list.format,"start":list.start,"value":list.value,"continued":list.continued,"continuation_paragraph":list.continuation}));
+            }
             Value::Object(entry)
         })
         .collect();
@@ -284,7 +287,9 @@ pub fn build_package(command: &Value) -> Result<(Package, String, Value), Outcom
     let mut overrides = String::new();
     let mut rels = String::new();
     if !deferred.lists.is_empty() {
+        // CT_Numbering is a sequence: every abstractNum precedes every num.
         let mut numbering = String::new();
+        let mut instances = String::new();
         for (index, list) in deferred.lists.iter().enumerate() {
             let id = index + 1;
             numbering.push_str(&format!(
@@ -298,10 +303,12 @@ pub fn build_package(command: &Value) -> Result<(Package, String, Value), Outcom
                 };
                 numbering.push_str(&format!("<w:lvl w:ilvl=\"{level}\"><w:start w:val=\"{}\"/><w:numFmt w:val=\"{}\"/><w:lvlText w:val=\"{text}\"/><w:pPr><w:ind w:left=\"{}\" w:hanging=\"360\"/></w:pPr></w:lvl>",list.start,list.format,(level+1)*720));
             }
-            numbering.push_str(&format!(
-                "</w:abstractNum><w:num w:numId=\"{id}\"><w:abstractNumId w:val=\"{id}\"/></w:num>"
+            numbering.push_str("</w:abstractNum>");
+            instances.push_str(&format!(
+                "<w:num w:numId=\"{id}\"><w:abstractNumId w:val=\"{id}\"/></w:num>"
             ));
         }
+        numbering.push_str(&instances);
         package.set(
             "word/numbering.xml",
             format!("<w:numbering xmlns:w=\"{W_NS}\">{numbering}</w:numbering>").into_bytes(),

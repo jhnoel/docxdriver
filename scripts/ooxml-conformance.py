@@ -3,8 +3,18 @@
 
 Every typed edit operation in the core schema is applied, through a real
 preview-and-commit plan, to every input document. Each committed package is
-validated against the bundled ECMA-376 Transitional and OPC schemas, and the
-gate fails when an operation introduces an error kind the source did not
+checked by three validators:
+
+- the bundled ECMA-376 Transitional and OPC schemas (lxml);
+- package and cross-part integrity rules no schema expresses: content types
+  Word accepts, relationship targets, comment/numbering/note references,
+  field and bookmark pairing, table grids, w14/durable id ranges
+  (scripts/ooxml_integrity.py);
+- the Open XML SDK validator for the Microsoft 365 format, which also covers
+  the Office extension namespaces the XSD pass strips
+  (scripts/openxml-validator, built here with `dotnet`).
+
+The gate fails when an operation introduces an error kind the source did not
 already have. Pre-existing invalid content is not docxdriver's to fix, and a
 run split that copies an invalid property is not a new kind of error.
 
@@ -17,7 +27,8 @@ DOCX fixtures, and optionally a corpus directory (scripts/fetch-corpus.sh):
     cargo build -p docxdriver-cli
     python scripts/ooxml-conformance.py [--corpus corpus/lo] [--limit N]
 
-Requires lxml.
+Requires lxml and the .NET SDK (10 or later). `--keep-outputs DIR` saves every
+committed package for scripts/word-smoke.py.
 """
 import argparse
 import collections
@@ -36,6 +47,8 @@ from pathlib import Path
 
 from lxml import etree
 
+from ooxml_integrity import integrity_errors
+
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_DIR = ROOT / 'scripts' / 'ooxml-schemas'
 OP_SCHEMA = ROOT / 'packages' / 'docxdriver' / 'schema' / 'typed-request.schema.json'
@@ -53,7 +66,7 @@ SYNTHETIC_HTML = (
     '<h1>Master Services Agreement</h1>'
     '<p>The <b>Supplier</b> shall deliver the <i>Services</i> within thirty days, '
     'as described at <a href="https://example.com/terms">the terms page</a>.</p>'
-    '<ol><li>First obligation of the parties.</li><li>Second obligation of the parties.</li></ol>'
+    '<ol><li><p>First obligation of the parties.</p><p>Continuation of the first obligation.</p><ul><li>Child obligation.</li></ul></li><li>Second obligation of the parties.</li></ol>'
     '<table><tr><td>Fee schedule</td><td>Amount due</td></tr><tr><td>Initial fee</td><td>5000 dollars</td></tr></table>'
     '<p>The area is <math display="inline"><msup><mi>r</mi><mn>2</mn></msup></math> times pi in each region.</p>'
     '<p>Either party may terminate this agreement with written notice.</p>'
@@ -97,6 +110,46 @@ def rich_formatting_document(source):
     return out.getvalue()
 
 
+SDK_PROJECT = ROOT / 'scripts' / 'openxml-validator'
+SDK_BUILD = ROOT / 'target' / 'openxml-validator'
+
+
+def build_sdk_validator():
+    """Build scripts/openxml-validator (incremental); returns an error or None."""
+    if shutil.which('dotnet') is None:
+        return ('the .NET SDK is required for Open XML SDK validation: '
+                'brew install dotnet (macOS) or https://dotnet.microsoft.com/download')
+    result = subprocess.run(['dotnet', 'build', str(SDK_PROJECT), '-c', 'Release', '-o', str(SDK_BUILD), '--nologo', '-v', 'q'],
+                            capture_output=True, text=True)
+    if result.returncode != 0:
+        return 'openxml-validator build failed:\n' + (result.stdout + result.stderr)[-2000:]
+    return None
+
+
+class SdkValidator:
+    """One long-lived `dotnet openxml-validator.dll` process per gate worker."""
+
+    def __init__(self):
+        self.process = subprocess.Popen(['dotnet', str(SDK_BUILD / 'openxml-validator.dll')], stdin=subprocess.PIPE,
+                                        stdout=subprocess.PIPE, text=True, bufsize=1)
+        self.scratch = Path(tempfile.mkdtemp(prefix='docxdriver-sdk-'))
+
+    def errors(self, data):
+        path = self.scratch / 'package.docx'
+        path.write_bytes(data)
+        self.process.stdin.write(str(path) + '\n')
+        self.process.stdin.flush()
+        result = json.loads(self.process.stdout.readline())
+        found = collections.Counter()
+        if 'fatal' in result:
+            message = re.sub(r'\s+', ' ', result['fatal'])
+            found[('package', 'sdk: cannot open: ' + re.sub(r'\d+', 'N', message))] += 1
+        for error in result.get('errors', []):
+            message = re.sub(r' List of possible elements expected:.*', '', error['description'])
+            found[(error['part'].lstrip('/'), f"sdk {error['id']}: " + re.sub(r'\d+', 'N', message))] += 1
+        return found
+
+
 class Validator:
     def __init__(self):
         self.paths = {}
@@ -105,9 +158,18 @@ class Validator:
             if namespace:
                 self.paths[namespace] = path
         self.compiled = {}
+        self.sdk = SdkValidator()
 
     def errors(self, data):
-        """Error kinds per part, after ECMA-376 Part 3 markup-compatibility processing."""
+        """Error kinds per part: schema, integrity, and Open XML SDK."""
+        found = self.schema_errors(data)
+        with zipfile.ZipFile(io.BytesIO(data)) as package:
+            found.update(integrity_errors({entry.filename: package.read(entry) for entry in package.infolist()}))
+        found.update(self.sdk.errors(data))
+        return found
+
+    def schema_errors(self, data):
+        """Schema error kinds per part, after ECMA-376 Part 3 markup-compatibility processing."""
         found = collections.Counter()
         with zipfile.ZipFile(io.BytesIO(data)) as package:
             for entry in package.infolist():
@@ -154,8 +216,8 @@ class Validator:
 
 
 class Cli:
-    def __init__(self, binary, work):
-        self.binary, self.work = binary, work
+    def __init__(self, binary, work, keep=None, stem='source'):
+        self.binary, self.work, self.keep, self.stem = binary, work, keep, stem
 
     def run(self, *args):
         result = subprocess.run([self.binary, *args, '--json'], cwd=self.work, capture_output=True, text=True)
@@ -181,6 +243,9 @@ class Cli:
         committed = self.run('plan', name, 'plan.toml', '--commit', preview['preview_key'], '--output', out)
         if committed.get('outcome') != 'committed':
             return (committed.get('diagnostic') or {}).get('message', 'commit failed')
+        if self.keep:
+            digest = hashlib.sha256((self.work / out).read_bytes()).hexdigest()[:12]
+            shutil.copyfile(self.work / out, Path(self.keep) / f'{self.stem}--{ops[0]["op"]}-{mode}-{digest}.docx')
         return None
 
 
@@ -227,6 +292,11 @@ def scenarios(read):
     paragraphs = text_paragraphs(markup)
     out = [
         ('set_page_margins', 'track', [{'op': 'set_page_margins', 'top': 72.0, 'left': 90.0}]),
+        ('set_section_layout', 'track', [{'op': 'set_section_layout', 'page_size': 'a4', 'orientation': 'landscape', 'columns': 2, 'column_spacing': 18, 'column_separator': True, 'break_type': 'continuous', 'page_number_format': 'lowerRoman', 'page_number_start': 3}]),
+        ('set_section_layout', 'track', [{'op': 'set_section_layout', 'column_widths': [144, 216], 'column_spacing': 12}, {'op': 'revision_settle', 'target': 'all', 'action': 'reject'}]),
+        ('set_first_page_mode', 'track', [{'op': 'set_first_page_mode', 'enabled': True}]),
+        ('set_first_page_mode', 'track', [{'op': 'set_first_page_mode', 'enabled': True}, {'op': 'revision_settle', 'target': 'all', 'action': 'reject'}]),
+        ('set_first_page_mode', 'direct', [{'op': 'set_first_page_mode', 'enabled': True}, {'op': 'set_first_page_mode', 'enabled': False}]),
         ('set_even_and_odd_headers', 'track', [{'op': 'set_even_and_odd_headers', 'even_and_odd': True}]),
         ('set_header', 'track', [{'op': 'set_header', 'kind': 'even', 'with': '<p>Even <b>header</b></p>'}]),
         ('set_footer', 'track', [{'op': 'set_footer', 'with': '<p>Page footer</p>'}]),
@@ -246,6 +316,29 @@ def scenarios(read):
     if not paragraphs:
         return out
     at, words = paragraphs[0]
+    out.append(('insert_table', 'direct', [{'op': 'insert_table', 'at': at, 'position': 'before', 'rows': 2, 'columns': 2, 'as': 'grid'}, {'op': 'edit_table', 'at': '$grid', 'action': {'kind': 'insert_rows', 'row': 1, 'position': 'after', 'count': 1}}]))
+    for action in [
+        {'kind': 'insert_columns', 'column': 1, 'position': 'after', 'count': 1},
+        {'kind': 'delete_rows', 'row': 1, 'count': 1},
+        {'kind': 'delete_columns', 'column': 1, 'count': 1},
+        {'kind': 'merge_cells', 'row': 1, 'column': 1, 'row_span': 2, 'column_span': 2},
+        {'kind': 'delete'},
+    ]:
+        out.append(('edit_table', 'direct', [{'op': 'insert_table', 'at': at, 'position': 'before', 'rows': 2, 'columns': 2, 'as': 'grid'}, {'op': 'edit_table', 'at': '$grid', 'action': action}]))
+    out.append(('edit_table', 'direct', [{'op': 'insert_table', 'at': at, 'position': 'before', 'rows': 2, 'columns': 2, 'as': 'grid'}, {'op': 'edit_table', 'at': '$grid', 'action': {'kind': 'merge_cells', 'row': 1, 'column': 1, 'row_span': 2, 'column_span': 2}}, {'op': 'edit_table', 'at': '$grid', 'action': {'kind': 'split_cell', 'row': 1, 'column': 1}}]))
+    grid = [{'op': 'insert_table', 'at': at, 'position': 'before', 'rows': 2, 'columns': 2, 'as': 'grid'}]
+    out.append(('format_table', 'direct', grid + [{'op': 'format_table', 'at': '$grid', 'format': {
+        'width': {'unit': 'percent', 'value': 80}, 'column_widths': [120, 180], 'layout': 'fixed', 'alignment': 'center',
+        'padding': {'top': 3}, 'borders': {'top': {'style': 'double', 'color': '#123456', 'width': 1}}}}]))
+    out.append(('format_row', 'direct', grid + [{'op': 'format_row', 'at': '$grid/row:1', 'format': {
+        'height': 24, 'height_rule': 'at_least', 'repeating_header': True, 'allow_split': False}}]))
+    out.append(('format_cell', 'direct', grid + [{'op': 'format_cell', 'at': '$grid/row:1/cell:1', 'format': {
+        'fill': '#ABCDEF', 'vertical_alignment': 'center', 'padding': {'left': 6}, 'borders': {'bottom': {'style': 'single', 'width': 0.5}}}}]))
+    if '<table' in markup:
+        for mode in ('track', 'direct'):
+            out.append(('format_table', mode, [{'op': 'format_table', 'at': 'table:1', 'format': {'alignment': 'center', 'layout': 'fixed'}}]))
+            out.append(('format_row', mode, [{'op': 'format_row', 'at': 'table:1/row:1', 'format': {'repeating_header': True}}]))
+            out.append(('format_cell', mode, [{'op': 'format_cell', 'at': 'table:1/row:1/cell:1', 'format': {'fill': '#ABCDEF'}}]))
     other = paragraphs[min(1, len(paragraphs) - 1)][0]
     first, second = words[0], words[1]
     for mode in ('track', 'direct'):
@@ -261,10 +354,17 @@ def scenarios(read):
                                    'bold': False, 'italic': False, 'underline': False, 'strike': False, 'superscript': False}]),
             ('format_text', mode, [{'op': 'format_text', 'at': at, 'select': second, 'occurrence': 1,
                                    'clear': ['bold', 'italic', 'underline', 'strike', 'color', 'font_size', 'subscript']}]),
+            ('set_list', mode, [{'op': 'set_list', 'at': [at], 'levels': [{'format': 'decimal', 'label': '%1.', 'first_line_indent': -9, 'indent_left': 18, 'marker_bold': True}, {'format': 'lowerLetter', 'label': '%1.%2)', 'restart_after': 0, 'marker_color': '123456'}]}]),
+            ('format_paragraph', mode, [{'op': 'format_paragraph', 'at': at, 'indent_left': -12, 'indent_right': -6, 'first_line_indent': -18}]),
+            ('format_paragraph', mode, [{'op': 'format_paragraph', 'at': at, 'first_line_indent': 0}]),
+            ('format_paragraph', mode, [{'op': 'format_paragraph', 'at': at, 'clear': ['first_line_indent', 'indent_left', 'indent_right']}]),
             ('format_paragraph', mode, [{'op': 'format_paragraph', 'at': at, 'alignment': 'center', 'space_after': 6.0,
                                          'line_spacing': {'mode': 'multiple', 'value': 1.5}}]),
             ('insert_paragraph', mode, [{'op': 'insert_paragraph', 'at': at, 'position': 'after', 'with': 'Inserted <b>text</b>', 'as': '$new'},
                                         {'op': 'replace_text', 'at': '$new', 'select': 'Inserted', 'with': 'Added'}]),
+            ('set_list', mode, [{'op': 'set_list', 'at': [at], 'format': 'bullet', 'level': 1}]),
+            ('set_list', mode, [{'op': 'set_list', 'at': [at], 'format': 'decimal', 'start': 4}]),
+            ('set_list', mode, [{'op': 'set_list', 'at': [at], 'remove': True}]),
             ('delete_paragraphs', mode, [{'op': 'delete_paragraphs', 'at': [other]}]),
             ('comment_add', mode, [{'op': 'comment_add', 'at': at, 'select': second, 'occurrence': 1, 'text': 'Check this'}]),
         ]
@@ -302,22 +402,40 @@ def comment_chain(cli, name):
     ]
 
 
+def unmasked(introduced, removed):
+    """Drop schema content-model errors an edit merely uncovered.
+
+    lxml reports one content-model error per element and skips the rest of
+    it, so repairing an invalid source element (format_table adding the
+    missing tblPr of an invalid table) exposes pre-existing errors further
+    down the same part. A new "not expected" schema error counts only when
+    the edit did not also remove one from that part.
+    """
+    def content_model(message):
+        return not message.startswith(('integrity:', 'sdk')) and 'This element is not expected' in message
+    repaired = {part for part, message in removed if content_model(message)}
+    return {(part, message) for part, message in introduced if not (part in repaired and content_model(message))}
+
+
 _process_validator = None
 
 
 def check_document(job):
     """All scenarios for one source, with private package outputs/validator."""
     global _process_validator
-    document, binary = job
+    document, binary, keep = job
     if _process_validator is None:
         _process_validator = Validator()
     validator = _process_validator
     work = Path(tempfile.mkdtemp(prefix='docxdriver-conformance-'))
-    cli = Cli(binary, work)
+    stem = f'{document.stem}-{hashlib.sha256(str(document).encode()).hexdigest()[:6]}'
+    cli = Cli(binary, work, keep, stem)
     failures, applied, rejected = [], collections.Counter(), collections.Counter()
     try:
         name = 'source.docx'
         shutil.copyfile(document, work / name)
+        if keep:
+            shutil.copyfile(document, Path(keep) / f'{stem}--source.docx')
         read = cli.read(name)
         if read is None:
             return failures, applied, rejected
@@ -331,7 +449,8 @@ def check_document(job):
                 continue
             applied[label] += 1
             baseline = before if source == name else set(validator.errors((work / source).read_bytes()))
-            for kind, message in sorted(set(validator.errors((work / 'out.docx').read_bytes())) - baseline):
+            after = set(validator.errors((work / 'out.docx').read_bytes()))
+            for kind, message in sorted(unmasked(after - baseline, baseline - after)):
                 failures.append(f'{document.name}: {label} ({mode}) introduced {kind}: {message[:240]}')
         return failures, applied, rejected
     finally:
@@ -344,9 +463,17 @@ def main():
     parser.add_argument('--corpus', help='directory searched recursively for .docx inputs')
     parser.add_argument('--limit', type=int, default=0, help='use at most N corpus documents')
     parser.add_argument('--jobs', type=int, default=1, help='independent document workers (default: 1)')
+    parser.add_argument('--keep-outputs', metavar='DIR', help='save every committed package to DIR (for scripts/word-smoke.py)')
     args = parser.parse_args()
     if args.jobs < 1:
         parser.error('--jobs must be positive')
+    problem = build_sdk_validator()
+    if problem:
+        print('FAIL', problem)
+        return 1
+    keep = str(Path(args.keep_outputs).resolve()) if args.keep_outputs else None
+    if keep:
+        Path(keep).mkdir(parents=True, exist_ok=True)
 
     validator = Validator()
     work = Path(tempfile.mkdtemp(prefix='docxdriver-conformance-'))
@@ -372,7 +499,7 @@ def main():
             corpus = sorted(Path(args.corpus).rglob('*.docx'))
             inputs += corpus[: args.limit] if args.limit else corpus
 
-        jobs = [(document, str(Path(args.cli).resolve())) for document in inputs]
+        jobs = [(document, str(Path(args.cli).resolve()), keep) for document in inputs]
         if args.jobs == 1:
             results = map(check_document, jobs)
             for failures_here, applied_here, rejected_here in results:

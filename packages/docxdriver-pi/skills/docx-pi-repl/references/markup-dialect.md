@@ -59,3 +59,13 @@ non-stretching accents and accented `munderover` return a diagnostic.
 Content controls may contain source paragraphs and tables; full document reads
 include their content in order. Treat DOM note IDs as opaque and retain the
 original note identity from `data-docx-note-id`.
+
+### Word highlighting
+
+Use `<mark>text</mark>` for yellow or `<mark data-highlight="cyan">text</mark>` for a palette color. The exact palette is black, blue, cyan, green, magenta, red, yellow, white, darkBlue, darkCyan, darkGreen, darkMagenta, darkRed, darkYellow, darkGray, lightGray, and none. Unknown values are rejected. This is Word highlighting; arbitrary RGB shading is separate. `format_text` accepts `highlight` with these values; `none` overrides inherited highlighting and `clear=["highlight"]` removes direct highlighting. Unspecified properties are preserved, and revision rejection restores the prior run properties. Preview spans retain `data-docx-highlight` and display the palette color.
+
+Paragraph `margin-left`, `margin-right`, and `text-indent` accept signed pt/px lengths. Negative `text-indent` creates hanging indentation; zero writes an explicit first-line zero. Typed `format_paragraph` uses signed `first_line_indent` in points, with the same convention. `clear=["first_line_indent"]` removes direct first-line/hanging attributes and inherits. Left/right and first-line writes preserve unrelated character and logical indentation attributes.
+
+Setting or clearing `first_line_indent` also removes competing `firstLineChars`/`hangingChars` direct overrides, so the logical offset has one unambiguous mode. Other character/logical indentation attributes remain untouched.
+
+`<li>` accepts multiple paragraphs and child lists, retaining one marker per item. Continuation paragraphs carry explicit persisted DOCX membership; matching indentation alone does not establish membership. Read metadata identifies them with `continuation_paragraph`. Typed `set_list` accepts bounded `levels` definitions for a new list: format/label, start/restart_after, signed paragraph indentation and marker font/color/bold/italic. Array positions are levels; label counters may reference the current level and ancestors.

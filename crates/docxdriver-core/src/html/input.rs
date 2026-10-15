@@ -358,14 +358,17 @@ impl Lower<'_> {
                 if !pending.trim().is_empty() || out.is_empty() {
                     out.push_str(&self.list_paragraph(&pending));
                 }
-                // The DOCX list model currently represents one paragraph per
-                // item. Reject continuation paragraphs rather than renumbering.
-                let item_paragraphs = out
-                    .matches(&format!(" list-id=\"{}\"", self.lists.last().unwrap().id))
-                    .count();
-                if item_paragraphs > 1 {
-                    return Err("multiple paragraphs in one list item are unsupported; use one paragraph with <br>".into());
-                }
+                // Each additional paragraph explicitly belongs to this item.
+                // Nested lists have their own IDs and are left untouched.
+                let token = format!(" list-id=\"{}\"", self.lists.last().unwrap().id);
+                let mut seen = false;
+                out = out.split(&token).enumerate().map(|(i, piece)| {
+                    if i == 0 { piece.to_string() } else {
+                        let continuation = if seen { " list-continuation=\"true\"" } else { "" };
+                        seen = true;
+                        format!("{token}{continuation}{piece}")
+                    }
+                }).collect();
                 Ok(out)
             }
             "table" | "tr" | "td" | "th" => {
@@ -373,7 +376,7 @@ impl Lower<'_> {
                     return Err("tables are not inline content".into());
                 }
                 let tag = if name == "th" { "td" } else { name };
-                let attrs = self.attrs(n, &[("colspan", "colspan"), ("rowspan", "rowspan")]);
+                let attrs = self.attrs(n, &[("colspan", "colspan"), ("rowspan", "rowspan"), ("data-format", "data-format")]);
                 let has_paragraph = self.doc.children(n).any(|c| {
                     self.doc.node_name(c).is_some_and(|s| {
                         matches!(s, "p" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "table")
@@ -430,6 +433,12 @@ impl Lower<'_> {
                     ],
                 );
                 Ok(format!("<{tag}{attrs}>{}</{tag}>", self.children(n, true)?))
+            }
+            "mark" => {
+                if !inline { return Err("<mark> requires a paragraph".into()); }
+                let value = self.attr(n, "data-highlight").unwrap_or("yellow");
+                crate::api::HighlightColor::parse(value)?;
+                Ok(format!("<mark data-highlight=\"{}\">{}</mark>", escape_attr(value), self.children(n, true)?))
             }
             "span" => {
                 if !inline {

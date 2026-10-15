@@ -18,11 +18,14 @@ use super::{escape_attr, Atom, Fmt, Item};
 /// paragraphs.
 struct TableBuilder {
     rows: Vec<Vec<Cell>>,
+    format: Option<crate::api::TableFormat>,
+    row_formats: Vec<Option<crate::api::RowFormat>>,
     in_row: bool,
     cell: Option<Cell>,
 }
 
 struct Cell {
+    format: Option<crate::api::CellFormat>,
     xml: String,
     colspan: u32,
     rowspan: u32,
@@ -337,6 +340,7 @@ fn body_xml_from_html_with(
     let mut list_ids = std::collections::HashMap::new();
     let mut pieces: Vec<LinkedPiece> = Vec::new();
     let mut para_count = 0usize;
+    let mut continuation = None;
 
     for item in &items {
         match item {
@@ -354,6 +358,7 @@ fn body_xml_from_html_with(
                     );
                 }
                 para_extra.clear();
+                continuation = None;
                 if let Some(css) = &attrs.css {
                     para_extra.push_str(&super::styles::paragraph_properties(css)?);
                 }
@@ -365,8 +370,10 @@ fn body_xml_from_html_with(
                         deferred.lists.push(list.clone());
                         deferred.lists.len() as u32
                     });
+                    if list.continuation { continuation = Some((id, list.level)); }
+                    let written_id = if list.continuation { 0 } else { id };
                     para_extra.push_str(&format!(
-                        "<w:numPr><w:ilvl w:val=\"{}\"/><w:numId w:val=\"{id}\"/></w:numPr>",
+                        "<w:numPr><w:ilvl w:val=\"{}\"/><w:numId w:val=\"{written_id}\"/></w:numPr>",
                         list.level
                     ));
                 }
@@ -384,7 +391,13 @@ fn body_xml_from_html_with(
                 pieces.clear();
             }
             Item::ParaClose => {
-                let paragraph = paragraph_xml(para_style.take(), &pieces, &para_extra)?;
+                let mut paragraph = paragraph_xml(para_style.take(), &pieces, &para_extra)?;
+                if let Some((id, level)) = continuation {
+                    // Empty bookmark is a schema-valid, persistent application marker.
+                    // numId=0 suppresses the marker in Word; membership is explicit.
+                    let bookmark = format!("<w:bookmarkStart w:id=\"{}\" w:name=\"_docxdriver_cont_{id}_{level}\"/><w:bookmarkEnd w:id=\"{}\"/>", 100000 + para_count, 100000 + para_count);
+                    paragraph = paragraph.replacen("</w:p>", &format!("{bookmark}</w:p>"), 1);
+                }
                 pieces.clear();
                 para_count += 1;
                 match tables.last_mut() {
@@ -490,12 +503,14 @@ fn body_xml_from_html_with(
                 }
             }
             Item::Struct(token) => match token.as_str() {
-                "table" => {
+                table if table == "table" || table.starts_with("table ") => {
                     if tables.last().is_some_and(|t| t.cell.is_none()) {
                         return Err("nested tables require a cell".into());
                     }
                     tables.push(TableBuilder {
                         rows: Vec::new(),
+                        format: table_format_attr(table)?,
+                        row_formats: Vec::new(),
                         in_row: false,
                         cell: None,
                     });
@@ -505,7 +520,7 @@ fn body_xml_from_html_with(
                     if builder.in_row || builder.cell.is_some() {
                         return Err("</table> with an open row or cell".into());
                     }
-                    let xml = table_xml(&builder.rows)?;
+                    let xml = styled_table_xml(&builder)?;
                     if let Some(parent) = tables.last_mut() {
                         parent
                             .cell
@@ -517,13 +532,14 @@ fn body_xml_from_html_with(
                         body.push_str(&xml);
                     }
                 }
-                "tr" => {
+                row if row == "tr" || row.starts_with("tr ") => {
                     let builder = tables.last_mut().ok_or("<tr> outside a <table>")?;
                     if builder.in_row {
                         return Err("<tr> inside an open row".into());
                     }
                     builder.in_row = true;
                     builder.rows.push(Vec::new());
+                    builder.row_formats.push(table_format_attr(row)?);
                 }
                 "/tr" => {
                     let builder = tables.last_mut().ok_or("</tr> outside a <table>")?;
@@ -541,6 +557,7 @@ fn body_xml_from_html_with(
                         return Err("<td> inside an open cell".into());
                     }
                     builder.cell = Some(Cell {
+                        format: None,
                         xml: String::new(),
                         colspan: 1,
                         rowspan: 1,
@@ -576,6 +593,7 @@ fn body_xml_from_html_with(
                         return Err("invalid table cell nesting".into());
                     }
                     builder.cell = Some(Cell {
+                        format: table_format_attr(spanned)?,
                         xml: String::new(),
                         colspan: span("colspan")?,
                         rowspan: span("rowspan")?,
@@ -689,24 +707,7 @@ fn rpr_xml(fmt: Fmt) -> String {
     if fmt == Fmt::default() {
         return String::new();
     }
-    let mut inner = String::new();
-    if fmt.bold {
-        inner.push_str("<w:b/>");
-    }
-    if fmt.italic {
-        inner.push_str("<w:i/>");
-    }
-    if fmt.underline {
-        inner.push_str("<w:u w:val=\"single\"/>");
-    }
-    if fmt.strike {
-        inner.push_str("<w:strike/>");
-    }
-    if let Some(align) = fmt.vert_align {
-        inner.push_str(&format!("<w:vertAlign w:val=\"{}\"/>", align.docx_val()));
-    }
-    inner.push_str(&super::styles::extra_rpr(fmt));
-    format!("<w:rPr>{inner}</w:rPr>")
+    format!("<w:rPr>{}</w:rPr>", super::styles::rpr_inner(fmt))
 }
 
 fn table_xml(rows: &[Vec<Cell>]) -> Result<String, String> {
@@ -782,4 +783,28 @@ fn continuation(width: u32) -> String {
         String::new()
     };
     format!("<w:tc><w:tcPr>{span}<w:vMerge/></w:tcPr><w:p/></w:tc>")
+}
+
+fn table_format_attr<T: serde::de::DeserializeOwned>(token: &str) -> Result<Option<T>, String> {
+    if !token.contains("data-format=") { return Ok(None); }
+    let doc = xmloxide::Document::parse_str(&format!("<{token}/>" )).map_err(|e| format!("invalid formatting attribute: {e}"))?;
+    let value = doc.root_element().and_then(|n| doc.attribute(n,"data-format")).ok_or("missing data-format")?;
+    serde_json::from_str(value).map(Some).map_err(|e| format!("invalid table data-format: {e}"))
+}
+fn styled_table_xml(builder: &TableBuilder) -> Result<String,String> {
+    let raw = table_xml(&builder.rows)?;
+    if builder.format.is_none() && builder.row_formats.iter().all(Option::is_none) && builder.rows.iter().flatten().all(|c|c.format.is_none()) { return Ok(raw); }
+    let mut x=crate::document::DocxXml::parse(format!("<w:document xmlns:w=\"{}\"><w:body>{raw}</w:body></w:document>",crate::document::W_NS).as_bytes())?;
+    let ctx=crate::commands::ExecCtx {dry_run:false,now:String::new()};
+    let error=|e:crate::outcome::Outcome|e.summary;
+    if let Some(f)=&builder.format {crate::commands::tables::format_table(None,&mut x,"table:1",f,false,"",&ctx).map_err(error)?;}
+    for (ri,row) in builder.rows.iter().enumerate() {
+        let at=format!("table:1/row:{}",ri+1);
+        if let Some(f)=&builder.row_formats[ri] {crate::commands::tables::format_row(&mut x,&at,f,false,"",&ctx).map_err(error)?;}
+        let r=crate::commands::tables::resolve(&x,&at,2).map_err(error)?;
+        let indices=crate::commands::tables::cells(&x,r).into_iter().enumerate().filter(|(_,c)|!x.child_w(*c,"tcPr").and_then(|p|x.child_w(p,"vMerge")).is_some_and(|n|x.attr(n,"val")!=Some("restart"))).map(|(i,_)|i+1).collect::<Vec<_>>();
+        for (ci,c) in indices.into_iter().zip(row) {if let Some(f)=&c.format {crate::commands::tables::format_cell(&mut x,&format!("{at}/cell:{ci}"),f,false,"",&ctx).map_err(error)?;}}
+    }
+    let full=String::from_utf8(x.serialize()).map_err(|e|e.to_string())?;
+    Ok(full.split_once("<w:body>").ok_or("missing body")?.1.split_once("</w:body>").ok_or("missing body close")?.0.to_owned())
 }

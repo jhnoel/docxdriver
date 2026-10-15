@@ -3,6 +3,9 @@ pub(crate) mod comments;
 pub(crate) mod equations;
 pub(crate) mod headers;
 pub(crate) mod layout;
+pub(crate) mod lists;
+pub(crate) mod tables;
+pub(crate) mod table_structure;
 pub(crate) mod reading;
 pub(crate) mod readonly;
 pub(crate) mod revisions;
@@ -29,6 +32,8 @@ pub(crate) struct WorkState {
     pub(crate) package: Package,
     pub(crate) xml: DocxXml,
     pub(crate) mutated: bool,
+    pub(crate) table_handles: HashMap<String, xmloxide::tree::NodeId>,
+    pub(crate) table_positions: HashMap<xmloxide::tree::NodeId, String>,
     /// sha256 of the exact input package bytes — the inspection `source`, the
     /// stale-plan binding anchor, and the seed for deterministic provisional
     /// paragraph-ID repair. None when the working set was created from nothing
@@ -52,13 +57,34 @@ impl WorkState {
                 .map_err(|error| Outcome::error(error.to_string()))?;
             DocxXml::parse(bytes).map_err(Outcome::error)?
         };
+        let table_positions = table_positions(&xml);
+        let table_handles = table_positions.iter().map(|(node, address)| (address.clone(), *node)).collect();
         Ok(WorkState {
+            table_handles,
+            table_positions,
             package,
             xml,
             mutated: false,
             source_hash: None,
         })
     }
+}
+
+/// Source handles bind to XML objects, rather than shifting ordinal positions.
+fn table_positions(xml: &DocxXml) -> HashMap<xmloxide::tree::NodeId, String> {
+    let mut map = HashMap::new();
+    for (ti, table) in tables::tables(xml).into_iter().enumerate() {
+        let at = format!("table:{}", ti + 1);
+        map.insert(table, at.clone());
+        for (ri, row) in tables::rows(xml, table).into_iter().enumerate() {
+            let ra = format!("{at}/row:{}", ri + 1);
+            map.insert(row, ra.clone());
+            for (ci, cell) in tables::cells(xml, row).into_iter().enumerate() {
+                map.insert(cell, format!("{ra}/cell:{}", ci + 1));
+            }
+        }
+    }
+    map
 }
 
 /// sha256 of the exact input package bytes.
@@ -117,6 +143,41 @@ pub(crate) fn plan_seed(plan: &crate::api::Plan) -> [u8; 32] {
 }
 
 pub(crate) fn run_typed_edit(
+    state: &mut WorkState, op: &crate::api::EditOp, author: &str,
+    mode: crate::api::ChangeMode, index: usize, source: &[u8;32],
+    seed: &[u8;32], ctx: &ExecCtx,
+) -> Outcome {
+    use crate::api::EditOp;
+    let mut resolved = op.clone();
+    let target = match &mut resolved {
+        EditOp::FormatTable { at, .. } | EditOp::FormatRow { at, .. }
+        | EditOp::FormatCell { at, .. } | EditOp::EditTable { at, .. } => Some(at),
+        _ => None,
+    };
+    if let Some(at) = target {
+        let Some(node) = state.table_handles.get(at) else { return Outcome::error(format!("unknown source-bound table handle {at:?}")); };
+        let Some(current) = state.table_positions.get(node) else { return Outcome::error(format!("table handle {at:?} targets a deleted object")); };
+        *at = current.clone();
+    }
+    let before: std::collections::HashSet<_> = state.xml.revision_elements().into_iter().collect();
+    let outcome = run_typed_edit_inner(state, &resolved, author, mode, index, source, seed, ctx);
+    state.xml.renumber_new_revision_ids(&before);
+    if matches!(op, EditOp::EditTable { .. } | EditOp::InsertTable { .. } | EditOp::DeleteParagraphs { .. } | EditOp::ReplaceParagraph { .. }) {
+        state.table_positions = table_positions(&state.xml);
+        if let EditOp::InsertTable { alias: Some(alias), .. } = op {
+            if let Some(at) = outcome.result.as_ref().and_then(|r|r.get("table")).and_then(|v|v.as_str()) {
+                let prefix = format!("{at}/");
+                for (node, current) in &state.table_positions {
+                    if current == at { state.table_handles.insert(format!("${alias}"), *node); }
+                    else if let Some(suffix) = current.strip_prefix(&prefix) { state.table_handles.insert(format!("${alias}/{suffix}"), *node); }
+                }
+            }
+        }
+    }
+    outcome
+}
+
+fn run_typed_edit_inner(
     state: &mut WorkState,
     op: &crate::api::EditOp,
     author: &str,
@@ -218,6 +279,16 @@ pub(crate) fn run_typed_edit(
                 typed::replace_paragraph_typed(pkg, xml, &args, ctx, source)
             })
         }
+        EditOp::EditTable { at, action } => {
+            mutate(state, |pkg, xml, _source| table_structure::edit(pkg, xml, at, action, tracked))
+        }
+        EditOp::InsertTable { at, position, rows, columns, .. } => {
+            let at = para_id!(at);
+            mutate(state, |pkg, xml, source| table_structure::insert(pkg, xml, source, &at, *position, *rows, *columns, tracked))
+        }
+        EditOp::FormatTable { at, format } => mutate(state, |pkg, xml, _| tables::format_table(Some(pkg), xml, at, format, tracked, author, ctx)),
+        EditOp::FormatRow { at, format } => mutate(state, |_, xml, _| tables::format_row(xml, at, format, tracked, author, ctx)),
+        EditOp::FormatCell { at, format } => mutate(state, |_, xml, _| tables::format_cell(xml, at, format, tracked, author, ctx)),
         EditOp::FormatText {
             at,
             select,
@@ -229,6 +300,7 @@ pub(crate) fn run_typed_edit(
             superscript,
             subscript,
             color,
+            highlight,
             font_size,
             clear,
         } => {
@@ -242,6 +314,7 @@ pub(crate) fn run_typed_edit(
                 strike: *strike,
                 superscript: *superscript,
                 subscript: *subscript,
+                highlight: *highlight,
                 color: color.clone(),
                 font_size: font_size.map(|p| p.as_points()),
                 clear: clear.clone(),
@@ -257,6 +330,7 @@ pub(crate) fn run_typed_edit(
             alignment,
             indent_left,
             indent_right,
+            first_line_indent,
             space_before,
             space_after,
             line_spacing,
@@ -276,6 +350,7 @@ pub(crate) fn run_typed_edit(
                 alignment: alignment.clone(),
                 indent_left: indent_left.map(|p| p.0),
                 indent_right: indent_right.map(|p| p.0),
+                first_line_indent: first_line_indent.map(|p| p.0),
                 space_before: space_before.map(|p| p.0),
                 space_after: space_after.map(|p| p.0),
                 line,
@@ -285,6 +360,13 @@ pub(crate) fn run_typed_edit(
             };
             mutate(state, |pkg, xml, source| {
                 typed::format_paragraph_typed(pkg, xml, &args, ctx, source)
+            })
+        }
+        EditOp::SetList { at, num_id, format, level, start, remove, levels } => {
+            let mut addresses = Vec::new();
+            for address in at { addresses.push(para_id!(address)); }
+            mutate(state, |pkg, xml, source| {
+                lists::set_list(pkg, xml, source, &addresses, *num_id, format.as_deref(), *level, *start, *remove, levels.as_deref(), author, ctx)
             })
         }
         EditOp::InsertParagraph {
@@ -348,6 +430,12 @@ pub(crate) fn run_typed_edit(
                 footer.map(|p| p.0),
                 gutter.map(|p| p.0),
             )
+        }),
+        EditOp::SetSectionLayout { section, .. } => mutate(state, |_pkg, xml, _| {
+            layout::set_section_layout(xml, section.unwrap_or(1) as usize, op, tracked, author, ctx)
+        }),
+        EditOp::SetFirstPageMode { section, enabled } => mutate(state, |_pkg, xml, _| {
+            layout::set_first_page_mode(xml, section.unwrap_or(1) as usize, *enabled, tracked, author, ctx)
         }),
         EditOp::SetEvenAndOddHeaders { even_and_odd } => mutate(state, |pkg, xml, _| {
             headers::set_even_and_odd_headers_typed(pkg, xml, *even_and_odd)

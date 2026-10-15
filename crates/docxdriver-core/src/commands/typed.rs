@@ -1135,29 +1135,7 @@ fn ensure_plain_run(
         let new_run = xml.doc.create_element("w:r");
         if fmt != Fmt::default() {
             let rpr = xml.doc.create_element("w:rPr");
-            if fmt.bold {
-                let b = xml.doc.create_element("w:b");
-                xml.doc.append_child(rpr, b);
-            }
-            if fmt.italic {
-                let i = xml.doc.create_element("w:i");
-                xml.doc.append_child(rpr, i);
-            }
-            if fmt.underline {
-                let u = xml.doc.create_element("w:u");
-                xml.doc.set_attribute(u, "w:val", "single");
-                xml.doc.append_child(rpr, u);
-            }
-            if fmt.strike {
-                let s = xml.doc.create_element("w:strike");
-                xml.doc.append_child(rpr, s);
-            }
-            if let Some(align) = fmt.vert_align {
-                let vert = xml.doc.create_element("w:vertAlign");
-                xml.doc.set_attribute(vert, "w:val", align.docx_val());
-                xml.doc.append_child(rpr, vert);
-            }
-            crate::html::styles::append_extra_rpr(xml, rpr, fmt);
+            crate::html::styles::append_rpr(xml, rpr, fmt);
             xml.doc.append_child(new_run, rpr);
         }
         attach_created(xml, paragraph, before, new_run);
@@ -1335,6 +1313,7 @@ struct CharFormat {
     superscript: Option<bool>,
     subscript: Option<bool>,
     /// Normalized `#RRGGBB` color as authored.
+    highlight: Option<crate::api::HighlightColor>,
     color: Option<String>,
     /// Point size.
     font_size: Option<f64>,
@@ -1465,6 +1444,9 @@ fn char_format_properties(
             properties.insert(name, Some(if value { on } else { off }.to_owned()));
         }
     }
+    if let Some(highlight) = fmt.highlight {
+        properties.insert("highlight", Some(highlight.as_str().to_owned()));
+    }
     if let Some(color) = &fmt.color {
         properties.insert("color", Some(color.trim_start_matches('#').to_uppercase()));
     }
@@ -1478,6 +1460,7 @@ fn char_format_properties(
             "underline" => "u",
             "strike" => "strike",
             "superscript" | "subscript" => "vertAlign",
+            "highlight" => "highlight",
             "color" => "color",
             "font_size" => "sz",
             _ => continue,
@@ -1648,6 +1631,7 @@ pub struct FormatTextArgs {
     pub strike: Option<bool>,
     pub superscript: Option<bool>,
     pub subscript: Option<bool>,
+    pub highlight: Option<crate::api::HighlightColor>,
     pub color: Option<String>,
     pub font_size: Option<f64>,
     pub clear: Vec<String>,
@@ -1686,6 +1670,7 @@ pub fn format_text_typed(
         strike: args.strike,
         superscript: args.superscript,
         subscript: args.subscript,
+        highlight: args.highlight,
         color: args.color.clone(),
         font_size: args.font_size,
         clear: args.clear.clone(),
@@ -1775,6 +1760,7 @@ struct ParaFormat {
     alignment: Option<String>,
     indent_left: Option<i64>,
     indent_right: Option<i64>,
+    first_line_indent: Option<i64>,
     space_before: Option<i64>,
     space_after: Option<i64>,
     line: Option<i64>,
@@ -1883,6 +1869,10 @@ fn parse_para_format(command: &Value) -> Result<ParaFormat, Outcome> {
 struct PPrState {
     style: Option<String>,
     jc: Option<String>,
+    ind_first_line_chars: Option<i64>,
+    ind_hanging_chars: Option<i64>,
+    ind_first_line: Option<i64>,
+    ind_hanging: Option<i64>,
     ind_left: Option<i64>,
     ind_right: Option<i64>,
     space_before: Option<i64>,
@@ -1903,6 +1893,10 @@ fn ppr_state(xml: &DocxXml, paragraph: NodeId) -> PPrState {
         state.jc = xml.attr(jc, "val").map(str::to_string);
     }
     if let Some(ind) = xml.child_w(ppr, "ind") {
+        state.ind_first_line_chars = xml.attr(ind, "firstLineChars").and_then(|v| v.parse().ok());
+        state.ind_hanging_chars = xml.attr(ind, "hangingChars").and_then(|v| v.parse().ok());
+        state.ind_first_line = xml.attr(ind, "firstLine").and_then(|v| v.parse().ok());
+        state.ind_hanging = xml.attr(ind, "hanging").and_then(|v| v.parse().ok());
         state.ind_left = xml.attr(ind, "left").and_then(|v| v.parse().ok());
         state.ind_right = xml.attr(ind, "right").and_then(|v| v.parse().ok());
     }
@@ -1930,6 +1924,12 @@ fn para_format_target(current: &PPrState, fmt: &ParaFormat) -> PPrState {
     if let Some(v) = fmt.indent_right {
         target.ind_right = Some(v);
     }
+    if let Some(v) = fmt.first_line_indent {
+        target.ind_first_line_chars = None;
+        target.ind_hanging_chars = None;
+        target.ind_first_line = if v >= 0 { Some(v) } else { None };
+        target.ind_hanging = if v < 0 { Some(-v) } else { None };
+    }
     if let Some(v) = fmt.space_before {
         target.space_before = Some(v);
     }
@@ -1948,6 +1948,7 @@ fn para_format_target(current: &PPrState, fmt: &ParaFormat) -> PPrState {
             "alignment" => target.jc = None,
             "indent_left" => target.ind_left = None,
             "indent_right" => target.ind_right = None,
+            "first_line_indent" => { target.ind_first_line = None; target.ind_hanging = None; target.ind_first_line_chars = None; target.ind_hanging_chars = None; },
             "space_before" => target.space_before = None,
             "space_after" => target.space_after = None,
             "line_spacing" => {
@@ -2010,6 +2011,14 @@ fn apply_para_format(xml: &mut DocxXml, ppr: NodeId, current: &PPrState, target:
             None => remove_ppr_child(xml, ppr, "jc"),
         }
     }
+    if current.ind_first_line != target.ind_first_line || current.ind_hanging != target.ind_hanging || current.ind_first_line_chars != target.ind_first_line_chars || current.ind_hanging_chars != target.ind_hanging_chars {
+        let ind = ensure_ppr_child(xml, ppr, "ind");
+        set_or_clear_attr(xml, ind, "firstLineChars", target.ind_first_line_chars);
+        set_or_clear_attr(xml, ind, "hangingChars", target.ind_hanging_chars);
+        set_or_clear_attr(xml, ind, "firstLine", target.ind_first_line);
+        set_or_clear_attr(xml, ind, "hanging", target.ind_hanging);
+        remove_empty_ppr_child(xml, ppr, "ind");
+    }
     if current.ind_left != target.ind_left || current.ind_right != target.ind_right {
         let ind = ensure_ppr_child(xml, ppr, "ind");
         set_or_clear_attr(xml, ind, "left", target.ind_left);
@@ -2044,6 +2053,7 @@ pub struct FormatParagraphArgs {
     pub alignment: Option<String>,
     pub indent_left: Option<i64>,
     pub indent_right: Option<i64>,
+    pub first_line_indent: Option<i64>,
     pub space_before: Option<i64>,
     pub space_after: Option<i64>,
     pub line: Option<i64>,
@@ -2070,6 +2080,7 @@ pub fn format_paragraph_typed(
         alignment: args.alignment.clone(),
         indent_left: args.indent_left,
         indent_right: args.indent_right,
+        first_line_indent: args.first_line_indent,
         space_before: args.space_before,
         space_after: args.space_after,
         line: args.line,

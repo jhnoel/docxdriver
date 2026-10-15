@@ -557,6 +557,7 @@ fn every_edit_op_and_command_variant_has_strict_stable_json_and_toml() {
             strike: Some(false),
             superscript: Some(false),
             subscript: Some(false),
+                highlight: None,
             color: Some("#AABBCC".into()),
             font_size: Some(Points::from_points(12.5).unwrap()),
             clear: vec!["italic".into()],
@@ -565,8 +566,9 @@ fn every_edit_op_and_command_variant_has_strict_stable_json_and_toml() {
             at: id.clone(),
             style: Some("Normal".into()),
             alignment: Some("justify".into()),
-            indent_left: Some(Points::from_points(1.25).unwrap()),
+            indent_left: Some(docxdriver_core::SignedPoints::from_points(1.25).unwrap()),
             indent_right: None,
+            first_line_indent: None,
             space_before: None,
             space_after: Some(Points::from_points(2.0).unwrap()),
             line_spacing: Some(LineSpacing::Multiple(1.15)),
@@ -937,6 +939,7 @@ fn every_edit_op_executes_through_an_individual_typed_command() {
             strike: None,
             superscript: None,
             subscript: None,
+                highlight: None,
             color: None,
             font_size: None,
             clear: vec![],
@@ -950,6 +953,7 @@ fn every_edit_op_executes_through_an_individual_typed_command() {
             alignment: Some("center".into()),
             indent_left: None,
             indent_right: None,
+            first_line_indent: None,
             space_before: None,
             space_after: None,
             line_spacing: Some(LineSpacing::Exact(Points::from_points(12.0).unwrap())),
@@ -1154,6 +1158,7 @@ fn every_edit_op_also_executes_as_a_single_plan_entry() {
             strike: None,
             superscript: None,
             subscript: None,
+                highlight: None,
             color: None,
             font_size: None,
             clear: vec![],
@@ -1167,6 +1172,7 @@ fn every_edit_op_also_executes_as_a_single_plan_entry() {
             alignment: Some("justify".into()),
             indent_left: None,
             indent_right: None,
+            first_line_indent: None,
             space_before: None,
             space_after: None,
             line_spacing: Some(LineSpacing::Multiple(1.15)),
@@ -1315,7 +1321,7 @@ fn every_edit_op_also_executes_as_a_single_plan_entry() {
 fn insert_paragraph_table_anchor_numbers_body_tables_and_inserts_siblings() {
     let source = document_with_body_table();
     let markup = read_markup(&source);
-    assert!(markup.contains("<table data-docx-table=\"1\">"));
+    assert!(markup.contains("<table data-docx-table=\"1\" data-docx-handle=\"table:1\">"));
     assert_eq!(markup.matches(" data-docx-table=\"").count(), 1);
 
     let after = commit_plan(
@@ -1579,15 +1585,15 @@ fn comment_add_writes_word_compatible_comment_parts() {
     for (part, content_type) in [
         (
             "/word/commentsExtended.xml",
-            "application/vnd.ms-word.commentsExtended+xml",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.commentsExtended+xml",
         ),
         (
             "/word/commentsIds.xml",
-            "application/vnd.ms-word.commentsIds+xml",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.commentsIds+xml",
         ),
         (
             "/word/commentsExtensible.xml",
-            "application/vnd.ms-word.commentsExtensible+xml",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.commentsExtensible+xml",
         ),
     ] {
         let needle = format!("PartName=\"{part}\" ContentType=\"{content_type}\"");
@@ -1604,8 +1610,15 @@ fn comment_add_writes_word_compatible_comment_parts() {
 }
 
 #[test]
-fn comment_add_repairs_legacy_extended_content_types() {
+fn comment_add_repairs_short_ms_word_content_types() {
+    // docxdriver 0.3.0 registered the extended comment parts under the short
+    // vnd.ms-word types, which Word reports as unreadable content.
     let source = package_with_foreign_comments();
+    let types = part_xml(&source, "[Content_Types].xml").replace(
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.comments",
+        "application/vnd.ms-word.comments",
+    );
+    let source = overwrite_part(&source, "[Content_Types].xml", types.as_bytes());
     let commented = commit_plan(
         &source,
         vec![EditOp::CommentAdd {
@@ -1616,15 +1629,17 @@ fn comment_add_repairs_legacy_extended_content_types() {
         }],
     );
     let types = part_xml(&commented, "[Content_Types].xml");
+    for part in ["Extended", "Ids", "Extensible"] {
+        assert!(
+            types.contains(&format!(
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.comments{part}+xml"
+            )),
+            "comments{part} must use the type Word writes: {types}"
+        );
+    }
     assert!(
-        types.contains("application/vnd.ms-word.commentsExtended+xml"),
-        "legacy openxmlformats commentsExtended content type must be rewritten: {types}"
-    );
-    assert!(
-        !types.contains(
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.commentsExtended+xml"
-        ),
-        "the long openxmlformats commentsExtended type must not remain: {types}"
+        !types.contains("application/vnd.ms-word.comments"),
+        "the short vnd.ms-word comment types must not remain: {types}"
     );
 }
 
@@ -1633,8 +1648,8 @@ fn body_table_numbers_are_document_wide_across_sections() {
     let source = document_tables_in_two_sections();
     let markup = read_markup(&source);
     assert!(
-        markup.contains("<table data-docx-table=\"1\">")
-            && markup.contains("<table data-docx-table=\"2\">"),
+        markup.contains("<table data-docx-table=\"1\" data-docx-handle=\"table:1\">")
+            && markup.contains("<table data-docx-table=\"2\" data-docx-handle=\"table:2\">"),
         "expected consecutive table numbers across sections: {markup}"
     );
     let after = commit_plan(
@@ -2189,6 +2204,7 @@ fn stale_selector_after_an_earlier_op_names_the_operations_that_changed_the_text
                 strike: None,
                 superscript: None,
                 subscript: None,
+                highlight: None,
                 color: None,
                 font_size: None,
                 clear: Vec::new(),
@@ -2255,6 +2271,7 @@ fn created_structure_follows_schema_sequence_order() {
             alignment: Some("center".into()),
             indent_left: None,
             indent_right: None,
+            first_line_indent: None,
             space_before: None,
             space_after: Some(Points::from_points(6.0).unwrap()),
             line_spacing: None,
@@ -2268,4 +2285,127 @@ fn created_structure_follows_schema_sequence_order() {
     assert!(at("<w:spacing") < at("<w:jc") && at("<w:jc") < at("<w:rPr>"), "{ppr}");
     assert!(at("<w:rPr>") < at("<w:pPrChange"), "{ppr}");
     assert!(xml.contains("<w:pPrChange") && !xml.contains("<w:pPr><w:rPr><w:b/></w:rPr></w:pPr></w:pPrChange>"), "{xml}");
+}
+
+#[test]
+fn signed_paragraph_indentation_is_selective_and_rejectable() {
+    let body = format!("<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:w14=\"http://schemas.microsoft.com/office/word/2010/wordml\"><w:body><w:p w14:paraId=\"{SOURCE_ID}\"><w:pPr><w:ind w:left=\"120\" w:firstLine=\"240\" w:leftChars=\"100\" w:start=\"80\"/><w:jc w:val=\"right\"/></w:pPr><w:r><w:t>Indent me</w:t></w:r></w:p><w:p w14:paraId=\"{SECOND_ID}\"><w:r><w:t>Neighbor</w:t></w:r></w:p><w:sectPr/></w:body></w:document>");
+    let source = package_with_body(&body);
+    for offset in [-18.0, 0.0, 12.0] {
+        let op: EditOp = serde_json::from_value(serde_json::json!({"op":"format_paragraph", "at":SOURCE_ID,"indent_left":-6,"indent_right":-3,"first_line_indent":offset})).unwrap();
+        let result = commit_plan(&source, vec![op]);
+        let xml = document_xml(&result);
+        let direct = xml.split("<w:pPrChange").next().unwrap();
+        assert!(direct.contains("w:left=\"-120\""), "{xml}");
+        assert!(direct.contains("w:right=\"-60\""), "{xml}");
+        assert!(direct.contains("w:leftChars=\"100\"") && direct.contains("w:start=\"80\""), "{xml}");
+        assert!(direct.contains("<w:jc w:val=\"right\""), "{xml}");
+        if offset < 0.0 { assert!(direct.contains("w:hanging=\"360\"") && !direct.contains("w:firstLine="), "{xml}"); }
+        else { assert!(direct.contains(&format!("w:firstLine=\"{}\"", (offset * 20.0) as i64)) && !direct.contains("w:hanging="), "{xml}"); }
+        let rejected = commit_plan(&result, vec![EditOp::RevisionSettle {target:RevisionTarget::All,action:RevisionAction::Reject}]);
+        let restored = document_xml(&rejected);
+        assert!(restored.contains("w:firstLine=\"240\"") && restored.contains("w:left=\"120\""), "{restored}");
+        assert!(restored.contains("Indent me") && restored.contains("Neighbor") && restored.contains(SECOND_ID));
+        let accepted = commit_plan(&result, vec![EditOp::RevisionSettle {target:RevisionTarget::All,action:RevisionAction::Accept}]);
+        let clear: EditOp = serde_json::from_value(serde_json::json!({"op":"format_paragraph","at":SOURCE_ID,"clear":["first_line_indent"]})).unwrap();
+        let cleared = document_xml(&commit_plan(&accepted, vec![clear]));
+        let direct = cleared.split("<w:pPrChange").next().unwrap();
+        assert!(!direct.contains("w:firstLine=") && !direct.contains("w:hanging="), "{cleared}");
+    }
+    assert!(serde_json::from_value::<Points>(serde_json::json!(-6)).is_err());
+}
+
+#[test]
+fn multilevel_list_definitions_have_isolated_formatting_and_restarts() {
+    let source = document(&[(SOURCE_ID, "list item"), (SECOND_ID, "ordinary prose")]);
+    let operation: EditOp = serde_json::from_value(serde_json::json!({
+        "op":"set_list","at":[SOURCE_ID],"level":2,"levels":[
+            {"format":"decimal","label":"%1.","start":3,"indent_left":18,"first_line_indent":-9,"marker_bold":true},
+            {"format":"lowerLetter","label":"%1.%2)","restart_after":0,"marker_color":"123456"},
+            {"format":"lowerRoman","label":"%1.%2.%3","restart_after":1,"marker_font":"Arial","indent_left":-6}
+        ]
+    })).unwrap();
+    let result = commit_plan(&source, vec![operation]);
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(&result)).unwrap();
+    let mut numbering = String::new();
+    std::io::Read::read_to_string(&mut zip.by_name("word/numbering.xml").unwrap(), &mut numbering).unwrap();
+    for value in ["w:val=\"%1.%2.%3\"", "w:lvlRestart w:val=\"2\"", "w:hanging=\"180\"", "w:left=\"-120\"", "w:val=\"123456\"", "w:ascii=\"Arial\""] { assert!(numbering.contains(value), "missing {value}: {numbering}"); }
+    let rejected = commit_plan(&result, vec![EditOp::RevisionSettle {target:RevisionTarget::All,action:RevisionAction::Reject}]);
+    assert!(!document_xml(&rejected).contains("<w:numPr>"));
+}
+
+fn ops(values: serde_json::Value) -> Vec<EditOp> {
+    serde_json::from_value(values).expect("valid ops")
+}
+
+fn ids_of(xml: &str, tag: &str) -> Vec<String> {
+    let needle = format!("<w:{tag} ");
+    xml.match_indices(&needle)
+        .filter_map(|(at, _)| {
+            let rest = &xml[at..];
+            let rest = &rest[..rest.find('>').unwrap_or(rest.len())];
+            let value = &rest[rest.find("w:id=\"")? + 6..];
+            Some(value[..value.find('"')?].to_string())
+        })
+        .collect()
+}
+
+#[test]
+fn comment_reply_is_anchored_beside_its_parent_and_deleted_with_the_thread() {
+    let source = document(&[(SOURCE_ID, "alpha beta")]);
+    let commented = commit_plan(
+        &source,
+        ops(serde_json::json!([{"op": "comment_add", "at": SOURCE_ID, "select": "beta", "text": "root"}])),
+    );
+    let root = ids_of(&document_xml(&commented), "commentReference")[0].clone();
+    let replied = commit_plan(
+        &commented,
+        ops(serde_json::json!([{"op": "comment_reply", "comment_id": root, "text": "reply"}])),
+    );
+    let document = document_xml(&replied);
+    let references = ids_of(&document, "commentReference");
+    assert_eq!(references.len(), 2, "Word anchors every reply: {document}");
+    let reply = references.iter().find(|id| **id != root).expect("reply reference").clone();
+    for tag in ["commentRangeStart", "commentRangeEnd"] {
+        assert_eq!(ids_of(&document, tag), vec![root.clone(), reply.clone()], "{tag}: {document}");
+    }
+
+    let deleted = commit_plan(&replied, ops(serde_json::json!([{"op": "comment_delete", "comment_id": root}])));
+    let document = document_xml(&deleted);
+    assert!(!document.contains("commentRange") && !document.contains("commentReference"), "{document}");
+}
+
+#[test]
+fn revision_ids_are_unique_per_element() {
+    let source = document(&[(SOURCE_ID, "first paragraph"), (SECOND_ID, "second paragraph")]);
+    let deleted = commit_plan(&source, ops(serde_json::json!([{"op": "delete_paragraphs", "at": [SOURCE_ID]}])));
+    let document = document_xml(&deleted);
+    let ids = ids_of(&document, "del");
+    assert!(ids.len() > 1, "expected a run deletion and a paragraph-mark deletion: {document}");
+    let unique: std::collections::BTreeSet<_> = ids.iter().collect();
+    assert_eq!(unique.len(), ids.len(), "Word writes one revision id per element: {document}");
+}
+
+#[test]
+fn run_properties_are_written_in_sequence_order() {
+    let body = format!(
+        "<w:p w14:paraId=\"{SOURCE_ID}\"><w:r><w:rPr><w:i/><w:lang w:val=\"en-US\"/></w:rPr><w:t>text</w:t></w:r></w:p>"
+    );
+    let formatted = commit_plan(
+        &package_with_body(&format!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?><w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:w14=\"http://schemas.microsoft.com/office/word/2010/wordml\"><w:body>{body}</w:body></w:document>"
+        )),
+        ops(serde_json::json!([{"op": "format_text", "at": SOURCE_ID, "select": "text", "bold": true, "font_size": 14, "strike": true, "underline": true}])),
+    );
+    let document = document_xml(&formatted);
+    let rpr = &document[document.find("<w:rPr>").expect("run properties")..];
+    let order: Vec<&str> = ["<w:b", "<w:i", "<w:strike", "<w:sz", "<w:u ", "<w:lang", "<w:rPrChange"]
+        .into_iter()
+        .map(|tag| (tag, rpr.find(tag).unwrap_or_else(|| panic!("{tag} missing: {rpr}"))))
+        .collect::<Vec<_>>()
+        .windows(2)
+        .filter(|pair| pair[0].1 > pair[1].1)
+        .map(|pair| pair[1].0)
+        .collect();
+    assert!(order.is_empty(), "out of CT_RPr sequence order at {order:?}: {rpr}");
 }

@@ -47,6 +47,8 @@ __pycache__/
 ~$*
 
 # Compiled and packaged outputs; keep only WASM build documentation.
+scripts/openxml-validator/bin/
+scripts/openxml-validator/obj/
 dist/
 *.wasm
 *.whl

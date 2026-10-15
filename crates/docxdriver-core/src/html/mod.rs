@@ -55,6 +55,7 @@ pub struct Fmt {
     pub underline: bool,
     pub strike: bool,
     pub vert_align: Option<VertAlign>,
+    pub highlight: Option<crate::api::HighlightColor>,
     pub color: Option<u32>,
     pub font_size: Option<u32>,
     pub font_family: Option<styles::FontFamily>,
@@ -239,6 +240,7 @@ impl Atom {
 /// them; `create` rejects authored values by name.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ListAttrs {
+    pub continuation: bool,
     pub id: u32,
     pub level: u32,
     pub format: String,

@@ -174,6 +174,16 @@ pub struct ParaIdIndex {
     pub allocation_error: Option<String>,
 }
 
+/// Every element family carrying a revision w:id; they share one sequence.
+/// The trailing move range markers pair a start and end under one id.
+const REVISION_ID_TAGS: &[&str] = &[
+    "ins", "del", "cellIns", "cellDel", "cellMerge", "moveFrom", "moveTo", "rPrChange",
+    "pPrChange", "tblPrChange", "trPrChange", "tcPrChange", "sectPrChange", "tblGridChange",
+    "numberingChange", "tblPrExChange",
+    "moveFromRangeStart", "moveFromRangeEnd", "moveToRangeStart", "moveToRangeEnd",
+];
+const REVISION_RANGE_MARKERS: usize = 16;
+
 impl DocxXml {
     pub fn parse(bytes: &[u8]) -> Result<Self, String> {
         let doc = Document::parse_bytes(bytes)
@@ -676,29 +686,44 @@ impl DocxXml {
         next
     }
 
+    /// Revision elements (excluding move range markers, whose start/end pairs
+    /// share an id by design) in document order.
+    pub fn revision_elements(&self) -> Vec<NodeId> {
+        let Some(root) = self.doc.root_element() else {
+            return Vec::new();
+        };
+        self.doc
+            .descendants(root)
+            .filter(|&node| {
+                REVISION_ID_TAGS[..REVISION_RANGE_MARKERS].iter().any(|tag| self.is_w(node, tag))
+                    && self.attr(node, "id").is_some()
+            })
+            .collect()
+    }
+
+    /// Give every revision element created since `before` was taken a
+    /// unique w:id. Operations stamp one allocated id on each element they
+    /// create; Word writes one id per element and the Open XML SDK rejects
+    /// duplicates. Pre-existing elements keep their ids.
+    pub fn renumber_new_revision_ids(&mut self, before: &HashSet<NodeId>) {
+        let elements = self.revision_elements();
+        let mut seen: HashSet<String> = elements
+            .iter()
+            .filter(|node| before.contains(node))
+            .filter_map(|&node| self.attr(node, "id").map(str::to_string))
+            .collect();
+        for node in elements.into_iter().filter(|node| !before.contains(node)) {
+            let id = self.attr(node, "id").unwrap_or("").to_string();
+            if !seen.insert(id) {
+                let fresh = self.next_revision_id().to_string();
+                self.doc.set_attribute(node, "w:id", &fresh);
+                seen.insert(fresh);
+            }
+        }
+    }
+
     /// Highest revision id present in this part, if any.
     pub fn max_revision_id(&self) -> Option<u64> {
-        const REVISION_ID_TAGS: &[&str] = &[
-            "ins",
-            "del",
-            "cellIns",
-            "cellDel",
-            "cellMerge",
-            "moveFrom",
-            "moveTo",
-            "moveFromRangeStart",
-            "moveFromRangeEnd",
-            "moveToRangeStart",
-            "moveToRangeEnd",
-            "rPrChange",
-            "pPrChange",
-            "tblPrChange",
-            "trPrChange",
-            "tcPrChange",
-            "sectPrChange",
-            "tblGridChange",
-            "numberingChange",
-        ];
         let root = self.body().or_else(|| self.doc.root_element())?;
         let mut max = 0u64;
         let mut found = false;

@@ -245,7 +245,8 @@ fn resolve_property_change(xml: &mut DocxXml, node: NodeId, accept: bool) {
                     .iter()
                     .copied()
                     .filter(|&child| {
-                        inner_name == "pPr" && (xml.is_w(child, "rPr") || xml.is_w(child, "sectPr"))
+                        (inner_name == "pPr" && (xml.is_w(child, "rPr") || xml.is_w(child, "sectPr")))
+                            || (inner_name == "sectPr" && (xml.is_w(child, "headerReference") || xml.is_w(child, "footerReference")))
                     })
                     .collect();
                 // Imported documents can put sectPr before rPr (or even
@@ -254,6 +255,9 @@ fn resolve_property_change(xml: &mut DocxXml, node: NodeId, accept: bool) {
                 retained.sort_by_key(|&child| xml.is_w(child, "sectPr"));
                 for &child in &retained {
                     xml.doc.detach(child);
+                }
+                if inner_name == "sectPr" {
+                    for &child in &retained { xml.doc.append_child(parent, child); }
                 }
                 for child in old {
                     xml.doc.detach(child);
@@ -264,8 +268,16 @@ fn resolve_property_change(xml: &mut DocxXml, node: NodeId, accept: bool) {
                         xml.doc.remove_node(child);
                     }
                 }
-                for child in retained {
-                    xml.doc.append_child(parent, child);
+                if inner_name != "sectPr" {
+                    for child in retained { xml.doc.append_child(parent, child); }
+                }
+                // A row or cell that had no properties before the change gets
+                // none back, rather than an empty optional container.
+                if matches!(inner_name, "trPr" | "tcPr")
+                    && xml.doc.children(parent).next().is_none()
+                    && xml.doc.attributes(parent).is_empty()
+                {
+                    xml.doc.remove_node(parent);
                 }
                 return;
             }

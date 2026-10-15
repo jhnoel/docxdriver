@@ -35,8 +35,15 @@ fn part_paths(package: &Package) -> PartPaths {
     } else {
         format!("{dir}/")
     };
+    let rels_path = format!("{prefix}_rels/{}.rels", main.rsplit('/').next().unwrap_or(&main));
+    let numbering = package.get(&rels_path).and_then(|bytes| DocxXml::parse(bytes).ok()).and_then(|rels| {
+        rels.doc.descendants(rels.doc.root()).find_map(|node| {
+            if !rels.doc.attribute(node, "Type").is_some_and(|t| t.ends_with("/numbering")) || rels.doc.attribute(node, "TargetMode") == Some("External") { return None; }
+            Some(crate::media::resolve_rel_target(&main, rels.doc.attribute(node, "Target")?))
+        })
+    }).unwrap_or_else(|| format!("{prefix}numbering.xml"));
     PartPaths {
-        numbering: format!("{prefix}numbering.xml"),
+        numbering,
         styles: format!("{prefix}styles.xml"),
     }
 }
@@ -216,6 +223,7 @@ struct LevelDef {
     fmt: String,
     text: String,
     start: i64,
+    restart: Option<u32>,
 }
 
 /// A `w:num` instance: its abstract list plus per-level overrides.
@@ -291,6 +299,7 @@ fn parse_level(numbering: &DocxXml, lvl: NodeId) -> LevelDef {
         fmt: "decimal".into(),
         text: String::new(),
         start: 1,
+        restart: None,
     };
     for child in numbering.doc.children(lvl) {
         if numbering.is_w(child, "numFmt") {
@@ -301,6 +310,8 @@ fn parse_level(numbering: &DocxXml, lvl: NodeId) -> LevelDef {
             if let Some(val) = numbering.attr(child, "val") {
                 def.text = val.to_string();
             }
+        } else if numbering.is_w(child, "lvlRestart") {
+            def.restart = numbering.attr(child, "val").and_then(|v| v.parse().ok());
         } else if numbering.is_w(child, "start") {
             if let Some(val) = numbering.attr(child, "val").and_then(|v| v.parse().ok()) {
                 def.start = val;
@@ -425,6 +436,18 @@ fn parse_styles_part(package: &Package) -> HashMap<String, StyleNumbering> {
     styles
 }
 
+fn continuation_membership(xml: &DocxXml, paragraph: NodeId) -> Option<(String, u32)> {
+    for n in xml.doc.children(paragraph) {
+        if xml.is_w(n, "bookmarkStart") {
+            if let Some(name) = xml.attr(n, "name").and_then(|s| s.strip_prefix("_docxdriver_cont_")) {
+                let (id, level) = name.split_once('_')?;
+                return Some((id.to_string(), level.parse().ok()?));
+            }
+        }
+    }
+    None
+}
+
 /// A paragraph's effective (numId, level): direct w:pPr/w:numPr with a numId
 /// wins; otherwise the paragraph style's resolved numbering.
 fn paragraph_numbering(
@@ -432,6 +455,7 @@ fn paragraph_numbering(
     tables: &NumberingTables,
     paragraph: NodeId,
 ) -> Option<(String, u32)> {
+    if let Some(membership) = continuation_membership(xml, paragraph) { return Some(membership); }
     let ppr = xml.doc.children(paragraph).find(|&n| xml.is_w(n, "pPr"))?;
     if let Some(numpr) = xml.doc.children(ppr).find(|&n| xml.is_w(n, "numPr")) {
         let mut num_id = None;
@@ -485,6 +509,7 @@ fn list_markers(
         let Some((num_id, level)) = paragraph_numbering(xml, &tables, paragraph) else {
             continue;
         };
+        if continuation_membership(xml, paragraph).is_some() { continue; }
         if num_id == "0" {
             continue; // explicit "no numbering"
         }
@@ -519,8 +544,9 @@ fn list_markers(
             slots[level as usize] = slots[level as usize].map(|v| v + 1);
         }
         // Restart all deeper levels so their next appearance starts fresh.
-        for deeper in slots.iter_mut().skip(level as usize + 1) {
-            *deeper = None;
+        for (index, deeper) in slots.iter_mut().enumerate().skip(level as usize + 1) {
+            let restart = tables.effective_level(&num_id, index as u32).and_then(|def| def.restart);
+            if restart.is_none() || restart == Some(level + 1) { *deeper = None; }
         }
 
         let snapshot = slots.clone();
@@ -638,10 +664,13 @@ fn roman(mut value: i64) -> String {
 
 #[derive(Debug, Clone)]
 pub struct ListInfo {
+    pub continuation: bool,
     pub id: String,
     pub level: u32,
     pub format: String,
     pub value: i64,
+    pub start: i64,
+    pub continued: bool,
 }
 fn list_info(package: &Package, xml: &DocxXml, scope: Option<NodeId>) -> HashMap<NodeId, ListInfo> {
     let (abstracts, nums) = parse_numbering_part(package);
@@ -656,17 +685,27 @@ fn list_info(package: &Package, xml: &DocxXml, scope: Option<NodeId>) -> HashMap
         for p in xml.paragraphs_in(scope) {
             if let Some((id, level)) = paragraph_numbering(xml, &tables, p.node) {
                 if let Some(def) = tables.effective_level(&id, level) {
+                    let continuation = continuation_membership(xml, p.node).is_some();
+                    if !continuation {
+                        for deeper in level + 1..9 {
+                            let restart = tables.effective_level(&id, deeper).and_then(|def| def.restart);
+                            if restart.is_none() || restart == Some(level + 1) { counters.remove(&(id.clone(), deeper)); }
+                        }
+                    }
                     let count = counters
                         .entry((id.clone(), level))
                         .or_insert(tables.effective_start(&id, level) - 1);
-                    *count += 1;
+                    if !continuation { *count += 1; }
                     out.insert(
                         p.node,
                         ListInfo {
-                            id,
+                            continuation,
+                            id: id.clone(),
                             level,
                             format: def.fmt.clone(),
                             value: *count,
+                            start: tables.effective_start(&id, level),
+                            continued: *count != tables.effective_start(&id, level),
                         },
                     );
                 }

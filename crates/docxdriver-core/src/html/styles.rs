@@ -71,6 +71,9 @@ pub fn declarations(css: &str) -> Result<BTreeMap<String, String>, String> {
     }
     Ok(out)
 }
+fn signed_points(value: &str) -> Result<f64, String> {
+    if let Some(value) = value.trim().strip_prefix('-') { points(value).map(|v| -v) } else { points(value) }
+}
 pub fn points(value: &str) -> Result<f64, String> {
     let value = value.trim();
     let (number, scale) = if let Some(v) = value.strip_suffix("pt") {
@@ -91,6 +94,7 @@ pub fn points(value: &str) -> Result<f64, String> {
 pub fn apply_inline_css(mut fmt: Fmt, css: &str) -> Result<Fmt, String> {
     for (name, value) in declarations(css)? {
         match name.as_str() {
+            "--docx-highlight" => fmt.highlight = Some(crate::api::HighlightColor::parse(&value)?),
             "font-weight" => {
                 fmt.resets |= 1;
                 fmt.bold = match value.as_str() {
@@ -169,6 +173,9 @@ pub fn inline_css(fmt: Fmt) -> String {
     if fmt.resets & 16 != 0 && fmt.vert_align.is_none() {
         out.push_str("vertical-align:baseline;");
     }
+    if let Some(highlight) = fmt.highlight {
+        out.push_str(&format!("background-color:{};", highlight.css()));
+    }
     if let Some(color) = fmt.color {
         out.push_str(&format!("color:#{color:06X};"));
     }
@@ -242,26 +249,45 @@ pub fn merge_paragraph_css(paragraph_css: &str, run_css: &BTreeMap<String, Strin
     css_string(map)
 }
 
-pub fn extra_rpr(fmt: Fmt) -> String {
-    let mut out = String::new();
+/// Run properties for `fmt` as (local name, markup), in RPR_SEQUENCE order.
+fn rpr_parts(fmt: Fmt) -> Vec<(&'static str, String)> {
+    let mut out: Vec<(&'static str, String)> = Vec::new();
+    if fmt.bold { out.push(("b", "<w:b/>".into())); }
+    if fmt.italic { out.push(("i", "<w:i/>".into())); }
+    if fmt.underline { out.push(("u", "<w:u w:val=\"single\"/>".into())); }
+    if fmt.strike { out.push(("strike", "<w:strike/>".into())); }
+    if let Some(align) = fmt.vert_align {
+        out.push(("vertAlign", format!("<w:vertAlign w:val=\"{}\"/>", align.docx_val())));
+    }
+    if let Some(highlight) = fmt.highlight { out.push(("highlight", format!("<w:highlight w:val=\"{}\"/>", highlight.as_str()))); }
     for (name, value) in disabled_properties(fmt) {
-        out.push_str(&format!("<w:{name} w:val=\"{value}\"/>"));
+        out.push((name, format!("<w:{name} w:val=\"{value}\"/>")));
     }
     if let Some(color) = fmt.color {
-        out.push_str(&format!("<w:color w:val=\"{color:06X}\"/>"));
+        out.push(("color", format!("<w:color w:val=\"{color:06X}\"/>")));
     }
     if let Some(size) = fmt.font_size {
-        out.push_str(&format!("<w:sz w:val=\"{size}\"/>"));
+        out.push(("sz", format!("<w:sz w:val=\"{size}\"/>")));
     }
     if let Some(font) = fmt.font_family {
-        out.push_str(&format!(
-            "<w:rFonts w:ascii=\"{}\" w:hAnsi=\"{}\"/>",
-            escape_attr(font.as_str()),
-            escape_attr(font.as_str())
+        out.push((
+            "rFonts",
+            format!(
+                "<w:rFonts w:ascii=\"{}\" w:hAnsi=\"{}\"/>",
+                escape_attr(font.as_str()),
+                escape_attr(font.as_str())
+            ),
         ));
     }
+    out.sort_by_key(|(name, _)| crate::commands::layout::rpr_rank(name));
     out
 }
+
+/// The children of a `w:rPr` for `fmt`, as markup in sequence order.
+pub fn rpr_inner(fmt: Fmt) -> String {
+    rpr_parts(fmt).into_iter().map(|(_, xml)| xml).collect()
+}
+
 fn disabled_properties(fmt: Fmt) -> Vec<(&'static str, &'static str)> {
     let mut out = Vec::new();
     for (bit, enabled, name, value) in [
@@ -277,7 +303,30 @@ fn disabled_properties(fmt: Fmt) -> Vec<(&'static str, &'static str)> {
     }
     out
 }
-pub fn append_extra_rpr(xml: &mut DocxXml, rpr: NodeId, fmt: Fmt) {
+/// Write the run properties for `fmt` into `rpr`, each at its sequence
+/// position.
+pub fn append_rpr(xml: &mut DocxXml, rpr: NodeId, fmt: Fmt) {
+    if fmt.bold {
+        crate::commands::layout::ensure_rpr_child(xml, rpr, "b");
+    }
+    if fmt.italic {
+        crate::commands::layout::ensure_rpr_child(xml, rpr, "i");
+    }
+    if fmt.underline {
+        let n = crate::commands::layout::ensure_rpr_child(xml, rpr, "u");
+        xml.doc.set_attribute(n, "w:val", "single");
+    }
+    if fmt.strike {
+        crate::commands::layout::ensure_rpr_child(xml, rpr, "strike");
+    }
+    if let Some(align) = fmt.vert_align {
+        let n = crate::commands::layout::ensure_rpr_child(xml, rpr, "vertAlign");
+        xml.doc.set_attribute(n, "w:val", align.docx_val());
+    }
+    if let Some(highlight) = fmt.highlight {
+        let n = crate::commands::layout::ensure_rpr_child(xml, rpr, "highlight");
+        xml.doc.set_attribute(n, "w:val", highlight.as_str());
+    }
     for (name, value) in disabled_properties(fmt) {
         let n = crate::commands::layout::ensure_rpr_child(xml, rpr, name);
         xml.doc.set_attribute(n, "w:val", value);
@@ -310,19 +359,22 @@ pub fn paragraph_properties(css: &str) -> Result<String, String> {
                 ))
             }
             "margin-top" => {
-                spacing.insert("before", (points(&value)? * 20.0).round() as u32);
+                spacing.insert("before", (points(&value)? * 20.0).round() as i64);
             }
             "margin-bottom" => {
-                spacing.insert("after", (points(&value)? * 20.0).round() as u32);
+                spacing.insert("after", (points(&value)? * 20.0).round() as i64);
             }
             "margin-left" => {
-                indent.insert("left", (points(&value)? * 20.0).round() as u32);
+                indent.insert("left", (signed_points(&value)? * 20.0).round() as i64);
             }
             "margin-right" => {
-                indent.insert("right", (points(&value)? * 20.0).round() as u32);
+                indent.insert("right", (signed_points(&value)? * 20.0).round() as i64);
             }
             "text-indent" => {
-                indent.insert("firstLine", (points(&value)? * 20.0).round() as u32);
+                let offset = (signed_points(&value)? * 20.0).round() as i64;
+                indent.remove("firstLine");
+                indent.remove("hanging");
+                indent.insert(if offset < 0 { "hanging" } else { "firstLine" }, offset.abs());
             }
             "line-height" => {
                 let multiple = value
@@ -331,7 +383,7 @@ pub fn paragraph_properties(css: &str) -> Result<String, String> {
                 if !multiple.is_finite() || !(0.1..=100.0).contains(&multiple) {
                     return Err("invalid line-height".into());
                 }
-                spacing.insert("line", (multiple * 240.0).round() as u32);
+                spacing.insert("line", (multiple * 240.0).round() as i64);
             }
             // Run properties are inherited by the paragraph's content.
             "color" | "font-size" | "font-family" | "font-weight" | "font-style"
@@ -496,6 +548,7 @@ fn collect_css(x: &DocxXml, p: NodeId, run: bool, map: &mut BTreeMap<String, Str
         let val = x.attr(n, "val").unwrap_or("");
         if run {
             match name {
+                "highlight" => { if crate::api::HighlightColor::parse(val).is_ok() { map.insert("--docx-highlight".into(), val.into()); } }
                 "b" => {
                     map.insert(
                         "font-weight".into(),
@@ -581,7 +634,7 @@ fn collect_css(x: &DocxXml, p: NodeId, run: bool, map: &mut BTreeMap<String, Str
                 }
                 "spacing" => {
                     for (a, k) in [("before", "margin-top"), ("after", "margin-bottom")] {
-                        if let Some(v) = x.attr(n, a).and_then(|v| v.parse::<u32>().ok()) {
+                        if let Some(v) = x.attr(n, a).and_then(|v| v.parse::<i64>().ok()) {
                             map.insert(k.into(), format!("{}pt", v as f64 / 20.0));
                         }
                     }
@@ -603,7 +656,7 @@ fn collect_css(x: &DocxXml, p: NodeId, run: bool, map: &mut BTreeMap<String, Str
                         ("right", "margin-right"),
                         ("firstLine", "text-indent"),
                     ] {
-                        if let Some(v) = x.attr(n, a).and_then(|v| v.parse::<u32>().ok()) {
+                        if let Some(v) = x.attr(n, a).and_then(|v| v.parse::<i64>().ok()) {
                             map.insert(k.into(), format!("{}pt", v as f64 / 20.0));
                         }
                     }
@@ -625,4 +678,16 @@ fn property_bag(x: &DocxXml, n: NodeId, name: &str, original: bool) -> Option<No
         }
     }
     Some(p)
+}
+
+#[cfg(test)]
+mod indentation_tests {
+    #[test]
+    fn signed_css_indents_keep_dimensions_nonnegative() {
+        let xml = super::paragraph_properties("margin-left:-6pt;margin-right:-4px;text-indent:-18pt").unwrap();
+        assert!(xml.contains("w:left=\"-120\"") && xml.contains("w:right=\"-60\"") && xml.contains("w:hanging=\"360\""), "{xml}");
+        assert!(!xml.contains("firstLine"));
+        assert!(super::paragraph_properties("text-indent:0").unwrap().contains("w:firstLine=\"0\""));
+        assert!(super::paragraph_properties("margin-top:-6pt").is_err());
+    }
 }

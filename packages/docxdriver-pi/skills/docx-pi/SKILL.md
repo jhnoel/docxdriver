@@ -90,3 +90,7 @@ are never split, so paragraph anchors remain stable.
 See `references/pi-surface.md` for tool shapes.
 
 Read the full document before editing unless the task explicitly calls for a narrower view. Default reads return one complete HTML projection and equation addresses. Preview results retain affected context; commit responses omit repeated context, echoed plans and binary DOCX data.
+
+For explicit list membership use `set_list` with paragraph addresses in `at`. `format` creates a private list, `num_id` continues an existing list, `level` is 0–8, and `start` restarts using an isolated instance. `remove: true` suppresses inherited numbering. Settle pending paragraph formatting revisions first. Read list metadata rather than selecting generated marker text.
+
+Use explicit direct plans for `insert_table` and `edit_table`; tracked structural edits are rejected. Read table handles before editing. Insert/delete rows or columns and merge operate on rectangular unmerged grids; split merged cells before other grid edits. Merge preserves content in row-major order; split keeps content in the first resulting cell. Tables with comments, bookmarks, fields, content controls or pending revisions require cleanup before structural edits.

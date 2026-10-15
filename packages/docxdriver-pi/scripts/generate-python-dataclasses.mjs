@@ -61,6 +61,9 @@ const REF_TYPES = {
   LineSpacing: 'dict',
   Span: 'dict',
   Diagnostic: 'dict',
+  HighlightColor: 'str',
+  SignedPoints: 'float',
+  TableEdit: 'dict',
 };
 
 function pythonName(field) {

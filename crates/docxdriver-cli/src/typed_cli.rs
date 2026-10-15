@@ -188,6 +188,25 @@ fn points(value: Option<String>, name: &'static str) -> Result<Option<Points>, P
         })
         .transpose()
 }
+fn signed_points(value: Option<String>, name: &'static str) -> Result<Option<docxdriver_core::SignedPoints>, ParseError> {
+    value
+        .map(|s| {
+            s.parse::<f64>()
+                .map_err(|_| ParseError {
+                    code: "invalid_points",
+                    path: name,
+                    message: format!("{name} must be points"),
+                })
+                .and_then(|n| {
+                    docxdriver_core::SignedPoints::from_points(n).map_err(|e| ParseError {
+                        code: "invalid_points",
+                        path: name,
+                        message: format!("{name}: {e}"),
+                    })
+                })
+        })
+        .transpose()
+}
 fn spacing(value: Option<String>) -> Result<Option<LineSpacing>, ParseError> {
     let Some(raw) = value else { return Ok(None) };
     let (kind, number) = raw.split_once(':').unwrap_or(("multiple", raw.as_str()));
@@ -479,6 +498,7 @@ pub fn dispatch(cli: Cli) -> Result<ExitCode, String> {
                     strike: a.strike,
                     superscript: a.superscript,
                     subscript: a.subscript,
+                highlight: None,
                     color: a.color,
                     font_size: a
                         .font_size
@@ -502,8 +522,9 @@ pub fn dispatch(cli: Cli) -> Result<ExitCode, String> {
                     at: address(a.at)?,
                     style: a.style,
                     alignment: a.alignment,
-                    indent_left: points(a.indent_left, "indent-left")?,
-                    indent_right: points(a.indent_right, "indent-right")?,
+                    indent_left: signed_points(a.indent_left, "indent-left")?,
+                    indent_right: signed_points(a.indent_right, "indent-right")?,
+                    first_line_indent: signed_points(a.first_line_indent, "first-line-indent")?,
                     space_before: points(a.space_before, "space-before")?,
                     space_after: points(a.space_after, "space-after")?,
                     line_spacing: spacing(a.line_spacing)?,

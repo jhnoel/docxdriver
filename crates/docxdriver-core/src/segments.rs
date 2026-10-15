@@ -244,29 +244,7 @@ pub fn insert_ins_pieces_at(
             let new_run = xml.doc.create_element("w:r");
             if fmt != crate::html::Fmt::default() {
                 let rpr = xml.doc.create_element("w:rPr");
-                if fmt.bold {
-                    let b = xml.doc.create_element("w:b");
-                    xml.doc.append_child(rpr, b);
-                }
-                if fmt.italic {
-                    let i = xml.doc.create_element("w:i");
-                    xml.doc.append_child(rpr, i);
-                }
-                if fmt.underline {
-                    let u = xml.doc.create_element("w:u");
-                    xml.doc.set_attribute(u, "w:val", "single");
-                    xml.doc.append_child(rpr, u);
-                }
-                if fmt.strike {
-                    let s = xml.doc.create_element("w:strike");
-                    xml.doc.append_child(rpr, s);
-                }
-                if let Some(align) = fmt.vert_align {
-                    let vert = xml.doc.create_element("w:vertAlign");
-                    xml.doc.set_attribute(vert, "w:val", align.docx_val());
-                    xml.doc.append_child(rpr, vert);
-                }
-                crate::html::styles::append_extra_rpr(xml, rpr, fmt);
+                crate::html::styles::append_rpr(xml, rpr, fmt);
                 xml.doc.append_child(new_run, rpr);
             }
             xml.doc.append_child(ins, new_run);

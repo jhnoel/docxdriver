@@ -107,10 +107,12 @@ struct FormatParagraphArgs {
     style: Option<String>,
     #[arg(long)]
     alignment: Option<String>,
-    #[arg(long = "indent-left")]
+    #[arg(long = "indent-left", allow_hyphen_values = true)]
     indent_left: Option<String>,
-    #[arg(long = "indent-right")]
+    #[arg(long = "indent-right", allow_hyphen_values = true)]
     indent_right: Option<String>,
+    #[arg(long = "first-line-indent", allow_hyphen_values = true)]
+    first_line_indent: Option<String>,
     #[arg(long = "space-before")]
     space_before: Option<String>,
     #[arg(long = "space-after")]

@@ -205,29 +205,42 @@
       "id": "first_line_indent",
       "read": "supported",
       "html_authoring": "supported",
-      "typed_edit": "unsupported",
-      "python_repl": "unsupported",
-      "note": "Positive HTML text-indent only; no typed field.",
+      "typed_edit": "supported",
+      "python_repl": "exposed",
+      "note": "Signed first_line_indent sets first-line (positive), hanging (negative), or explicit zero; clear removes direct offset and inherits. Competing character first-line/hanging overrides are replaced.",
+      "operation": "format_paragraph",
+      "fields": [
+        "first_line_indent"
+      ],
       "html_example": "<p style=\"text-indent:18pt\">sample text</p>",
       "read_contains": "text-indent:18pt"
     },
     {
       "id": "hanging_indent",
       "read": "supported",
-      "html_authoring": "unsupported",
-      "typed_edit": "unsupported",
-      "python_repl": "unsupported",
-      "note": "Existing hanging indents project to negative text-indent; authoring negative lengths is rejected.",
-      "html_example": "<p style=\"text-indent:-18pt\">sample text</p>"
+      "html_authoring": "supported",
+      "typed_edit": "supported",
+      "python_repl": "exposed",
+      "note": "Signed first_line_indent sets first-line (positive), hanging (negative), or explicit zero; clear removes direct offset and inherits. Competing character first-line/hanging overrides are replaced.",
+      "operation": "format_paragraph",
+      "fields": [
+        "first_line_indent"
+      ],
+      "html_example": "<p style=\"text-indent:-18pt\">sample text</p>",
+      "read_contains": "text-indent:-18pt"
     },
     {
       "id": "highlight",
-      "read": "preserved_only",
-      "html_authoring": "unsupported",
-      "typed_edit": "unsupported",
-      "python_repl": "unsupported",
-      "note": "Word highlight and RGB shading have no current authoring/edit contract.",
-      "html_example": "<p><span style=\"background-color:#FFFF00\">sample text</span></p>"
+      "read": "supported",
+      "html_authoring": "supported",
+      "typed_edit": "supported",
+      "python_repl": "exposed",
+      "note": "Exact Word highlight palette; none explicitly disables, clear inherits. Arbitrary RGB shading is distinct and unsupported.",
+      "operation": "format_text",
+      "fields": [
+        "highlight"
+      ],
+      "html_example": "<p><mark data-highlight=\"cyan\">sample text</mark></p>"
     },
     {
       "id": "run_shading",
@@ -312,18 +325,25 @@
       "id": "lists",
       "read": "partial",
       "html_authoring": "partial",
-      "typed_edit": "unsupported",
-      "python_repl": "unsupported",
-      "note": "Creation supports nested lists, types and starts, with one paragraph per item; no typed numbering controls.",
+      "typed_edit": "supported",
+      "python_repl": "exposed",
+      "note": "set_list assigns selected paragraphs, continues by num_id, restarts with isolated instances, changes level, and explicitly removes membership. Membership is tracked; definitions remain after rejection.",
+      "operations": [
+        "set_list"
+      ],
       "html_example": "<ol start=\"3\"><li>sample text</li></ol>"
     },
     {
       "id": "table_structure",
       "read": "partial",
       "html_authoring": "supported",
-      "typed_edit": "unsupported",
-      "python_repl": "unsupported",
-      "note": "Creation supports nested tables and spans; no typed row/column/grid editing.",
+      "typed_edit": "supported",
+      "python_repl": "exposed",
+      "note": "Direct insert_table/edit_table support bounded rectangular grid edits, merge/split and deletion. Merged grids must be split before row/column editing. Tracked structural changes and overlapping annotations/revisions are rejected.",
+      "operations": [
+        "insert_table",
+        "edit_table"
+      ],
       "html_example": "<table><tr><td colspan=\"2\">sample text</td></tr><tr><td>one</td><td>two</td></tr></table>"
     },
     {
@@ -340,7 +360,7 @@
       "read": "preserved_only",
       "html_authoring": "unsupported",
       "typed_edit": "supported",
-      "python_repl": "not_exposed",
+      "python_repl": "exposed",
       "note": "Core edits section margins; semantic preview does not lay out pages; V1 Python manifest omits the operation.",
       "operation": "set_page_margins",
       "fields": [
@@ -407,6 +427,41 @@
         "replace_equation",
         "delete_equation"
       ]
+    },
+    {
+      "id": "section_layout",
+      "read": "partial",
+      "html_authoring": "unsupported",
+      "typed_edit": "supported",
+      "python_repl": "exposed",
+      "operation": "set_section_layout",
+      "fields": [
+        "page_size",
+        "width",
+        "height",
+        "orientation",
+        "columns",
+        "column_spacing",
+        "column_widths",
+        "column_separator",
+        "break_type",
+        "page_number_format",
+        "page_number_start",
+        "page_number_continue"
+      ],
+      "note": "Selective tracked section properties with validated dimensions and columns; semantic preview metadata does not promise Word pagination."
+    },
+    {
+      "id": "first_page_mode",
+      "read": "supported",
+      "html_authoring": "unsupported",
+      "typed_edit": "supported",
+      "python_repl": "exposed",
+      "operation": "set_first_page_mode",
+      "fields": [
+        "enabled"
+      ],
+      "note": "Explicit boolean first-page story use. Stored relationships and stories survive disable/re-enable and tracked rejection."
     }
   ]
 }

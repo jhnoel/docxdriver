@@ -56,6 +56,10 @@ fn main() {
             json!({"type":"number","minimum":0,"multipleOf":0.05}),
         );
         defs.insert(
+            "SignedPoints".into(),
+            json!({"type":"number","minimum":-100000,"maximum":100000,"multipleOf":0.05}),
+        );
+        defs.insert(
             "ParagraphAddress".into(),
             json!({"type":"string","pattern":"^(?:[A-F0-9]{8}|\\$[A-Za-z_][A-Za-z0-9_]*)$"}),
         );
@@ -89,20 +93,37 @@ export type ChangeMode = 'track' | 'direct';
 export type ParagraphAddress = string;
 export type InsertAnchor = string;
 export type ChromeKind = 'default' | 'first' | 'even';
+export type HighlightColor = 'black' | 'blue' | 'cyan' | 'green' | 'magenta' | 'red' | 'yellow' | 'white' | 'darkBlue' | 'darkCyan' | 'darkGreen' | 'darkMagenta' | 'darkRed' | 'darkYellow' | 'darkGray' | 'lightGray' | 'none';
 export type Point = number;
 export type InsertPosition = 'before' | 'after';
 export type LineSpacing = { mode: 'multiple'; value: number } | { mode: 'exact'; value: Point } | { mode: 'at_least'; value: Point };
+export type TableWidth = { unit: 'auto' } | { unit: 'points'; value: Point } | { unit: 'percent'; value: number };
+export type TableBorder = { style: string; color?: string; width?: Point };
+export type TableBorders = { top?: TableBorder; left?: TableBorder; bottom?: TableBorder; right?: TableBorder; inside_horizontal?: TableBorder; inside_vertical?: TableBorder };
+export type CellPadding = { top?: Point; right?: Point; bottom?: Point; left?: Point };
+export type TableFormat = { width?: TableWidth; column_widths?: Point[]; layout?: 'autofit'|'fixed'; alignment?: 'left'|'center'|'right'; borders?: TableBorders; cell_spacing?: Point; padding?: CellPadding; style?: string; clear?: string[] };
+export type RowFormat = { height?: Point; height_rule?: 'auto'|'at_least'|'exact'; repeating_header?: boolean; allow_split?: boolean; clear?: string[] };
+export type CellFormat = { width?: TableWidth; borders?: TableBorders; fill?: string; padding?: CellPadding; vertical_alignment?: 'top'|'center'|'bottom'; clear?: string[] };
+export type TableEdit = { kind: 'insert_rows'; row: number; position: InsertPosition; count: number } | { kind: 'delete_rows'; row: number; count: number } | { kind: 'insert_columns'; column: number; position: InsertPosition; count: number } | { kind: 'delete_columns'; column: number; count: number } | { kind: 'merge_cells'; row: number; column: number; row_span: number; column_span: number } | { kind: 'split_cell'; row: number; column: number } | { kind: 'delete' };
 export type EditOp =
   | { op: 'replace_equation'; at: ParagraphAddress; mathml: string; equation?: number; display?: boolean }
   | { op: 'delete_equation'; at: ParagraphAddress; equation?: number }
   | { op: 'replace_text'; at: ParagraphAddress; select: string; with: string; occurrence?: number }
   | { op: 'revise_text'; at?: ParagraphAddress; within?: string; occurrence?: number; edits: [TextEdit, ...TextEdit[]] }
   | { op: 'replace_paragraph'; at: ParagraphAddress; with: string }
-  | { op: 'format_text'; at: ParagraphAddress; select: string; occurrence?: number; bold?: boolean; italic?: boolean; underline?: boolean; strike?: boolean; superscript?: boolean; subscript?: boolean; color?: string; font_size?: Point; clear?: string[] }
-  | { op: 'format_paragraph'; at: ParagraphAddress; style?: string; alignment?: 'left'|'center'|'right'|'justify'; indent_left?: Point; indent_right?: Point; space_before?: Point; space_after?: Point; line_spacing?: LineSpacing; clear?: string[] }
+  | { op: 'format_text'; at: ParagraphAddress; select: string; occurrence?: number; bold?: boolean; italic?: boolean; underline?: boolean; strike?: boolean; superscript?: boolean; subscript?: boolean; color?: string; highlight?: HighlightColor; font_size?: Point; clear?: string[] }
+  | { op: 'format_paragraph'; at: ParagraphAddress; style?: string; alignment?: 'left'|'center'|'right'|'justify'; indent_left?: Point; indent_right?: Point; first_line_indent?: Point; space_before?: Point; space_after?: Point; line_spacing?: LineSpacing; clear?: string[] }
+  | { op: 'set_list'; levels?: { format: string; label: string; start?: number; restart_after?: number; indent_left?: Point; indent_right?: Point; first_line_indent?: Point; marker_bold?: boolean; marker_italic?: boolean; marker_font?: string; marker_color?: string }[]; at: ParagraphAddress[]; num_id?: number; format?: 'bullet'|'decimal'|'lowerLetter'|'upperLetter'|'lowerRoman'|'upperRoman'; level?: number; start?: number; remove?: boolean }
   | { op: 'insert_paragraph'; at: InsertAnchor; position: InsertPosition; with?: string; style?: string; as?: string }
   | { op: 'delete_paragraphs'; at: ParagraphAddress[] }
+  | { op: 'format_table'; at: string; format: TableFormat }
+  | { op: 'format_row'; at: string; format: RowFormat }
+  | { op: 'format_cell'; at: string; format: CellFormat }
+  | { op: 'edit_table'; at: string; action: TableEdit }
+  | { op: 'insert_table'; at: ParagraphAddress; position: InsertPosition; rows: number; columns: number; as?: string }
   | { op: 'set_page_margins'; section?: number; top?: Point; right?: Point; bottom?: Point; left?: Point; header?: Point; footer?: Point; gutter?: Point }
+  | { op: 'set_section_layout'; section?: number; page_size?: 'letter'|'legal'|'a4'|'a3'|'a5'; width?: Point; height?: Point; orientation?: 'portrait'|'landscape'; columns?: number; column_spacing?: Point; column_widths?: Point[]; column_separator?: boolean; break_type?: 'nextPage'|'continuous'|'oddPage'|'evenPage'|'nextColumn'; page_number_format?: 'decimal'|'upperRoman'|'lowerRoman'|'upperLetter'|'lowerLetter'; page_number_start?: number; page_number_continue?: boolean }
+  | { op: 'set_first_page_mode'; section?: number; enabled: boolean }
   | { op: 'set_even_and_odd_headers'; even_and_odd: boolean }
   | { op: 'set_header'; section?: number; kind?: ChromeKind; with: string }
   | { op: 'set_footer'; section?: number; kind?: ChromeKind; with: string }

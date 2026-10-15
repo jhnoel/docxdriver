@@ -201,6 +201,12 @@ fn render_list(
         *cursor += 1;
         while *cursor < end {
             let next = &ctx.lists[&body.blocks[*cursor].paragraphs[0]];
+            if next.continuation && next.level == level && next.id == identity {
+                let block = &body.blocks[*cursor];
+                out.push_str(&body.html[block.start..block.end]);
+                *cursor += 1;
+                continue;
+            }
             if next.level <= level {
                 break;
             }
@@ -576,16 +582,17 @@ fn render_table(
 ) {
     let rows = table_rows(xml, table);
     if let Some(counter) = table_number {
-        out.push_str(&format!("<table data-docx-table=\"{counter}\">"));
+        out.push_str(&format!("<table data-docx-table=\"{counter}\"{}>", crate::commands::tables::render_attrs(xml, table, "tblPr", view == RenderView::Original)));
         *counter += 1;
     } else {
-        out.push_str("<table>");
+        out.push_str(&format!("<table{}>", crate::commands::tables::render_attrs(xml, table, "tblPr", view == RenderView::Original)));
     }
     // Grid columns currently covered by a vMerge run from above → rows left.
     let mut covered: std::collections::HashMap<u32, u32> = std::collections::HashMap::new();
     out.push_str("<tbody>");
     for (row_index, row) in rows.iter().enumerate() {
-        out.push_str("\n<tr>");
+        let row_node = xml.doc.children(table).filter(|&n| xml.is_w(n, "tr")).nth(row_index);
+        out.push_str(&format!("\n<tr{}>", row_node.map(|n| crate::commands::tables::render_attrs(xml, n, "trPr", view == RenderView::Original)).unwrap_or_default()));
         // Runs opened this row start covering at the NEXT row, so they merge
         // into `covered` only after this row's end-of-row decrement.
         let mut pending: Vec<(u32, u32)> = Vec::new();
@@ -597,6 +604,7 @@ fn render_table(
                 continue;
             }
             out.push_str("\n<td");
+            out.push_str(&crate::commands::tables::render_attrs(xml, cell.node, "tcPr", view == RenderView::Original));
             if cell.colspan > 1 {
                 out.push_str(&format!(" colspan=\"{}\"", cell.colspan));
             }
@@ -801,6 +809,7 @@ impl<'a> Emitter<'a> {
         self.out.push('<');
         self.out.push_str(tag);
         if tag == "span" {
+            if let Some(highlight) = fmt.highlight { self.out.push_str(&format!(" data-docx-highlight=\"{}\"", highlight.as_str())); }
             self.out.push_str(&format!(
                 " style=\"{}\"",
                 escape_attr(&super::styles::inline_css(fmt))
@@ -860,7 +869,8 @@ impl<'a> Emitter<'a> {
             .zip(&target)
             .take_while(|(a, b)| a == b)
             .count();
-        if self.fmt.resets != fmt.resets
+        if self.fmt.highlight != fmt.highlight
+            || self.fmt.resets != fmt.resets
             || self.fmt.color != fmt.color
             || self.fmt.font_size != fmt.font_size
             || self.fmt.font_family != fmt.font_family

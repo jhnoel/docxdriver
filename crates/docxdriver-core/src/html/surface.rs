@@ -67,6 +67,7 @@ pub fn render_document(
     };
 
     let sections = partition_sections(xml, body);
+    let section_properties = super::chrome::sect_pr_nodes(xml);
     let mut html = String::new();
     let mut regions = Vec::new();
     let mut body_blocks = Vec::new();
@@ -78,7 +79,12 @@ pub fn render_document(
     for (section_index, section) in sections.iter().enumerate() {
         let section_n = section_index + 1;
         let chrome_sect = chrome.sections.iter().find(|s| s.n == section_n);
-        let title_page = chrome_sect.map(|s| s.title_page).unwrap_or(false);
+        let effective_sect = section_properties.get(section_index).copied().map(|sect| {
+            if view == RenderView::Original {
+                xml.child_w(sect, "sectPrChange").and_then(|change| xml.child_w(change, "sectPr")).unwrap_or(sect)
+            } else { sect }
+        });
+        let title_page = effective_sect.map(|sect| xml.child_w(sect, "titlePg").is_some_and(|node| !matches!(xml.attr(node,"val"), Some("0"|"false"|"off")))).unwrap_or_else(|| chrome_sect.map(|s|s.title_page).unwrap_or(false));
 
         if !html.is_empty() {
             html.push('\n');
@@ -92,6 +98,23 @@ pub fn render_document(
                 ""
             }
         ));
+        if let Some(sect) = effective_sect {
+            // Metadata communicates Word layout intent, independent of browser pagination.
+            html.pop();
+            for (child, attr, key) in [
+                ("pgSz", "w", "page-width-twips"), ("pgSz", "h", "page-height-twips"),
+                ("pgSz", "orient", "orientation"), ("cols", "num", "columns"),
+                ("cols", "space", "column-spacing-twips"), ("cols", "sep", "column-separator"),
+                ("type", "val", "break-type"), ("pgNumType", "fmt", "page-number-format"),
+                ("pgNumType", "start", "page-number-start"),
+            ] {
+                if let Some(value) = xml.child_w(sect, child).and_then(|node| xml.attr(node, attr)) {
+                    let escaped = value.replace('&', "&amp;").replace('"', "&quot;").replace('<', "&lt;");
+                    html.push_str(&format!(" data-docx-{key}=\"{escaped}\""));
+                }
+            }
+            html.push('>');
+        }
         regions.push(SurfaceRegion {
             kind: SurfaceRegionKind::Section,
             start,

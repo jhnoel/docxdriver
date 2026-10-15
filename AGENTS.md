@@ -2,19 +2,60 @@
 
 ## Changing edit operations
 
-Any change to how an edit operation writes OOXML must keep the ECMA-376 schema
-gate green. CI runs it on Linux; run it locally before pushing (requires
-`lxml`):
+Any change to how an edit operation writes OOXML must keep the OOXML
+conformance gate green. It checks every committed package three ways:
+
+- ECMA-376 Transitional and OPC schemas (lxml);
+- package and cross-part integrity no schema expresses
+  (`scripts/ooxml_integrity.py`): content types, relationship targets and
+  `r:id` types, comment/numbering/note references, field and bookmark
+  pairing, table grids, `w14:paraId`/durable id ranges, duplicate revision
+  ids, `mc:Ignorable`;
+- the Open XML SDK validator for the Microsoft 365 format
+  (`scripts/openxml-validator`), which also covers the w14/w15/w16
+  extension namespaces the schema pass strips.
+
+It needs `lxml` and the .NET SDK 10+ (`brew install dotnet`). The gate runs
+before every commit that touches `crates/`, `Cargo.*` or the gate scripts,
+via prek; install the hook once per clone and do not bypass it with
+`--no-verify`:
+
+```sh
+prek install                                  # once per clone
+prek run ooxml-conformance --all-files        # same check by hand
+```
+
+or directly:
 
 ```sh
 cargo build -p docxdriver-cli
 python scripts/ooxml-conformance.py
 ```
 
-The gate fails when an operation introduces a schema error kind its source
-did not have, when a created document is invalid, or when an operation in the
-schema is never applied. A new operation needs a scenario in
-`scripts/ooxml-conformance.py`.
+CI runs the same gate on Linux. It fails when an operation introduces an
+error kind its source did not have, when a created document has any error,
+or when an operation in the schema is never applied. A new operation needs a
+scenario in `scripts/ooxml-conformance.py`. To check any `.docx` by hand:
+`python scripts/ooxml_integrity.py FILE.docx`.
+
+Content types and relationship types must be the ones Word itself writes.
+Take them from Word-authored files (the corpus), never from memory: 0.3.0
+registered the comment extension parts as `application/vnd.ms-word.*` and
+Word refused every commented document. `EXPECTED_CONTENT_TYPES` in
+`scripts/ooxml_integrity.py` is the table; extend it when adding a part.
+
+Word is the only real oracle. On macOS with Word installed, run the Word
+smoke test after changing how parts or relationships are registered, and
+before a release:
+
+```sh
+prek run --hook-stage manual word-smoke
+```
+
+It opens one output per source/operation/mode in Word and fails on any that
+Word will not open cleanly; outputs of sources Word already rejects (the
+`parity` and `ts-reference` fixtures) are skipped. It force-quits Word, so it
+refuses to run while Word is open; ask the user before running it.
 
 For engine changes that create or reorder structure (sections, settings,
 revisions, paragraph properties), also run the corpus once:
@@ -56,7 +97,7 @@ behavior changes.
 
 ```sh
 cargo test --workspace
-python scripts/ooxml-conformance.py
+python scripts/ooxml-conformance.py           # needs lxml + .NET SDK 10+; also the prek hook
 (cd packages/docxdriver && npm ci && npm test)
 (cd packages/docxdriver-pi && npm ci && npm test)
 python -m unittest discover -s crates/docxdriver-python/tests   # after installing the wheel; see its README

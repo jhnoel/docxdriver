@@ -9,6 +9,10 @@ read, authoring and editing support and proposes milestones for closing the gaps
 The [capability matrix](../packages/docxdriver/schema/formatting-capabilities.json)
 is checked against native/WASM behavior, typed fields and Python exposure.
 
+[Formatting implementation checklist](formatting-implementation-checklist.md)
+sets the current priorities: indentation, highlighting, lists, tables, and
+page/section layout, with acceptance checks and delivery requirements.
+
 [HTML projection parity](html-projection-parity.md) maps the prior representation
 to HTML and MathML and describes the frozen-baseline conformance checks.
 

@@ -10,6 +10,164 @@ use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 
+/// The exact ECMA-376 ST_HighlightColor palette; None is an explicit off override.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum HighlightColor {
+    Black,
+    Blue,
+    Cyan,
+    Green,
+    Magenta,
+    Red,
+    Yellow,
+    White,
+    DarkBlue,
+    DarkCyan,
+    DarkGreen,
+    DarkMagenta,
+    DarkRed,
+    DarkYellow,
+    DarkGray,
+    LightGray,
+    None,
+}
+impl HighlightColor {
+    pub fn as_str(self) -> &'static str { match self {
+        Self::Black => "black",
+        Self::Blue => "blue",
+        Self::Cyan => "cyan",
+        Self::Green => "green",
+        Self::Magenta => "magenta",
+        Self::Red => "red",
+        Self::Yellow => "yellow",
+        Self::White => "white",
+        Self::DarkBlue => "darkBlue",
+        Self::DarkCyan => "darkCyan",
+        Self::DarkGreen => "darkGreen",
+        Self::DarkMagenta => "darkMagenta",
+        Self::DarkRed => "darkRed",
+        Self::DarkYellow => "darkYellow",
+        Self::DarkGray => "darkGray",
+        Self::LightGray => "lightGray",
+        Self::None => "none",
+    }}
+    pub fn css(self) -> &'static str { match self {
+        Self::Black => "#000000",
+        Self::Blue => "#0000FF",
+        Self::Cyan => "#00FFFF",
+        Self::Green => "#00FF00",
+        Self::Magenta => "#FF00FF",
+        Self::Red => "#FF0000",
+        Self::Yellow => "#FFFF00",
+        Self::White => "#FFFFFF",
+        Self::DarkBlue => "#000080",
+        Self::DarkCyan => "#008080",
+        Self::DarkGreen => "#008000",
+        Self::DarkMagenta => "#800080",
+        Self::DarkRed => "#800000",
+        Self::DarkYellow => "#808000",
+        Self::DarkGray => "#808080",
+        Self::LightGray => "#C0C0C0",
+        Self::None => "transparent",
+    }}
+    pub fn parse(value: &str) -> Result<Self, String> { match value {
+        "black" => Ok(Self::Black),
+        "blue" => Ok(Self::Blue),
+        "cyan" => Ok(Self::Cyan),
+        "green" => Ok(Self::Green),
+        "magenta" => Ok(Self::Magenta),
+        "red" => Ok(Self::Red),
+        "yellow" => Ok(Self::Yellow),
+        "white" => Ok(Self::White),
+        "darkBlue" => Ok(Self::DarkBlue),
+        "darkCyan" => Ok(Self::DarkCyan),
+        "darkGreen" => Ok(Self::DarkGreen),
+        "darkMagenta" => Ok(Self::DarkMagenta),
+        "darkRed" => Ok(Self::DarkRed),
+        "darkYellow" => Ok(Self::DarkYellow),
+        "darkGray" => Ok(Self::DarkGray),
+        "lightGray" => Ok(Self::LightGray),
+        "none" => Ok(Self::None),
+        _ => Err(format!("unknown highlight palette value {value:?}")),
+    }}
+}
+
+/// Table widths use auto, points, or percent (0 < value <= 100 for percent).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "unit", rename_all = "snake_case", deny_unknown_fields)]
+pub enum TableWidth { Auto, Points { value: Points }, Percent { value: f64 } }
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TableBorder {
+    pub style: String,
+    #[serde(default)] pub color: Option<String>,
+    #[serde(default)] pub width: Option<Points>,
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
+pub struct TableBorders {
+    #[serde(default)] pub top: Option<TableBorder>,
+    #[serde(default)] pub left: Option<TableBorder>,
+    #[serde(default)] pub bottom: Option<TableBorder>,
+    #[serde(default)] pub right: Option<TableBorder>,
+    #[serde(default)] pub inside_horizontal: Option<TableBorder>,
+    #[serde(default)] pub inside_vertical: Option<TableBorder>,
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
+pub struct CellPadding {
+    #[serde(default)] pub top: Option<Points>,
+    #[serde(default)] pub right: Option<Points>,
+    #[serde(default)] pub bottom: Option<Points>,
+    #[serde(default)] pub left: Option<Points>,
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
+pub struct TableFormat {
+    #[serde(default)] pub width: Option<TableWidth>,
+    #[serde(default)] pub column_widths: Option<Vec<Points>>,
+    #[serde(default)] pub layout: Option<String>,
+    #[serde(default)] pub alignment: Option<String>,
+    #[serde(default)] pub borders: Option<TableBorders>,
+    #[serde(default)] pub cell_spacing: Option<Points>,
+    #[serde(default)] pub padding: Option<CellPadding>,
+    #[serde(default)] pub style: Option<String>,
+    #[serde(default)] pub clear: Vec<String>,
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
+pub struct CellFormat {
+    #[serde(default)] pub width: Option<TableWidth>,
+    #[serde(default)] pub borders: Option<TableBorders>,
+    #[serde(default)] pub fill: Option<String>,
+    #[serde(default)] pub padding: Option<CellPadding>,
+    #[serde(default)] pub vertical_alignment: Option<String>,
+    #[serde(default)] pub clear: Vec<String>,
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
+pub struct RowFormat {
+    #[serde(default)] pub height: Option<Points>,
+    #[serde(default)] pub height_rule: Option<String>,
+    #[serde(default)] pub repeating_header: Option<bool>,
+    #[serde(default)] pub allow_split: Option<bool>,
+    #[serde(default)] pub clear: Vec<String>,
+}
+
+/// Direct structural table edits. Row and column positions are one-based.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum TableEdit {
+    InsertRows { row: u32, position: InsertPosition, count: u32 },
+    DeleteRows { row: u32, count: u32 },
+    InsertColumns { column: u32, position: InsertPosition, count: u32 },
+    DeleteColumns { column: u32, count: u32 },
+    MergeCells { row: u32, column: u32, row_span: u32, column_span: u32 },
+    SplitCell { row: u32, column: u32 },
+    Delete,
+}
+
 pub const EDIT_PROTOCOL_VERSION: &str = "1";
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, JsonSchema)]
@@ -95,6 +253,34 @@ impl<'de> Deserialize<'de> for Points {
     {
         let n = f64::deserialize(d)?;
         Self::from_points(n).map_err(serde::de::Error::custom)
+    }
+}
+
+/// Signed paragraph indentation, in twentieths of a point. Other dimensions use `Points`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, JsonSchema)]
+#[schemars(with = "f64")]
+pub struct SignedPoints(pub i64);
+impl SignedPoints {
+    pub fn from_points(value: f64) -> Result<Self, String> {
+        if !value.is_finite() || value.abs() > 100000.0 {
+            return Err("indentation must be finite and between -100000 and 100000 points".into());
+        }
+        let n = (value * 20.0).round();
+        if (value * 20.0 - n).abs() > 1e-8 {
+            return Err("point values must be multiples of 0.05".into());
+        }
+        Ok(Self(n as i64))
+    }
+    pub fn as_points(self) -> f64 { self.0 as f64 / 20.0 }
+}
+impl Serialize for SignedPoints {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_f64(self.as_points())
+    }
+}
+impl<'de> Deserialize<'de> for SignedPoints {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Self::from_points(f64::deserialize(d)?).map_err(serde::de::Error::custom)
     }
 }
 
@@ -317,6 +503,24 @@ pub enum LineSpacing {
     AtLeast(Points),
 }
 
+/// One bounded level in a new multilevel list definition. Array position is level (0..8).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ListLevel {
+    pub format: String,
+    pub label: String,
+    #[serde(default)] pub start: Option<u32>,
+    /// Restart after this zero-based ancestor level; omitted uses Word's default.
+    #[serde(default)] pub restart_after: Option<u8>,
+    #[serde(default)] pub indent_left: Option<SignedPoints>,
+    #[serde(default)] pub indent_right: Option<SignedPoints>,
+    #[serde(default)] pub first_line_indent: Option<SignedPoints>,
+    #[serde(default)] pub marker_bold: Option<bool>,
+    #[serde(default)] pub marker_italic: Option<bool>,
+    #[serde(default)] pub marker_font: Option<String>,
+    #[serde(default)] pub marker_color: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
 pub enum EditOp {
@@ -359,6 +563,11 @@ pub enum EditOp {
         at: ParagraphAddress,
         with: String,
     },
+    EditTable { at: String, action: TableEdit },
+    InsertTable { at: ParagraphAddress, position: InsertPosition, rows: u32, columns: u32, #[serde(rename = "as", default)] alias: Option<String> },
+    FormatTable { at: String, format: TableFormat },
+    FormatRow { at: String, format: RowFormat },
+    FormatCell { at: String, format: CellFormat },
     FormatText {
         at: ParagraphAddress,
         select: String,
@@ -379,6 +588,8 @@ pub enum EditOp {
         #[serde(default)]
         color: Option<String>,
         #[serde(default)]
+        highlight: Option<HighlightColor>,
+        #[serde(default)]
         font_size: Option<Points>,
         #[serde(default)]
         clear: Vec<String>,
@@ -390,9 +601,12 @@ pub enum EditOp {
         #[serde(default)]
         alignment: Option<String>,
         #[serde(default)]
-        indent_left: Option<Points>,
+        indent_left: Option<SignedPoints>,
         #[serde(default)]
-        indent_right: Option<Points>,
+        indent_right: Option<SignedPoints>,
+        /// Signed first-line offset: negative means hanging; zero explicitly disables it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        first_line_indent: Option<SignedPoints>,
         #[serde(default)]
         space_before: Option<Points>,
         #[serde(default)]
@@ -401,6 +615,23 @@ pub enum EditOp {
         line_spacing: Option<LineSpacing>,
         #[serde(default)]
         clear: Vec<String>,
+    },
+    /// Assign selected paragraphs to a new or existing list. `remove` explicitly
+    /// suppresses inherited numbering; new definitions remain after rejection.
+    SetList {
+        #[serde(default)]
+        levels: Option<Vec<ListLevel>>,
+        at: Vec<ParagraphAddress>,
+        #[serde(default)]
+        num_id: Option<u32>,
+        #[serde(default)]
+        format: Option<String>,
+        #[serde(default)]
+        level: u8,
+        #[serde(default)]
+        start: Option<u32>,
+        #[serde(default)]
+        remove: bool,
     },
     InsertParagraph {
         at: InsertAnchor,
@@ -432,6 +663,40 @@ pub enum EditOp {
         footer: Option<Points>,
         #[serde(default)]
         gutter: Option<Points>,
+    },
+    /// Selective section-property edits. Dimensions are points; omitted fields preserve source.
+    SetSectionLayout {
+        #[serde(default)]
+        section: Option<u32>,
+        #[serde(default)]
+        page_size: Option<String>,
+        #[serde(default)]
+        width: Option<Points>,
+        #[serde(default)]
+        height: Option<Points>,
+        #[serde(default)]
+        orientation: Option<String>,
+        #[serde(default)]
+        columns: Option<u32>,
+        #[serde(default)]
+        column_spacing: Option<Points>,
+        #[serde(default)]
+        column_widths: Option<Vec<Points>>,
+        #[serde(default)]
+        column_separator: Option<bool>,
+        #[serde(default)]
+        break_type: Option<String>,
+        #[serde(default)]
+        page_number_format: Option<String>,
+        #[serde(default)]
+        page_number_start: Option<u32>,
+        #[serde(default)]
+        page_number_continue: Option<bool>,
+    },
+    SetFirstPageMode {
+        #[serde(default)]
+        section: Option<u32>,
+        enabled: bool,
     },
     SetEvenAndOddHeaders {
         even_and_odd: bool,
@@ -1093,6 +1358,14 @@ fn normalize_op(op: &mut EditOp) -> Result<(), String> {
                 }
             }
         }
+        EditOp::EditTable { at, action } => crate::commands::table_structure::validate(at, action)?,
+        EditOp::InsertTable { rows, columns, alias, .. } => {
+            if *rows == 0 || *columns == 0 || *rows > 100 || *columns > 100 { return Err("insert_table dimensions must be 1..100".into()); }
+            if alias.as_ref().is_some_and(|a| !valid_alias(a)) { return Err("invalid alias".into()); }
+        }
+        EditOp::FormatTable { at, format } => crate::commands::tables::validate_table(at, format)?,
+        EditOp::FormatRow { at, format } => crate::commands::tables::validate_row(at, format)?,
+        EditOp::FormatCell { at, format } => crate::commands::tables::validate_cell(at, format)?,
         EditOp::ReplaceParagraph { .. } => {}
         EditOp::FormatText {
             select,
@@ -1104,6 +1377,7 @@ fn normalize_op(op: &mut EditOp) -> Result<(), String> {
             superscript,
             subscript,
             color,
+            highlight,
             font_size,
             clear,
             ..
@@ -1133,6 +1407,7 @@ fn normalize_op(op: &mut EditOp) -> Result<(), String> {
                 && strike.is_none()
                 && superscript.is_none()
                 && subscript.is_none()
+                && highlight.is_none()
                 && color.is_none()
                 && font_size.is_none()
                 && clear.is_empty()
@@ -1147,6 +1422,7 @@ fn normalize_op(op: &mut EditOp) -> Result<(), String> {
                     "strike",
                     "superscript",
                     "subscript",
+                    "highlight",
                     "color",
                     "font_size",
                 ]
@@ -1160,12 +1436,16 @@ fn normalize_op(op: &mut EditOp) -> Result<(), String> {
             alignment,
             indent_left,
             indent_right,
+            first_line_indent,
             space_before,
             space_after,
             line_spacing,
             clear,
             ..
         } => {
+            if [*indent_left, *indent_right, *first_line_indent].into_iter().flatten().any(|v| v.0.unsigned_abs() > 2_000_000) {
+                return Err("paragraph indentation must be between -100000 and 100000 points".into());
+            }
             if let Some(s) = style {
                 if s.is_empty() {
                     return Err("style must be non-empty".into());
@@ -1183,6 +1463,7 @@ fn normalize_op(op: &mut EditOp) -> Result<(), String> {
             }
             if indent_left.is_none()
                 && indent_right.is_none()
+                && first_line_indent.is_none()
                 && space_before.is_none()
                 && space_after.is_none()
                 && line_spacing.is_none()
@@ -1191,6 +1472,36 @@ fn normalize_op(op: &mut EditOp) -> Result<(), String> {
                 && clear.is_empty()
             {
                 return Err("format_paragraph requires a property".into());
+            }
+        }
+        EditOp::SetList { at, num_id, format, level, start, remove, levels } => {
+            if let Some(defs) = levels {
+                if defs.is_empty() || defs.len() > 9 || num_id.is_some() || *remove || format.is_some() || *level as usize >= defs.len() {
+                    return Err("levels requires a new list with 1..9 definitions covering the selected level".into());
+                }
+                for (i, def) in defs.iter().enumerate() {
+                    if !["bullet","decimal","lowerLetter","upperLetter","lowerRoman","upperRoman"].contains(&def.format.as_str()) || def.start == Some(0) || def.label.is_empty() || def.label.len() > 255 || def.restart_after.is_some_and(|v| v as usize >= i) {
+                        return Err("invalid list level format, label, start or restart ancestor".into());
+                    }
+                    if [def.indent_left,def.indent_right,def.first_line_indent].into_iter().flatten().any(|v| v.0.unsigned_abs() > 2_000_000) { return Err("list indentation is out of range".into()); }
+                    let bytes = def.label.as_bytes();
+                    for j in 0..bytes.len() {
+                        if bytes[j] == b'%' && (j + 1 == bytes.len() || !(b'1'..=b'1' + i as u8).contains(&bytes[j+1])) { return Err("list labels may only reference this level or ancestor %1..%9 counters".into()); }
+                    }
+                    if def.marker_font.as_ref().is_some_and(|v| v.is_empty()) || def.marker_color.as_ref().is_some_and(|v| v.len() != 6 || !v.bytes().all(|c| c.is_ascii_hexdigit())) { return Err("invalid list marker font or six-digit RGB color".into()); }
+                }
+            }
+            if at.is_empty() || *level > 8 || *start == Some(0) || *num_id == Some(0) {
+                return Err("set_list requires paragraphs, level 0..8 and positive IDs/starts".into());
+            }
+            if *remove && (num_id.is_some() || format.is_some() || start.is_some() || *level != 0) {
+                return Err("set_list remove cannot be combined with list settings".into());
+            }
+            if let Some(fmt) = format {
+                if !["bullet", "decimal", "lowerLetter", "upperLetter", "lowerRoman", "upperRoman"].contains(&fmt.as_str()) {
+                    return Err("unsupported set_list format".into());
+                }
+                if num_id.is_some() { return Err("format cannot restyle an existing list; create a new list".into()); }
             }
         }
         EditOp::InsertParagraph { alias, .. } => {
@@ -1204,6 +1515,22 @@ fn normalize_op(op: &mut EditOp) -> Result<(), String> {
             if at.is_empty() {
                 return Err("at must not be empty".into());
             }
+        }
+        EditOp::SetSectionLayout { section, page_size, width, height, orientation, columns, column_spacing, column_widths, column_separator, break_type, page_number_format, page_number_start, page_number_continue } => {
+            if section == &Some(0) { return Err("section must be positive".into()); }
+            if let Some(size) = page_size { if !matches!(size.as_str(), "letter" | "legal" | "a4" | "a3" | "a5") { return Err("page_size must be letter/legal/a4/a3/a5".into()); } }
+            if page_size.is_some() && (width.is_some() || height.is_some()) { return Err("page_size conflicts with width/height".into()); }
+            if width.is_some() != height.is_some() { return Err("width and height must be supplied together".into()); }
+            if [width.as_ref(), height.as_ref()].into_iter().flatten().any(|value| value.0 <= 0 || value.0 > 31680) { return Err("page dimensions must be >0 and <=1584 points".into()); }
+            if orientation.as_ref().is_some_and(|v| !matches!(v.as_str(), "portrait" | "landscape")) { return Err("orientation must be portrait/landscape".into()); }
+            if columns.is_some_and(|v| v == 0 || v > 45) { return Err("columns must be between 1 and 45".into()); }
+            if column_widths.as_ref().is_some_and(|v| v.is_empty() || v.len() > 45 || v.iter().any(|p| p.0 <= 0)) { return Err("column_widths requires 1..45 positive widths".into()); }
+            if let (Some(count), Some(widths)) = (columns.as_ref(), column_widths.as_ref()) { if *count as usize != widths.len() { return Err("columns must match column_widths length".into()); } }
+            if break_type.as_ref().is_some_and(|v| !matches!(v.as_str(), "nextPage" | "continuous" | "oddPage" | "evenPage" | "nextColumn")) { return Err("unsupported section break_type".into()); }
+            if page_number_format.as_ref().is_some_and(|v| !matches!(v.as_str(), "decimal" | "upperRoman" | "lowerRoman" | "upperLetter" | "lowerLetter")) { return Err("unsupported page_number_format".into()); }
+            if page_number_start == &Some(0) { return Err("page_number_start must be positive".into()); }
+            if page_number_start.is_some() && page_number_continue == &Some(true) { return Err("page_number_start conflicts with page_number_continue".into()); }
+            if page_size.is_none() && width.is_none() && orientation.is_none() && columns.is_none() && column_spacing.is_none() && column_widths.is_none() && column_separator.is_none() && break_type.is_none() && page_number_format.is_none() && page_number_start.is_none() && page_number_continue.is_none() { return Err("set_section_layout requires a property".into()); }
         }
         EditOp::SetPageMargins {
             section,
@@ -1271,7 +1598,8 @@ fn normalize_op(op: &mut EditOp) -> Result<(), String> {
             ..
         }
         | EditOp::SetEvenAndOddHeaders { .. } => {}
-        EditOp::SetHeader { section, .. }
+        EditOp::SetFirstPageMode { section, .. }
+        | EditOp::SetHeader { section, .. }
         | EditOp::SetFooter { section, .. }
         | EditOp::ClearHeader { section, .. }
         | EditOp::ClearFooter { section, .. } => {
@@ -1563,9 +1891,8 @@ fn fold_typed(
                 )),
             );
         }
-        if let EditOp::InsertParagraph {
-            alias: Some(alias), ..
-        } = op
+        if let EditOp::InsertParagraph { alias: Some(alias), .. }
+            | EditOp::InsertTable { alias: Some(alias), .. } = op
         {
             if aliases.contains_key(alias) {
                 attach_affected(&state, &mut reports, &affected_ids);
@@ -1589,6 +1916,9 @@ fn fold_typed(
                         report,
                     )),
                 );
+            }
+            if let EditOp::InsertTable { .. } = op {
+                aliases.insert(alias.clone(), Value::String(format!("${alias}")));
             }
             if let Some(id) = outcome
                 .result
@@ -1717,11 +2047,19 @@ fn operation_name(op: &EditOp) -> &'static str {
         EditOp::ReplaceText { .. } => "replace_text",
         EditOp::ReviseText { .. } => "revise_text",
         EditOp::ReplaceParagraph { .. } => "replace_paragraph",
+        EditOp::EditTable { .. } => "edit_table",
+        EditOp::InsertTable { .. } => "insert_table",
+        EditOp::FormatTable { .. } => "format_table",
+        EditOp::FormatRow { .. } => "format_row",
+        EditOp::FormatCell { .. } => "format_cell",
         EditOp::FormatText { .. } => "format_text",
         EditOp::FormatParagraph { .. } => "format_paragraph",
+        EditOp::SetList { .. } => "set_list",
         EditOp::InsertParagraph { .. } => "insert_paragraph",
         EditOp::DeleteParagraphs { .. } => "delete_paragraphs",
         EditOp::SetPageMargins { .. } => "set_page_margins",
+        EditOp::SetSectionLayout { .. } => "set_section_layout",
+        EditOp::SetFirstPageMode { .. } => "set_first_page_mode",
         EditOp::SetEvenAndOddHeaders { .. } => "set_even_and_odd_headers",
         EditOp::SetHeader { .. } => "set_header",
         EditOp::SetFooter { .. } => "set_footer",
@@ -1758,6 +2096,7 @@ fn resolve_typed_aliases(
         | EditOp::ReplaceText { at, .. }
         | EditOp::ReplaceParagraph { at, .. }
         | EditOp::FormatText { at, .. }
+        | EditOp::InsertTable { at, .. }
         | EditOp::FormatParagraph { at, .. }
         | EditOp::CommentAdd { at, .. } => resolve(at)?,
         EditOp::ReviseText { at: Some(at), .. } => resolve(at)?,
@@ -1766,7 +2105,7 @@ fn resolve_typed_aliases(
                 resolve(addr)?;
             }
         }
-        EditOp::DeleteParagraphs { at } => {
+        EditOp::DeleteParagraphs { at } | EditOp::SetList { at, .. } => {
             for address in at {
                 resolve(address)?;
             }
@@ -1965,6 +2304,7 @@ fn typed_read(input: Option<&[u8]>, kind: &str, view: Option<&str>) -> crate::ou
                 let (markup, css) = crate::html::compact::agent_html(&rendered.html);
                 map.insert("markup".into(), serde_json::json!(markup));
                 map.insert("css".into(), serde_json::json!(css));
+                map.insert("tables".into(), crate::commands::tables::inventory(&state.xml));
                 map.insert("styles".into(), serde_json::json!(crate::html::styles::Styles::load(&state.package).catalog()));
                 if !equations.is_empty() {
                     map.insert("equations".into(), serde_json::json!(equations));
@@ -2068,6 +2408,7 @@ fn typed_read(input: Option<&[u8]>, kind: &str, view: Option<&str>) -> crate::ou
                     "assets".into(),
                     serde_json::json!(crate::html::assets::manifest(&state.package, false)),
                 );
+                map.insert("tables".into(), crate::commands::tables::inventory(&state.xml));
                 map.insert("html".into(), Value::String(rendered.html));
             }
             if let Some(map) = result.result.as_mut().and_then(Value::as_object_mut) {

@@ -669,30 +669,21 @@ fn inherited_math_variants_and_operator_variants_survive_and_unsupported_attrs_f
 }
 
 #[test]
-fn multi_paragraph_list_items_fail_instead_of_changing_numbering() {
-    for html in [
-        "<ol><li><p>A</p><p>B</p></li><li>C</li></ol>",
-        "<ul><li>A<p>B</p></li></ul>",
-    ] {
-        let result = command(
-            None,
-            Command::Create(CreateCommand {
-                html: Some(html.into()),
-                paragraphs: vec![],
-            }),
-        );
-        match result {
-            CommandResult::Rejected { diagnostic, .. } => assert!(
-                diagnostic.message.contains("multiple paragraphs"),
-                "{diagnostic:?}"
-            ),
-            other => panic!("{other:?}"),
-        }
+fn multi_paragraph_list_items_persist_explicit_membership() {
+    let input = create("<ol start='3'><li><p>A</p><p>B</p><ul><li>Child<ol><li>Grandchild</li></ol></li></ul><p>C</p></li><li>D</li></ol><p>Ordinary prose</p>");
+    for view in ["original", "final", "markup"] {
+        let doc = read(&input, "document", view);
+        assert_html(&doc);
+        let html = html(&doc);
+        assert_eq!(html.matches("<li ").count(), 4, "{html}");
+        assert!(html.contains("start=\"3\""), "{html}");
+        let first_end = html.find("</li>").unwrap();
+        assert!(html[..first_end].contains(">B<"), "{html}");
+        assert!(html.find("Ordinary prose").unwrap() > html.rfind("</ol>").unwrap(), "{html}");
     }
-    let input = create("<ol><li>A<br>B<ul><li>Nested</li></ul></li><li>C</li></ol>");
     let doc = read(&input, "document", "final");
-    assert_html(&doc);
-    assert_eq!(html(&doc).matches("<li ").count(), 3);
+    let text = doc.to_string();
+    assert!(text.contains("continuation_paragraph"), "{text}");
 }
 
 #[test]

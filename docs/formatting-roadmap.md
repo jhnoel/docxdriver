@@ -1,7 +1,7 @@
 # Formatting support and roadmap
 
 Baseline audited 2026-10-14 against source commit `4048452`; milestone 0 is
-implemented in this working tree. Later milestones are proposed in dependency
+implemented in commit `bcce1be`. Later milestones are proposed in dependency
 order, not scheduled releases or an exhaustive inventory of Word features.
 
 ## Current support
@@ -14,9 +14,9 @@ displayed. Recreating a document from its HTML preview is not a lossless round t
 | Area | Available today | Missing or limited |
 | --- | --- | --- |
 | Character formatting | Typed selection edits for bold, italic, single underline, strike, superscript/subscript, RGB color, font size, and clearing those properties. HTML also accepts font family. | Typed font-family changes; highlight and shading; character styles; small/all caps; underline variants/color; double strike; character spacing, scaling and position; language and complex-script controls. |
-| Paragraph formatting | Typed edits for an existing paragraph style, left/center/right/justified alignment, left/right indents, before/after spacing, and multiple/exact/at-least line spacing. HTML accepts positive first-line `text-indent`. | Typed first-line/hanging indents; custom tab stops/leaders; keep-with-next, keep-lines, widow/orphan control, page-break-before; borders/shading; outline levels and text direction. Negative HTML `text-indent` is rejected even though existing hanging indents can be projected. |
+| Paragraph formatting | Typed edits for an existing paragraph style, left/center/right/justified alignment, signed left/right indents and signed first-line/hanging offsets, before/after spacing, and multiple/exact/at-least line spacing. HTML accepts signed `text-indent` and paragraph margins. | Custom tab stops/leaders; keep-with-next, keep-lines, widow/orphan control, page-break-before; borders/shading; outline levels and text direction. |
 | Styles and themes | Named paragraph styles are read and can be applied if declared in the document; a bounded style cascade supplies preview CSS. | Creating/updating styles, document defaults, character/table styles, theme fonts/colors, and full style-cascade fidelity. Authored stylesheets are rejected. |
-| Lists | HTML creation supports nested bullets and ordered lists, ordered-list types/start values; reads retain list metadata and markers. | Typed conversion to/from lists, restart/continue numbering, level changes, custom multilevel labels/indents and marker formatting. Multi-paragraph list items are explicitly rejected. |
+| Lists | HTML creation supports nested bullets and ordered lists, ordered-list types/start values; reads retain list metadata and markers. | Typed conversion to/from lists, restart/continue numbering, level changes, custom multilevel labels/indents and marker formatting. Multi-paragraph items retain explicit continuation membership via persisted bookmarks and suppressed DOCX markers. |
 | Tables | HTML creation supports tables, nested tables, and row/column spans; existing cell paragraphs remain addressable for text/paragraph edits. | Typed table/cell formatting and structural edits; configurable widths, borders, fills, padding, alignment, row heights, repeating header rows and table styles. Creation uses default table layout/borders; table/row/cell lowering forwards spans, not authored styling. |
 | Pages and sections | Core exposes section-specific page margins including header/footer distance and gutter; header/footer operations support default/even/first kinds, plus an even/odd switch. HTML creation has basic section boundaries. | Page size/orientation, columns, section-break editing/type, page numbering configuration, page borders and section vertical alignment. `set_page_margins` is absent from the V1 Python capability manifest. |
 | Images and drawings | HTML creation accepts inline data-URI images and dimensions; reads expose image assets and placeholders for unsupported drawings. | Typed resize/crop/replace and positioning; floating anchors, wrapping, rotation, drawing/text-box styling. |
@@ -140,9 +140,9 @@ Every implementation slice must follow [the repository agent notes](../AGENTS.md
   original/final/all revision views where applicable. Keep plan review roughly
   linear as new selectors and property operations are introduced.
 
-Recommended next implementation slice: typed font family, first-line/hanging
-indents and Python page-margin exposure.
-These close concrete surface gaps before the larger style/table/section work.
+The [implementation checklist](formatting-implementation-checklist.md) sets the
+current priority order: indentation, highlighting, lists, tables, then page and
+section layout. It takes precedence over this broader roadmap's suggested order.
 
 ## Audit references
 

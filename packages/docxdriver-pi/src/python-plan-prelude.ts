@@ -125,10 +125,23 @@ class DeleteParagraphs:
         return value
 
 @dataclass
+class EditTable:
+    action: dict
+    at: str
+    def to_dict(self):
+        value = {"op": "edit_table"}
+        if self.action is not None:
+            value["action"] = self.action
+        if self.at is not None:
+            value["at"] = self.at
+        return value
+
+@dataclass
 class FormatParagraph:
     at: str
     alignment: str | None = None
     clear: list | None = None
+    first_line_indent: float | None = None
     indent_left: float | None = None
     indent_right: float | None = None
     line_spacing: dict | None = None
@@ -143,6 +156,8 @@ class FormatParagraph:
             value["alignment"] = self.alignment
         if self.clear is not None:
             value["clear"] = self.clear
+        if self.first_line_indent is not None:
+            value["first_line_indent"] = self.first_line_indent
         if self.indent_left is not None:
             value["indent_left"] = self.indent_left
         if self.indent_right is not None:
@@ -165,6 +180,7 @@ class FormatText:
     clear: list | None = None
     color: str | None = None
     font_size: float | None = None
+    highlight: str | None = None
     italic: bool | None = None
     occurrence: int | None = None
     strike: bool | None = None
@@ -185,6 +201,8 @@ class FormatText:
             value["color"] = self.color
         if self.font_size is not None:
             value["font_size"] = self.font_size
+        if self.highlight is not None:
+            value["highlight"] = self.highlight
         if self.italic is not None:
             value["italic"] = self.italic
         if self.occurrence is not None:
@@ -218,6 +236,27 @@ class InsertParagraph:
             value["style"] = self.style
         if self.with_ is not None:
             value["with"] = self.with_.to_dict() if hasattr(self.with_, "to_dict") else self.with_
+        return value
+
+@dataclass
+class InsertTable:
+    at: str
+    columns: int
+    position: str
+    rows: int
+    as_: str | None = None
+    def to_dict(self):
+        value = {"op": "insert_table"}
+        if self.at is not None:
+            value["at"] = self.at
+        if self.columns is not None:
+            value["columns"] = self.columns
+        if self.position is not None:
+            value["position"] = self.position
+        if self.rows is not None:
+            value["rows"] = self.rows
+        if self.as_ is not None:
+            value["as"] = self.as_
         return value
 
 @dataclass
@@ -308,6 +347,18 @@ class SetEvenAndOddHeaders:
         return value
 
 @dataclass
+class SetFirstPageMode:
+    enabled: bool
+    section: int | None = None
+    def to_dict(self):
+        value = {"op": "set_first_page_mode"}
+        if self.enabled is not None:
+            value["enabled"] = self.enabled
+        if self.section is not None:
+            value["section"] = self.section
+        return value
+
+@dataclass
 class SetFooter:
     with_: str | Inline | Quote | Term
     kind: str | None = None
@@ -335,6 +386,108 @@ class SetHeader:
             value["kind"] = self.kind
         if self.section is not None:
             value["section"] = self.section
+        return value
+
+@dataclass
+class SetList:
+    at: list
+    format: str | None = None
+    level: int | None = None
+    levels: list | None = None
+    num_id: int | None = None
+    remove: bool | None = None
+    start: int | None = None
+    def to_dict(self):
+        value = {"op": "set_list"}
+        if self.at is not None:
+            value["at"] = self.at
+        if self.format is not None:
+            value["format"] = self.format
+        if self.level is not None:
+            value["level"] = self.level
+        if self.levels is not None:
+            value["levels"] = self.levels
+        if self.num_id is not None:
+            value["num_id"] = self.num_id
+        if self.remove is not None:
+            value["remove"] = self.remove
+        if self.start is not None:
+            value["start"] = self.start
+        return value
+
+@dataclass
+class SetPageMargins:
+    bottom: float | None = None
+    footer: float | None = None
+    gutter: float | None = None
+    header: float | None = None
+    left: float | None = None
+    right: float | None = None
+    section: int | None = None
+    top: float | None = None
+    def to_dict(self):
+        value = {"op": "set_page_margins"}
+        if self.bottom is not None:
+            value["bottom"] = self.bottom
+        if self.footer is not None:
+            value["footer"] = self.footer
+        if self.gutter is not None:
+            value["gutter"] = self.gutter
+        if self.header is not None:
+            value["header"] = self.header
+        if self.left is not None:
+            value["left"] = self.left
+        if self.right is not None:
+            value["right"] = self.right
+        if self.section is not None:
+            value["section"] = self.section
+        if self.top is not None:
+            value["top"] = self.top
+        return value
+
+@dataclass
+class SetSectionLayout:
+    break_type: str | None = None
+    column_separator: bool | None = None
+    column_spacing: float | None = None
+    column_widths: list | None = None
+    columns: int | None = None
+    height: float | None = None
+    orientation: str | None = None
+    page_number_continue: bool | None = None
+    page_number_format: str | None = None
+    page_number_start: int | None = None
+    page_size: str | None = None
+    section: int | None = None
+    width: float | None = None
+    def to_dict(self):
+        value = {"op": "set_section_layout"}
+        if self.break_type is not None:
+            value["break_type"] = self.break_type
+        if self.column_separator is not None:
+            value["column_separator"] = self.column_separator
+        if self.column_spacing is not None:
+            value["column_spacing"] = self.column_spacing
+        if self.column_widths is not None:
+            value["column_widths"] = self.column_widths
+        if self.columns is not None:
+            value["columns"] = self.columns
+        if self.height is not None:
+            value["height"] = self.height
+        if self.orientation is not None:
+            value["orientation"] = self.orientation
+        if self.page_number_continue is not None:
+            value["page_number_continue"] = self.page_number_continue
+        if self.page_number_format is not None:
+            value["page_number_format"] = self.page_number_format
+        if self.page_number_start is not None:
+            value["page_number_start"] = self.page_number_start
+        if self.page_size is not None:
+            value["page_size"] = self.page_size
+        if self.section is not None:
+            value["section"] = self.section
+        if self.width is not None:
+            value["width"] = self.width
         return value
 
 # END GENERATED DATACLASSES
@@ -493,11 +646,18 @@ class DeleteParagraphs:
     at: list
     def to_dict(self) -> dict: ...
 
+class EditTable:
+    def __init__(self, action: dict, at: str): ...
+    action: dict
+    at: str
+    def to_dict(self) -> dict: ...
+
 class FormatParagraph:
-    def __init__(self, at: str, alignment: str | None = None, clear: list | None = None, indent_left: float | None = None, indent_right: float | None = None, line_spacing: dict | None = None, space_after: float | None = None, space_before: float | None = None, style: str | None = None): ...
+    def __init__(self, at: str, alignment: str | None = None, clear: list | None = None, first_line_indent: float | None = None, indent_left: float | None = None, indent_right: float | None = None, line_spacing: dict | None = None, space_after: float | None = None, space_before: float | None = None, style: str | None = None): ...
     at: str
     alignment: str | None
     clear: list | None
+    first_line_indent: float | None
     indent_left: float | None
     indent_right: float | None
     line_spacing: dict | None
@@ -507,13 +667,14 @@ class FormatParagraph:
     def to_dict(self) -> dict: ...
 
 class FormatText:
-    def __init__(self, at: str, select: str, bold: bool | None = None, clear: list | None = None, color: str | None = None, font_size: float | None = None, italic: bool | None = None, occurrence: int | None = None, strike: bool | None = None, subscript: bool | None = None, superscript: bool | None = None, underline: bool | None = None): ...
+    def __init__(self, at: str, select: str, bold: bool | None = None, clear: list | None = None, color: str | None = None, font_size: float | None = None, highlight: str | None = None, italic: bool | None = None, occurrence: int | None = None, strike: bool | None = None, subscript: bool | None = None, superscript: bool | None = None, underline: bool | None = None): ...
     at: str
     select: str
     bold: bool | None
     clear: list | None
     color: str | None
     font_size: float | None
+    highlight: str | None
     italic: bool | None
     occurrence: int | None
     strike: bool | None
@@ -529,6 +690,15 @@ class InsertParagraph:
     as_: str | None
     style: str | None
     with_: str | Inline | Quote | Term | None
+    def to_dict(self) -> dict: ...
+
+class InsertTable:
+    def __init__(self, at: str, columns: int, position: str, rows: int, as_: str | None = None): ...
+    at: str
+    columns: int
+    position: str
+    rows: int
+    as_: str | None
     def to_dict(self) -> dict: ...
 
 class ReplaceEquation:
@@ -572,6 +742,12 @@ class SetEvenAndOddHeaders:
     even_and_odd: bool
     def to_dict(self) -> dict: ...
 
+class SetFirstPageMode:
+    def __init__(self, enabled: bool, section: int | None = None): ...
+    enabled: bool
+    section: int | None
+    def to_dict(self) -> dict: ...
+
 class SetFooter:
     def __init__(self, with_: str | Inline | Quote | Term, kind: str | None = None, section: int | None = None): ...
     with_: str | Inline | Quote | Term
@@ -584,6 +760,46 @@ class SetHeader:
     with_: str | Inline | Quote | Term
     kind: str | None
     section: int | None
+    def to_dict(self) -> dict: ...
+
+class SetList:
+    def __init__(self, at: list, format: str | None = None, level: int | None = None, levels: list | None = None, num_id: int | None = None, remove: bool | None = None, start: int | None = None): ...
+    at: list
+    format: str | None
+    level: int | None
+    levels: list | None
+    num_id: int | None
+    remove: bool | None
+    start: int | None
+    def to_dict(self) -> dict: ...
+
+class SetPageMargins:
+    def __init__(self, bottom: float | None = None, footer: float | None = None, gutter: float | None = None, header: float | None = None, left: float | None = None, right: float | None = None, section: int | None = None, top: float | None = None): ...
+    bottom: float | None
+    footer: float | None
+    gutter: float | None
+    header: float | None
+    left: float | None
+    right: float | None
+    section: int | None
+    top: float | None
+    def to_dict(self) -> dict: ...
+
+class SetSectionLayout:
+    def __init__(self, break_type: str | None = None, column_separator: bool | None = None, column_spacing: float | None = None, column_widths: list | None = None, columns: int | None = None, height: float | None = None, orientation: str | None = None, page_number_continue: bool | None = None, page_number_format: str | None = None, page_number_start: int | None = None, page_size: str | None = None, section: int | None = None, width: float | None = None): ...
+    break_type: str | None
+    column_separator: bool | None
+    column_spacing: float | None
+    column_widths: list | None
+    columns: int | None
+    height: float | None
+    orientation: str | None
+    page_number_continue: bool | None
+    page_number_format: str | None
+    page_number_start: int | None
+    page_size: str | None
+    section: int | None
+    width: float | None
     def to_dict(self) -> dict: ...
 
 # END GENERATED TYPE STUBS
@@ -750,17 +966,29 @@ Delete the paragraphs listed in \`at\` (tracked deletion by default).
 | --- | --- | --- |
 | \`at\` | \`list\` | yes |
 
+### EditTable
+
+\`EditTable(action: dict, at: str)\`
+
+Direct structural table edits using a source-bound table handle. action.kind is insert_rows/delete_rows/insert_columns/delete_columns/merge_cells/split_cell/delete; coordinates and counts are one-based. Insert/delete grid operations and merge require an unmerged rectangular grid. Split keeps content in the first resulting cell; merge concatenates content in row-major order. Rejects tracked mode and tables containing unresolved revisions, bookmarks, comments, fields or content controls. Delete the table instead of its final row or column.
+
+| Field | Type | Required |
+| --- | --- | --- |
+| \`action\` | \`dict\` | yes |
+| \`at\` | \`str\` | yes |
+
 ### FormatParagraph
 
-\`FormatParagraph(at: str, alignment: str | None = None, clear: list | None = None, indent_left: float | None = None, indent_right: float | None = None, line_spacing: dict | None = None, space_after: float | None = None, space_before: float | None = None, style: str | None = None)\`
+\`FormatParagraph(at: str, alignment: str | None = None, clear: list | None = None, first_line_indent: float | None = None, indent_left: float | None = None, indent_right: float | None = None, line_spacing: dict | None = None, space_after: float | None = None, space_before: float | None = None, style: str | None = None)\`
 
-Apply paragraph formatting to the paragraph at \`at\`: \`style\`, \`alignment\` (left/center/right/justify), \`indent_left\`/\`indent_right\`, \`space_before\`/\`space_after\`, \`line_spacing\` (dict with \`mode\` multiple/exact/at_least and \`value\`), or \`clear\`. Omitted properties are untouched; clear removes direct settings and inherits styles/defaults, winning over set. Formatting changes are always tracked.
+Apply paragraph formatting to the paragraph at \`at\`: \`style\`, \`alignment\` (left/center/right/justify), signed \`indent_left\`/\`indent_right\`, signed \`first_line_indent\` (negative for hanging, zero for an explicit zero offset), \`space_before\`/\`space_after\`, \`line_spacing\` (dict with \`mode\` multiple/exact/at_least and \`value\`), or \`clear\`. Omitted properties are untouched; clear removes direct settings and inherits styles/defaults, winning over set. Formatting changes are always tracked.
 
 | Field | Type | Required |
 | --- | --- | --- |
 | \`at\` | \`str\` | yes |
 | \`alignment\` | \`str | None\` | no |
 | \`clear\` | \`list | None\` | no |
+| \`first_line_indent\` | \`float | None\` | no |
 | \`indent_left\` | \`float | None\` | no |
 | \`indent_right\` | \`float | None\` | no |
 | \`line_spacing\` | \`dict | None\` | no |
@@ -770,9 +998,9 @@ Apply paragraph formatting to the paragraph at \`at\`: \`style\`, \`alignment\` 
 
 ### FormatText
 
-\`FormatText(at: str, select: str, bold: bool | None = None, clear: list | None = None, color: str | None = None, font_size: float | None = None, italic: bool | None = None, occurrence: int | None = None, strike: bool | None = None, subscript: bool | None = None, superscript: bool | None = None, underline: bool | None = None)\`
+\`FormatText(at: str, select: str, bold: bool | None = None, clear: list | None = None, color: str | None = None, font_size: float | None = None, highlight: str | None = None, italic: bool | None = None, occurrence: int | None = None, strike: bool | None = None, subscript: bool | None = None, superscript: bool | None = None, underline: bool | None = None)\`
 
-Apply character formatting to an exact occurrence of \`select\` in the paragraph at \`at\`: boolean attributes (\`bold\`, \`italic\`, \`underline\`, \`strike\`, \`superscript\`, \`subscript\`), \`color\` (#RRGGBB), \`font_size\` (points), \`occurrence\`, or \`clear\`. Omitted properties preserve source OOXML; false explicitly overrides inherited formatting (baseline for superscript/subscript). Clear removes the direct property and inherits styles/defaults, winning over set; superscript/subscript share one property. Formatting changes are always tracked.
+Apply character formatting to an exact occurrence of \`select\` in the paragraph at \`at\`: boolean attributes (\`bold\`, \`italic\`, \`underline\`, \`strike\`, \`superscript\`, \`subscript\`), \`color\` (#RRGGBB), \`highlight\` (Word palette including none), \`font_size\` (points), \`occurrence\`, or \`clear\`. Omitted properties preserve source OOXML; false explicitly overrides inherited formatting (baseline for superscript/subscript). Clear removes the direct property and inherits styles/defaults, winning over set; superscript/subscript share one property. Formatting changes are always tracked.
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -782,6 +1010,7 @@ Apply character formatting to an exact occurrence of \`select\` in the paragraph
 | \`clear\` | \`list | None\` | no |
 | \`color\` | \`str | None\` | no |
 | \`font_size\` | \`float | None\` | no |
+| \`highlight\` | \`str | None\` | no |
 | \`italic\` | \`bool | None\` | no |
 | \`occurrence\` | \`int | None\` | no |
 | \`strike\` | \`bool | None\` | no |
@@ -802,6 +1031,20 @@ Insert a new paragraph before or after an anchor: paragraph id/alias (\`at\`) or
 | \`as_\` (schema key \`as\`) | \`str | None\` | no |
 | \`style\` | \`str | None\` | no |
 | \`with_\` (schema key \`with\`) | \`str | Inline | Quote | Term | None\` | no |
+
+### InsertTable
+
+\`InsertTable(at: str, columns: int, position: str, rows: int, as_: str | None = None)\`
+
+Insert a rectangular table before/after paragraph at, with rows and columns in 1..100. Direct mode only. Optional as creates a plan-local table alias for later formatting and structural edits.
+
+| Field | Type | Required |
+| --- | --- | --- |
+| \`at\` | \`str\` | yes |
+| \`columns\` | \`int\` | yes |
+| \`position\` | \`str\` | yes |
+| \`rows\` | \`int\` | yes |
+| \`as_\` (schema key \`as\`) | \`str | None\` | no |
 
 ### ReplaceEquation
 
@@ -874,6 +1117,17 @@ Enable or disable distinct even-page headers/footers (\`even_and_odd\`); when tr
 | --- | --- | --- |
 | \`even_and_odd\` | \`bool\` | yes |
 
+### SetFirstPageMode
+
+\`SetFirstPageMode(enabled: bool, section: int | None = None)\`
+
+Enable/disable first-page stories in a section (default 1) without removing stored stories. Tracked mode records a section-property snapshot; settle pending section changes before editing again.
+
+| Field | Type | Required |
+| --- | --- | --- |
+| \`enabled\` | \`bool\` | yes |
+| \`section\` | \`int | None\` | no |
+
 ### SetFooter
 
 \`SetFooter(with_: str | Inline | Quote | Term, kind: str | None = None, section: int | None = None)\`
@@ -897,6 +1151,61 @@ Set section header chrome from inner HTML (\`with\`); optional \`section\` (defa
 | \`with_\` (schema key \`with\`) | \`str | Inline | Quote | Term\` | yes |
 | \`kind\` | \`str | None\` | no |
 | \`section\` | \`int | None\` | no |
+
+### SetList
+
+\`SetList(at: list, format: str | None = None, level: int | None = None, levels: list | None = None, num_id: int | None = None, remove: bool | None = None, start: int | None = None)\`
+
+Assign explicitly selected paragraphs to a new list (format defaults to decimal), continue an existing num_id, or remove membership with remove=True. level is 0..8; start is positive and creates an isolated restarted instance. Optional levels defines 1..9 per-level format/label/start/restart_after, signed indent_left/indent_right/first_line_indent and marker_bold/marker_italic/marker_font/marker_color for a new list. Label placeholders reference this or ancestor levels (%1..%9). Existing definitions are never restyled. Membership changes are tracked; settle pending paragraph changes first. Definitions remain after rejection for safe reference restoration.
+
+| Field | Type | Required |
+| --- | --- | --- |
+| \`at\` | \`list\` | yes |
+| \`format\` | \`str | None\` | no |
+| \`level\` | \`int | None\` | no |
+| \`levels\` | \`list | None\` | no |
+| \`num_id\` | \`int | None\` | no |
+| \`remove\` | \`bool | None\` | no |
+| \`start\` | \`int | None\` | no |
+
+### SetPageMargins
+
+\`SetPageMargins(bottom: float | None = None, footer: float | None = None, gutter: float | None = None, header: float | None = None, left: float | None = None, right: float | None = None, section: int | None = None, top: float | None = None)\`
+
+Set selected nonnegative page margins in points for a section (default 1): top/right/bottom/left/header/footer/gutter. Omitted values are preserved. Like existing header/footer setters, margin changes are direct even in tracked plans.
+
+| Field | Type | Required |
+| --- | --- | --- |
+| \`bottom\` | \`float | None\` | no |
+| \`footer\` | \`float | None\` | no |
+| \`gutter\` | \`float | None\` | no |
+| \`header\` | \`float | None\` | no |
+| \`left\` | \`float | None\` | no |
+| \`right\` | \`float | None\` | no |
+| \`section\` | \`int | None\` | no |
+| \`top\` | \`float | None\` | no |
+
+### SetSectionLayout
+
+\`SetSectionLayout(break_type: str | None = None, column_separator: bool | None = None, column_spacing: float | None = None, column_widths: list | None = None, columns: int | None = None, height: float | None = None, orientation: str | None = None, page_number_continue: bool | None = None, page_number_format: str | None = None, page_number_start: int | None = None, page_size: str | None = None, section: int | None = None, width: float | None = None)\`
+
+Selectively set section layout (section defaults to 1): page_size letter/legal/a4/a3/a5 or paired width/height in points; orientation portrait/landscape normalizes dimensions. Columns 1..45 with column_spacing, column_widths and column_separator; break_type nextPage/continuous/oddPage/evenPage/nextColumn; page_number_format, page_number_start or page_number_continue=true. Omission preserves properties; tracking snapshots section properties while preserving story relationships. Pending property changes must be settled first.
+
+| Field | Type | Required |
+| --- | --- | --- |
+| \`break_type\` | \`str | None\` | no |
+| \`column_separator\` | \`bool | None\` | no |
+| \`column_spacing\` | \`float | None\` | no |
+| \`column_widths\` | \`list | None\` | no |
+| \`columns\` | \`int | None\` | no |
+| \`height\` | \`float | None\` | no |
+| \`orientation\` | \`str | None\` | no |
+| \`page_number_continue\` | \`bool | None\` | no |
+| \`page_number_format\` | \`str | None\` | no |
+| \`page_number_start\` | \`int | None\` | no |
+| \`page_size\` | \`str | None\` | no |
+| \`section\` | \`int | None\` | no |
+| \`width\` | \`float | None\` | no |
 
 # END GENERATED OPERATION DOCS
 

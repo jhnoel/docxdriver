@@ -1,5 +1,115 @@
 {
   "$defs": {
+    "CellFormat": {
+      "additionalProperties": false,
+      "properties": {
+        "borders": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TableBorders"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "clear": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "fill": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "padding": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CellPadding"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "vertical_alignment": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "width": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TableWidth"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "type": "object"
+    },
+    "CellPadding": {
+      "additionalProperties": false,
+      "properties": {
+        "bottom": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Points"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "left": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Points"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "right": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Points"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "top": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Points"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "type": "object"
+    },
     "ChangeMode": {
       "enum": [
         "track",
@@ -251,6 +361,29 @@
       ],
       "type": "object"
     },
+    "HighlightColor": {
+      "description": "The exact ECMA-376 ST_HighlightColor palette; None is an explicit off override.",
+      "enum": [
+        "black",
+        "blue",
+        "cyan",
+        "green",
+        "magenta",
+        "red",
+        "yellow",
+        "white",
+        "darkBlue",
+        "darkCyan",
+        "darkGreen",
+        "darkMagenta",
+        "darkRed",
+        "darkYellow",
+        "darkGray",
+        "lightGray",
+        "none"
+      ],
+      "type": "string"
+    },
     "InsertAnchor": {
       "pattern": "^(?:[A-F0-9]{8}|\\$[A-Za-z_][A-Za-z0-9_]*|table:[1-9][0-9]*)$",
       "type": "string"
@@ -323,6 +456,103 @@
           "type": "object"
         }
       ]
+    },
+    "ListLevel": {
+      "additionalProperties": false,
+      "description": "One bounded level in a new multilevel list definition. Array position is level (0..8).",
+      "properties": {
+        "first_line_indent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SignedPoints"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "format": {
+          "type": "string"
+        },
+        "indent_left": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SignedPoints"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "indent_right": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SignedPoints"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "label": {
+          "type": "string"
+        },
+        "marker_bold": {
+          "default": null,
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "marker_color": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "marker_font": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "marker_italic": {
+          "default": null,
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "restart_after": {
+          "default": null,
+          "description": "Restart after this zero-based ancestor level; omitted uses Word's default.",
+          "format": "uint8",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "start": {
+          "default": null,
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "format",
+        "label"
+      ],
+      "type": "object"
     },
     "OperationReport": {
       "properties": {
@@ -600,6 +830,57 @@
       "pattern": "^(?:all|[0-9]+)$",
       "type": "string"
     },
+    "RowFormat": {
+      "additionalProperties": false,
+      "properties": {
+        "allow_split": {
+          "default": null,
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "clear": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "height": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Points"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "height_rule": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "repeating_header": {
+          "default": null,
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "SignedPoints": {
+      "maximum": 100000,
+      "minimum": -100000,
+      "multipleOf": 0.05,
+      "type": "number"
+    },
     "SourceHash": {
       "pattern": "^sha256:[0-9a-f]{64}$",
       "type": "string"
@@ -638,6 +919,457 @@
         "line"
       ],
       "type": "object"
+    },
+    "TableBorder": {
+      "additionalProperties": false,
+      "properties": {
+        "color": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "style": {
+          "type": "string"
+        },
+        "width": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Points"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "style"
+      ],
+      "type": "object"
+    },
+    "TableBorders": {
+      "additionalProperties": false,
+      "properties": {
+        "bottom": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TableBorder"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "inside_horizontal": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TableBorder"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "inside_vertical": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TableBorder"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "left": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TableBorder"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "right": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TableBorder"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "top": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TableBorder"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "type": "object"
+    },
+    "TableEdit": {
+      "description": "Direct structural table edits. Row and column positions are one-based.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "kind": {
+              "enum": [
+                "insert_rows"
+              ],
+              "type": "string"
+            },
+            "position": {
+              "$ref": "#/$defs/InsertPosition"
+            },
+            "row": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "count",
+            "kind",
+            "position",
+            "row"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "kind": {
+              "enum": [
+                "delete_rows"
+              ],
+              "type": "string"
+            },
+            "row": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "count",
+            "kind",
+            "row"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "column": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "count": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "kind": {
+              "enum": [
+                "insert_columns"
+              ],
+              "type": "string"
+            },
+            "position": {
+              "$ref": "#/$defs/InsertPosition"
+            }
+          },
+          "required": [
+            "column",
+            "count",
+            "kind",
+            "position"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "column": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "count": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "kind": {
+              "enum": [
+                "delete_columns"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "column",
+            "count",
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "column": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "column_span": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "kind": {
+              "enum": [
+                "merge_cells"
+              ],
+              "type": "string"
+            },
+            "row": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "row_span": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "column",
+            "column_span",
+            "kind",
+            "row",
+            "row_span"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "column": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "kind": {
+              "enum": [
+                "split_cell"
+              ],
+              "type": "string"
+            },
+            "row": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "column",
+            "kind",
+            "row"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "enum": [
+                "delete"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "TableFormat": {
+      "additionalProperties": false,
+      "properties": {
+        "alignment": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "borders": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TableBorders"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "cell_spacing": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Points"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "clear": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "column_widths": {
+          "default": null,
+          "items": {
+            "$ref": "#/$defs/Points"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "layout": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "padding": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CellPadding"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "style": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "width": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TableWidth"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "type": "object"
+    },
+    "TableWidth": {
+      "description": "Table widths use auto, points, or percent (0 < value <= 100 for percent).",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "unit": {
+              "enum": [
+                "auto"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "unit"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "unit": {
+              "enum": [
+                "points"
+              ],
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/Points"
+            }
+          },
+          "required": [
+            "unit",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "unit": {
+              "enum": [
+                "percent"
+              ],
+              "type": "string"
+            },
+            "value": {
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "unit",
+            "value"
+          ],
+          "type": "object"
+        }
+      ]
     },
     "TextEdit": {
       "additionalProperties": false,
@@ -853,6 +1585,140 @@
         {
           "additionalProperties": false,
           "properties": {
+            "action": {
+              "$ref": "#/$defs/TableEdit"
+            },
+            "at": {
+              "type": "string"
+            },
+            "op": {
+              "enum": [
+                "edit_table"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "action",
+            "at",
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "as": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "at": {
+              "$ref": "#/$defs/ParagraphAddress"
+            },
+            "columns": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "op": {
+              "enum": [
+                "insert_table"
+              ],
+              "type": "string"
+            },
+            "position": {
+              "$ref": "#/$defs/InsertPosition"
+            },
+            "rows": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "at",
+            "columns",
+            "op",
+            "position",
+            "rows"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "at": {
+              "type": "string"
+            },
+            "format": {
+              "$ref": "#/$defs/TableFormat"
+            },
+            "op": {
+              "enum": [
+                "format_table"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "at",
+            "format",
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "at": {
+              "type": "string"
+            },
+            "format": {
+              "$ref": "#/$defs/RowFormat"
+            },
+            "op": {
+              "enum": [
+                "format_row"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "at",
+            "format",
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "at": {
+              "type": "string"
+            },
+            "format": {
+              "$ref": "#/$defs/CellFormat"
+            },
+            "op": {
+              "enum": [
+                "format_cell"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "at",
+            "format",
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
             "at": {
               "$ref": "#/$defs/ParagraphAddress"
             },
@@ -881,6 +1747,17 @@
               "anyOf": [
                 {
                   "$ref": "#/$defs/Points"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "highlight": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/HighlightColor"
                 },
                 {
                   "type": "null"
@@ -969,10 +1846,21 @@
               },
               "type": "array"
             },
+            "first_line_indent": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/SignedPoints"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Signed first-line offset: negative means hanging; zero explicitly disables it."
+            },
             "indent_left": {
               "anyOf": [
                 {
-                  "$ref": "#/$defs/Points"
+                  "$ref": "#/$defs/SignedPoints"
                 },
                 {
                   "type": "null"
@@ -983,7 +1871,7 @@
             "indent_right": {
               "anyOf": [
                 {
-                  "$ref": "#/$defs/Points"
+                  "$ref": "#/$defs/SignedPoints"
                 },
                 {
                   "type": "null"
@@ -1034,6 +1922,74 @@
               "default": null,
               "type": [
                 "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "at",
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Assign selected paragraphs to a new or existing list. `remove` explicitly suppresses inherited numbering; new definitions remain after rejection.",
+          "properties": {
+            "at": {
+              "items": {
+                "$ref": "#/$defs/ParagraphAddress"
+              },
+              "type": "array"
+            },
+            "format": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "level": {
+              "default": 0,
+              "format": "uint8",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "levels": {
+              "default": null,
+              "items": {
+                "$ref": "#/$defs/ListLevel"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "num_id": {
+              "default": null,
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "op": {
+              "enum": [
+                "set_list"
+              ],
+              "type": "string"
+            },
+            "remove": {
+              "default": false,
+              "type": "boolean"
+            },
+            "start": {
+              "default": null,
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
                 "null"
               ]
             }
@@ -1204,6 +2160,162 @@
             }
           },
           "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Selective section-property edits. Dimensions are points; omitted fields preserve source.",
+          "properties": {
+            "break_type": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "column_separator": {
+              "default": null,
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "column_spacing": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Points"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "column_widths": {
+              "default": null,
+              "items": {
+                "$ref": "#/$defs/Points"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "columns": {
+              "default": null,
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "height": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Points"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "op": {
+              "enum": [
+                "set_section_layout"
+              ],
+              "type": "string"
+            },
+            "orientation": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "page_number_continue": {
+              "default": null,
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "page_number_format": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "page_number_start": {
+              "default": null,
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "page_size": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "section": {
+              "default": null,
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "width": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Points"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "op": {
+              "enum": [
+                "set_first_page_mode"
+              ],
+              "type": "string"
+            },
+            "section": {
+              "default": null,
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "enabled",
             "op"
           ],
           "type": "object"

@@ -1,0 +1,25 @@
+# Run with prek (https://github.com/j178/prek): `prek install` once per clone.
+# The OOXML gate needs lxml (installed by the hook) and the .NET SDK 10+.
+repos:
+  - repo: local
+    hooks:
+      - id: ooxml-conformance
+        name: OOXML conformance (schema, integrity, Open XML SDK)
+        language: python
+        additional_dependencies: ["lxml>=5,<7"]
+        entry: sh -c 'cargo build -q -p docxdriver-cli && python scripts/ooxml-conformance.py'
+        files: ^(crates/|scripts/(ooxml|openxml)|Cargo\.(toml|lock)$)
+        pass_filenames: false
+        require_serial: true
+
+      # macOS + Microsoft Word only; force-quits Word. Before a release, or
+      # after changing how parts are registered: prek run --hook-stage manual word-smoke
+      - id: word-smoke
+        name: Open conformance outputs in Microsoft Word
+        language: python
+        additional_dependencies: ["lxml>=5,<7"]
+        entry: sh -c 'cargo build -q -p docxdriver-cli && rm -rf target/word-smoke && python scripts/ooxml-conformance.py --keep-outputs target/word-smoke >/dev/null; python scripts/word-smoke.py target/word-smoke'
+        stages: [manual]
+        pass_filenames: false
+        always_run: true
+        require_serial: true

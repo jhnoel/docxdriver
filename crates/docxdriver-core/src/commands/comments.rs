@@ -6,9 +6,10 @@
 //! commentReference run. Every part is registered in [Content_Types].xml and
 //! document.xml.rels. Word for Mac / Microsoft 365 recovers the package as
 //! corrupt if commentsIds exists without commentsExtensible, if a durableId
-//! has its high bit set, or if the extended parts use the long
-//! `vnd.openxmlformats-officedocument` content types instead of the
-//! `vnd.ms-word` types Word itself writes.
+//! has its high bit set, or if the extended parts use the short
+//! `vnd.ms-word.comments*` content types instead of the
+//! `vnd.openxmlformats-officedocument.wordprocessingml.comments*` types Word
+//! itself writes (the short form is what docxdriver 0.3.0 wrote).
 
 use std::collections::HashSet;
 
@@ -86,7 +87,7 @@ fn register_part(
     match existing {
         Some(node) => {
             // Repair a previously written Override that used a content type
-            // Word does not recognize (the long openxmlformats form for the
+            // Word does not recognize (the short vnd.ms-word form for the
             // commentsExtended/Ids/Extensible parts) — leaving the wrong type
             // in place is the same recovery dialog as omitting the part.
             if types.doc.attribute(node, "ContentType") != Some(content_type) {
@@ -146,19 +147,19 @@ fn register_comment_parts(package: &mut Package) -> Result<(), Outcome> {
     register_part(
         package,
         EXTENDED_PART,
-        "application/vnd.ms-word.commentsExtended+xml",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.commentsExtended+xml",
         "http://schemas.microsoft.com/office/2011/relationships/commentsExtended",
     )?;
     register_part(
         package,
         IDS_PART,
-        "application/vnd.ms-word.commentsIds+xml",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.commentsIds+xml",
         "http://schemas.microsoft.com/office/2016/09/relationships/commentsIds",
     )?;
     register_part(
         package,
         EXTENSIBLE_PART,
-        "application/vnd.ms-word.commentsExtensible+xml",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.commentsExtensible+xml",
         "http://schemas.microsoft.com/office/2018/08/relationships/commentsExtensible",
     )
 }
@@ -470,16 +471,7 @@ fn insert_anchor_markers(
     xml.doc.set_attribute(range_start, "w:id", &id_string);
     let range_end = xml.doc.create_element("w:commentRangeEnd");
     xml.doc.set_attribute(range_end, "w:id", &id_string);
-    let reference_run = xml.doc.create_element("w:r");
-    let reference_rpr = xml.doc.create_element("w:rPr");
-    let reference_style = xml.doc.create_element("w:rStyle");
-    xml.doc
-        .set_attribute(reference_style, "w:val", "CommentReference");
-    xml.doc.append_child(reference_rpr, reference_style);
-    xml.doc.append_child(reference_run, reference_rpr);
-    let reference = xml.doc.create_element("w:commentReference");
-    xml.doc.set_attribute(reference, "w:id", &id_string);
-    xml.doc.append_child(reference_run, reference);
+    let reference_run = create_reference_run(xml, &id_string);
 
     let first_anchor = segments
         .iter()
@@ -508,6 +500,59 @@ fn insert_anchor_markers(
         }
     }
     Ok(())
+}
+
+/// `<w:r><w:rPr><w:rStyle w:val="CommentReference"/></w:rPr><w:commentReference w:id/></w:r>`
+fn create_reference_run(xml: &mut DocxXml, id: &str) -> NodeId {
+    let run = xml.doc.create_element("w:r");
+    let rpr = xml.doc.create_element("w:rPr");
+    let style = xml.doc.create_element("w:rStyle");
+    xml.doc.set_attribute(style, "w:val", "CommentReference");
+    xml.doc.append_child(rpr, style);
+    xml.doc.append_child(run, rpr);
+    let reference = xml.doc.create_element("w:commentReference");
+    xml.doc.set_attribute(reference, "w:id", id);
+    xml.doc.append_child(run, reference);
+    run
+}
+
+/// The run holding `commentReference w:id=id`, if any.
+fn reference_run(xml: &DocxXml, root: NodeId, id: &str) -> Option<NodeId> {
+    xml.doc.descendants(root).find(|&node| {
+        xml.is_w(node, "r")
+            && xml
+                .doc
+                .children(node)
+                .any(|child| xml.is_w(child, "commentReference") && xml.attr(child, "id") == Some(id))
+    })
+}
+
+/// Anchor a reply where Word does: its own range markers right after the
+/// parent's, and its reference run right after the parent's reference run.
+/// A parent anchored outside the body (or not at all) leaves the reply
+/// unanchored.
+fn anchor_reply(xml: &mut DocxXml, parent_id: &str, id: &str) {
+    let Some(body) = xml.body() else { return };
+    let marker = |xml: &DocxXml, tag: &str| {
+        xml.doc
+            .descendants(body)
+            .find(|&node| xml.is_w(node, tag) && xml.attr(node, "id") == Some(parent_id))
+    };
+    let (Some(start), Some(end), Some(run)) = (
+        marker(xml, "commentRangeStart"),
+        marker(xml, "commentRangeEnd"),
+        reference_run(xml, body, parent_id),
+    ) else {
+        return;
+    };
+    let range_start = xml.doc.create_element("w:commentRangeStart");
+    xml.doc.set_attribute(range_start, "w:id", id);
+    xml.doc.insert_after(start, range_start);
+    let range_end = xml.doc.create_element("w:commentRangeEnd");
+    xml.doc.set_attribute(range_end, "w:id", id);
+    xml.doc.insert_after(end, range_end);
+    let reply_run = create_reference_run(xml, id);
+    xml.doc.insert_after(run, reply_run);
 }
 
 fn paragraph_child_anchor(xml: &DocxXml, node: NodeId) -> NodeId {
@@ -689,6 +734,7 @@ pub fn reply_comment_typed(
         return Err(Outcome::error(format!("comment not found: {comment_id}")));
     };
     let parent_para_id = parent.para_id.clone();
+    let parent_id = parent.id.clone();
     let id = next_comment_id(&records);
     let para_id = format!("{:08X}", next_para_id(&records, &document_para_ids(xml)));
     append_comment_record(
@@ -700,6 +746,7 @@ pub fn reply_comment_typed(
         &ctx.now,
         text,
     )?;
+    anchor_reply(xml, &parent_id, &id.to_string());
 
     Ok((
         format!("comment {id} replied"),
@@ -872,7 +919,7 @@ pub fn delete_comment_typed(
     }
     package.set(EXTENSIBLE_PART, extensible.serialize());
 
-    // document.xml: strip the root's anchors (replies carry none).
+    // document.xml: strip the anchors of every comment in the thread.
     let Some(body) = xml.body() else {
         return Ok((
             format!("comment {comment_id} deleted"),
@@ -883,14 +930,15 @@ pub fn delete_comment_typed(
         .doc
         .descendants(body)
         .filter(|&node| {
+            let in_thread = |id: Option<&str>| id.is_some_and(|id| thread_ids.iter().any(|t| t == id));
             if (xml.is_w(node, "commentRangeStart") || xml.is_w(node, "commentRangeEnd"))
-                && xml.attr(node, "id") == Some(comment_id)
+                && in_thread(xml.attr(node, "id"))
             {
                 return true;
             }
             if xml.is_w(node, "r")
                 && xml.doc.children(node).any(|child| {
-                    xml.is_w(child, "commentReference") && xml.attr(child, "id") == Some(comment_id)
+                    xml.is_w(child, "commentReference") && in_thread(xml.attr(child, "id"))
                 })
             {
                 return true;

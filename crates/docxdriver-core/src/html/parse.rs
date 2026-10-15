@@ -297,6 +297,7 @@ pub(crate) fn parse_dialect(input: &str) -> Result<Vec<Item>, String> {
                         .and_then(|v| v.as_ref())
                         .map(|id| {
                             Ok::<_, String>(super::ListAttrs {
+                                continuation: attr(&tag, "list-continuation").and_then(|v| v.as_deref()) == Some("true"),
                                 id: id.parse().map_err(|_| "invalid list id")?,
                                 level: attr(&tag, "list-level")
                                     .and_then(|v| v.as_ref())
@@ -370,6 +371,15 @@ pub(crate) fn parse_dialect(input: &str) -> Result<Vec<Item>, String> {
                 if del.take().is_none() {
                     return Err("</del> without an open <del>".to_string());
                 }
+            }
+            ("mark", false) => {
+                spans.push((fmt, pending_format.clone()));
+                let value = attr(&tag, "data-highlight").and_then(|v| v.clone()).unwrap_or_else(|| "yellow".into());
+                fmt.highlight = Some(crate::api::HighlightColor::parse(&value)?);
+            }
+            ("mark", true) => {
+                let (old, pending) = spans.pop().ok_or("</mark> without open mark")?;
+                fmt = old; pending_format = pending;
             }
             ("span", false) => {
                 spans.push((fmt, pending_format.clone()));
@@ -762,6 +772,7 @@ pub(crate) fn parse_dialect(input: &str) -> Result<Vec<Item>, String> {
                         }
                     }
                 }
+                if !closing { if let Some(Some(value)) = attr(&tag, "data-format") { token.push_str(&format!(" data-format=\"{}\"", super::escape_attr(value))); } }
                 items.push(Item::Struct(token));
             }
             ("comments", _) | ("comment", _) => {
