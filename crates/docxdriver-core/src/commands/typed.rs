@@ -26,6 +26,9 @@ use super::layout::{
 };
 use super::ExecCtx;
 
+/// Internal engine policy; intentionally absent from the public plan schema.
+const WORD_LEVEL_REDLINES: bool = true;
+
 struct SelectionProjection {
     current: String,
     to_all: Vec<usize>,
@@ -451,6 +454,7 @@ pub fn replace_text_typed(
         (&pieces, link_href),
         &input.author,
         input.tracked,
+        WORD_LEVEL_REDLINES,
         ctx,
     )?;
 
@@ -465,6 +469,190 @@ pub fn replace_text_typed(
         "tracked": input.tracked,
     });
     Ok((summary, result))
+}
+
+/// Split words, whitespace runs, and individual punctuation characters. Offsets
+/// are Unicode scalar offsets, matching the document segment engine.
+fn diff_tokens(text: &str) -> (Vec<String>, Vec<usize>) {
+    let mut tokens = Vec::<String>::new();
+    let mut offsets = vec![0];
+    let mut previous = None;
+    for (index, ch) in text.chars().enumerate() {
+        let kind = if ch.is_alphanumeric() || ch == '_' {
+            0
+        } else if ch.is_whitespace() {
+            1
+        } else {
+            2
+        };
+        if previous == Some(kind) && kind != 2 {
+            tokens.last_mut().unwrap().push(ch);
+            *offsets.last_mut().unwrap() = index + 1;
+        } else {
+            tokens.push(ch.to_string());
+            offsets.push(index + 1);
+        }
+        previous = Some(kind);
+    }
+    (tokens, offsets)
+}
+
+/// Unmatched old/new character spans around a deterministic token LCS.
+fn word_diff(old: &str, new: &str) -> Result<Vec<(usize, usize, usize, usize)>, Outcome> {
+    if old == new {
+        return Ok(Vec::new());
+    }
+    let (a, ao) = diff_tokens(old);
+    let (b, bo) = diff_tokens(new);
+    let width = b.len() + 1;
+    let cells = (a.len() + 1)
+        .checked_mul(width)
+        .filter(|&n| n <= 4_000_000)
+        .ok_or_else(|| {
+            Outcome::blocked("word-level diff selection is too large; split it into smaller replacements")
+        })?;
+    let mut lcs = vec![0u32; cells];
+    for i in (0..a.len()).rev() {
+        for j in (0..b.len()).rev() {
+            lcs[i * width + j] = if a[i] == b[j] {
+                1 + lcs[(i + 1) * width + j + 1]
+            } else {
+                lcs[(i + 1) * width + j].max(lcs[i * width + j + 1])
+            };
+        }
+    }
+    let (mut i, mut j, mut ai, mut bj) = (0, 0, 0, 0);
+    let mut spans = Vec::new();
+    while i < a.len() && j < b.len() {
+        if a[i] == b[j] {
+            if ai != i || bj != j {
+                spans.push((ao[ai], ao[i], bo[bj], bo[j]));
+            }
+            i += 1;
+            j += 1;
+            ai = i;
+            bj = j;
+        } else if lcs[(i + 1) * width + j] >= lcs[i * width + j + 1] {
+            i += 1;
+        } else {
+            j += 1;
+        }
+    }
+    if ai != a.len() || bj != b.len() {
+        spans.push((ao[ai], ao[a.len()], bo[bj], bo[b.len()]));
+    }
+    // Separator-only matches are weak anchors: keep a rewritten phrase as
+    // one deletion followed by one insertion rather than alternating revisions
+    // for every word. A retained word always separates independent changes.
+    let chars: Vec<char> = old.chars().collect();
+    let mut grouped: Vec<(usize, usize, usize, usize)> = Vec::new();
+    for span in spans {
+        if let Some(previous) = grouped.last_mut() {
+            if chars[previous.1..span.0].iter().all(|ch| !ch.is_alphanumeric() && *ch != '_') {
+                previous.1 = span.1;
+                previous.3 = span.3;
+                continue;
+            }
+        }
+        grouped.push(span);
+    }
+    Ok(grouped)
+}
+
+// Text diffing is an engine policy, not a public operation or plan option.
+// Rich replacements retain the existing path so requested formatting is applied.
+fn diff_eligible(pieces: &[InsPiece], link: Option<&str>) -> bool {
+    link.is_none() && pieces.iter().all(|piece| matches!(piece, InsPiece::Text(_, fmt) if *fmt == Fmt::default()))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn replace_range_diff(
+    package: &mut Package,
+    xml: &mut DocxXml,
+    paragraph: NodeId,
+    address: &str,
+    (start, end): (usize, usize),
+    pieces: &[InsPiece],
+    link: Option<String>,
+    author: &str,
+    ctx: &ExecCtx,
+) -> Result<(), Outcome> {
+    debug_assert!(diff_eligible(pieces, link.as_deref()));
+    let new: String = pieces.iter().filter_map(|piece| match piece {
+        InsPiece::Text(text, _) => Some(text.as_str()),
+        _ => None,
+    }).collect();
+    let segments = build_segments(xml, paragraph);
+    let covered: Vec<_> = segments
+        .iter()
+        .filter(|s| s.start < end && s.end > start)
+        .collect();
+    if covered.iter().any(|s| s.wrap != RevWrap::None) {
+        return Err(blocked_at(
+            address,
+            "word-level diff selection overlaps existing tracked changes; accept or reject them first",
+        ));
+    }
+    if let (Some(first), Some(last)) = (covered.first(), covered.last()) {
+        if let Some(label) = scan_blockers_between(
+            xml,
+            first.wrapper.unwrap_or(first.run),
+            last.wrapper.unwrap_or(last.run),
+        ) {
+            return Err(blocked_at(
+                address,
+                format!("word-level diff selection crosses a protected {label}"),
+            ));
+        }
+    }
+    let old: String = segments
+        .iter()
+        .flat_map(|s| s.text.chars())
+        .skip(start)
+        .take(end - start)
+        .collect();
+    let changes = match word_diff(&old, &new) {
+        Ok(changes) => changes,
+        Err(_) => return replace_range(package, xml, paragraph, address, (start, end), (pieces, link), author, true, false, ctx),
+    };
+    let chars: Vec<char> = new.chars().collect();
+    for (a, b, c, d) in changes.into_iter().rev() {
+        let replacement: String = chars[c..d].iter().collect();
+        let pieces = if replacement.is_empty() {
+            vec![]
+        } else {
+            vec![InsPiece::Text(replacement, Fmt::default())]
+        };
+        if a == b {
+            split_boundary(xml, paragraph, start + a);
+            let id = xml.next_revision_id();
+            insert_ins_pieces_at(
+                xml,
+                paragraph,
+                start + a,
+                &pieces,
+                id,
+                author,
+                &ctx.now,
+                false,
+            )
+            .map_err(Outcome::error)?;
+        } else {
+            replace_range(
+                package,
+                xml,
+                paragraph,
+                address,
+                (start + a, start + b),
+                (&pieces, None),
+                author,
+                true,
+                false,
+                ctx,
+            )?;
+        }
+    }
+    Ok(())
 }
 
 /// Replace the `[start, end)` range of `paragraph` (all-text offsets, as
@@ -482,8 +670,24 @@ fn replace_range(
     (pieces, link_href): (&[InsPiece], Option<String>),
     author: &str,
     tracked: bool,
+    auto_diff: bool,
     ctx: &ExecCtx,
 ) -> Result<(), Outcome> {
+    if tracked && auto_diff && diff_eligible(pieces, link_href.as_deref())
+        && !build_segments(xml, paragraph).iter().any(|s| s.start < end && s.end > start && s.wrap != RevWrap::None)
+    {
+        return replace_range_diff(
+            package,
+            xml,
+            paragraph,
+            address,
+            (start, end),
+            pieces,
+            link_href,
+            author,
+            ctx,
+        );
+    }
     let address = address.to_string();
     if !tracked {
         let segments = build_segments(xml, paragraph);
@@ -828,6 +1032,7 @@ pub fn revise_text_typed(
             (pieces, link.clone()),
             &args.author,
             args.tracked,
+            WORD_LEVEL_REDLINES,
             ctx,
         )?;
     }
@@ -883,7 +1088,25 @@ pub fn replace_paragraph_typed(
         ));
     }
 
-    if input.tracked {
+    let count = build_segments(xml, paragraph)
+        .iter()
+        .map(|s| s.end)
+        .max()
+        .unwrap_or(0);
+    if input.tracked && WORD_LEVEL_REDLINES && diff_eligible(&pieces, link_href.as_deref()) {
+        replace_range(
+            package,
+            xml,
+            paragraph,
+            &address,
+            (0, count),
+            (&pieces, link_href),
+            &input.author,
+            true,
+            true,
+            ctx,
+        )?;
+    } else if input.tracked {
         let del_id = xml.next_revision_id();
         wrap_all_content_in_del(xml, paragraph, del_id, &input.author, &ctx.now)
             .map_err(Outcome::error)?;

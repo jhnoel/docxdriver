@@ -71,7 +71,7 @@ async function reviewAndCommit(call, firstId, extra = '') {
   assert.match(review.content[0].text, /review ok/);
   const key = review.content[0].text.match(/KEY=(k1:[0-9a-f]{32})/)?.[1];
   assert.ok(key, review.content[0].text);
-  assert.match(review.content[0].text, /sixty days/);
+  assert.match(review.content[0].text.replace(/<[^>]*>/g, ''), /sixty days/);
   const commit = await call(['docx_commit(commit_key)', 'print("committed")'].join('\n'));
   return { review, commit, key };
 }
@@ -105,10 +105,10 @@ test('v1: review validates, returns a compact key and edit neighborhoods, then c
   const { review, commit } = await reviewAndCommit(call, firstId);
   assert.match(review.content[0].text, /── review ok ──/);
   assert.match(review.content[0].text, COMMIT_KEY_RE);
-  assert.match(review.content[0].text, /sixty days/);
+  assert.match(review.content[0].text.replace(/<[^>]*>/g, ''), /sixty days/);
   assert.match(commit.content[0].text, /committed/);
   const finalView = await renderMarkup(join(cwd, 'contract.docx'), 'final');
-  assert.match(finalView, /sixty days/);
+  assert.match(finalView.replace(/<[^>]*>/g, ''), /sixty days/);
   assert.ok(!finalView.includes('thirty days'));
   await shutdown();
 });
@@ -276,7 +276,7 @@ test('v1: changing the plan after review cannot change the committed operation',
   ].join('\n'));
   const commit = await call('docx_commit(commit_key)\nprint("done")');
   assert.match(commit.content[0].text, /committed/);
-  assert.match(await renderMarkup(join(cwd, 'contract.docx'), 'final'), /sixty days/);
+  assert.match((await renderMarkup(join(cwd, 'contract.docx'), 'final')).replace(/<[^>]*>/g, ''), /sixty days/);
   assert.ok(!commit.content[0].text.includes('ninety days'));
   await shutdown();
 });

@@ -341,6 +341,11 @@ def scenarios(read):
             out.append(('format_cell', mode, [{'op': 'format_cell', 'at': 'table:1/row:1/cell:1', 'format': {'fill': '#ABCDEF'}}]))
     other = paragraphs[min(1, len(paragraphs) - 1)][0]
     first, second = words[0], words[1]
+    out += [
+        ('replace_text', 'track', [{'op': 'replace_text', 'at': at, 'select': first, 'with': first + ' changed', 'occurrence': 1}]),
+        ('revise_text', 'track', [{'op': 'revise_text', 'at': at, 'edits': [{'select': first, 'with': 'changed ' + first, 'occurrence': 1}]}]),
+        ('replace_paragraph', 'track', [{'op': 'replace_paragraph', 'at': other, 'with': 'Replaced plain text.'}]),
+    ]
     for mode in ('track', 'direct'):
         out += [
             ('replace_text', mode, [{'op': 'replace_text', 'at': at, 'select': first, 'with': first + ' <i>new</i>', 'occurrence': 1}]),

@@ -1236,6 +1236,11 @@ made earlier in the same plan.
 Every operation dataclass has \`to_dict()\`, omitting optional fields whose
 value is \`None\`; \`Plan.to_dict()\` returns \`{"author": ..., "change_mode": ..., "ops": [...]}\`.
 
+Tracked plain-text replacements automatically compute word-level redlines in
+ReplaceText, ReviseText, and ReplaceParagraph. Unchanged words retain their
+formatting; adjacent changed words form one deletion followed by one insertion.
+Rich replacements retain whole-selection tracking to apply their formatting.
+
 ## Host functions
 
 - \`docx_create(path: str, html: str)\`

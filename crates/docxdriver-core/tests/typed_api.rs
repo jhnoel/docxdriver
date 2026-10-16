@@ -2409,3 +2409,91 @@ fn run_properties_are_written_in_sequence_order() {
         .collect();
     assert!(order.is_empty(), "out of CT_RPr sequence order at {order:?}: {rpr}");
 }
+
+fn commit_auto_diff(bytes: &[u8], op: EditOp) -> Vec<u8> {
+    let mut p = plan(bytes, vec![op]);
+    p.change_mode = ChangeMode::Track;
+    let key = match execute_plan(bytes, &PlanRequest { plan: p.clone(), preview_key: None }) {
+        PlanResult::Previewed { preview_key, .. } => preview_key,
+        other => panic!("auto_diff review failed: {other:?}"),
+    };
+    match execute_plan(bytes, &PlanRequest { plan: p, preview_key: Some(key) }) {
+        PlanResult::Committed { bytes, .. } => bytes,
+        other => panic!("auto_diff commit failed: {other:?}"),
+    }
+}
+
+#[test]
+fn auto_diff_tracks_only_changed_words_and_roundtrips_both_views() {
+    for (old, new) in [
+        ("Payment is due within thirty days.", "Payment is due within sixty days."),
+        ("one two three four five", "one TWO three FOUR five"),
+        ("hello world", "hello brave world"),
+        ("hello brave world", "hello world"),
+        ("hello", "hello!"),
+        ("hello!", "hello"),
+        ("café naïve résumé", "café wise résumé"),
+        ("a a b a", "a b a a"),
+        ("one  two", "one two"),
+        ("same words", "same words"),
+        ("delete everything", ""),
+        ("", "new text"),
+    ] {
+        for op in [
+            EditOp::ReplaceParagraph { at: ParagraphAddress::id(SOURCE_ID), with: new.into() },
+            revise(Some(SOURCE_ID), None, vec![edit(old, new)]),
+            EditOp::ReplaceText { at: ParagraphAddress::id(SOURCE_ID), select: old.into(), with: new.into(), occurrence: None },
+        ].into_iter().take(if old.is_empty() { 1 } else { 3 }) {
+            let source = document(&[(SOURCE_ID, old)]);
+            let changed = commit_auto_diff(&source, op);
+            for (action, expected) in [(RevisionAction::Accept, new), (RevisionAction::Reject, old)] {
+                let settled = commit_plan(&changed, vec![EditOp::RevisionSettle { target: RevisionTarget::All, action }]);
+                let text = read_markup_view(&settled, Some("final"));
+                let text: String = text.split('<').map(|s| s.split_once('>').map_or(s, |(_, t)| t)).collect();
+                assert_eq!(text.trim(), expected, "{old:?} -> {new:?}");
+            }
+            let xml = document_xml(&changed);
+            if old == new { assert!(!xml.contains("<w:ins") && !xml.contains("<w:del")); }
+            if old.contains("thirty") {
+                assert_eq!(xml.matches("<w:ins ").count(), 1);
+                assert_eq!(xml.matches("<w:del ").count(), 1);
+                assert!(xml.contains(">thirty</w:delText>"), "{xml}");
+                assert!(xml.contains(">sixty</w:t>"), "{xml}");
+            }
+        }
+    }
+}
+
+#[test]
+fn auto_diff_preserves_unchanged_run_formatting_and_supports_rich_replacements() {
+    let source = document(&[(SOURCE_ID, "The bold word stays old.")]);
+    let source = commit_plan(&source, vec![serde_json::from_value(serde_json::json!({
+        "op":"format_text", "at":SOURCE_ID,"select":"bold", "bold":true
+    })).unwrap()]);
+    let changed = commit_auto_diff(&source, EditOp::ReplaceParagraph {
+        at: ParagraphAddress::id(SOURCE_ID), with: "The bold word stays new.".into(),
+    });
+    let xml = document_xml(&changed);
+    assert!(xml.contains("<w:b"));
+    assert!(xml.contains(">bold</w:t>"));
+    let text = revise_final(&source, ChangeMode::Track, vec![revise(Some(SOURCE_ID), None, vec![edit("old.", "<b>new.</b>")])]).unwrap();
+    assert!(text.contains("stays new."), "{text}");
+}
+
+#[test]
+fn auto_diff_groups_rewritten_phrases_but_keeps_unchanged_words() {
+    for (old, new, groups) in [
+        ("old red car", "new blue truck", 1),
+        ("old, red car", "new, blue truck", 1),
+        ("old red car stays here", "new blue truck stays there", 2),
+    ] {
+        let source = document(&[(SOURCE_ID, old)]);
+        let output = commit_auto_diff(&source, EditOp::ReplaceParagraph {
+            at: ParagraphAddress::id(SOURCE_ID), with: new.into(),
+        });
+        let xml = document_xml(&output);
+        // Each contiguous changed phrase has at most one revision of each type.
+        assert_eq!(xml.matches("<w:del ").count(), groups, "{xml}");
+        assert_eq!(xml.matches("<w:ins ").count(), groups, "{xml}");
+    }
+}

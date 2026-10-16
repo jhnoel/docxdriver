@@ -258,3 +258,19 @@ Images remain inline with dimensions, descriptions and source package paths.
 `assets` maps short `url` aliases to canonical `asset_url` values and package
 `parts`. Read `kind="assets"` only when binary payloads are needed. UI coordinates
 and the general UI stylesheet are supplied by the explicit UI profile.
+
+### Word-level redlines
+
+Tracked plain-text replacements automatically compute word-level redlines in
+`replace_text`, `revise_text`, and `replace_paragraph`. This is an internal
+engine policy; no additional API parameter is needed. Unchanged words retain
+their runs and formatting. Adjacent changed words form one deletion followed by
+one insertion, including matching spaces or punctuation between them. Unchanged
+words separate changes. Identical text creates no revisions.
+
+Rich replacements (formatting, links, breaks, or equations), selections with
+pending revisions, and comparisons exceeding the internal size limit retain
+the existing whole-selection tracking path and its safety checks.
+
+Example: replacing `Payment is due within thirty days.` with
+`Payment is due within sixty days.` tracks only `thirty` → `sixty`.

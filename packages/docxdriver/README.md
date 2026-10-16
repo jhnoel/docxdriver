@@ -170,3 +170,19 @@ A new `set_list` may supply `levels`, an array of one to nine definitions. Each 
 Direct structural edits use `edit_table` with a source-bound table handle and a tagged `action`: `insert_rows`, `delete_rows`, `insert_columns`, `delete_columns`, `merge_cells`, `split_cell`, or `delete`. Row/column coordinates and counts are one-based; insert actions specify `position: "before" | "after"`. Merge specifies `row`, `column`, `row_span`, and `column_span`. Split specifies its logical origin `row`/`column`. Insertion/deletion of rows or columns and merging require a rectangular grid without preexisting merges or omitted cells. Merge moves content in row-major order and preserves nested tables; split retains content in the first resulting cell and creates empty neighbors. Structural edits reject tracked mode and unresolved revisions, bookmarks, comments, fields, or content controls in the table. Remove a table instead of deleting every row or column.
 
 `insert_table` accepts a paragraph `at`, `position`, `rows`, `columns`, and optional `as` alias. Dimensions are 1–100; this is direct-only and section-boundary anchors are rejected. Later operations can target the inserted table alias. Structural deletion preserves unused relationships; it does not collect media from elsewhere in the document.
+
+### Word-level redlines
+
+Tracked plain-text replacements automatically compute word-level redlines in
+`replace_text`, `revise_text`, and `replace_paragraph`. This is an internal
+engine policy; no additional API parameter is needed. Unchanged words retain
+their runs and formatting. Adjacent changed words form one deletion followed by
+one insertion, including matching spaces or punctuation between them. Unchanged
+words separate changes. Identical text creates no revisions.
+
+Rich replacements (formatting, links, breaks, or equations), selections with
+pending revisions, and comparisons exceeding the internal size limit retain
+the existing whole-selection tracking path and its safety checks.
+
+Example: replacing `Payment is due within thirty days.` with
+`Payment is due within sixty days.` tracks only `thirty` → `sixty`.

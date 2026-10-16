@@ -94,3 +94,19 @@ Read the full document before editing unless the task explicitly calls for a nar
 For explicit list membership use `set_list` with paragraph addresses in `at`. `format` creates a private list, `num_id` continues an existing list, `level` is 0–8, and `start` restarts using an isolated instance. `remove: true` suppresses inherited numbering. Settle pending paragraph formatting revisions first. Read list metadata rather than selecting generated marker text.
 
 Use explicit direct plans for `insert_table` and `edit_table`; tracked structural edits are rejected. Read table handles before editing. Insert/delete rows or columns and merge operate on rectangular unmerged grids; split merged cells before other grid edits. Merge preserves content in row-major order; split keeps content in the first resulting cell. Tables with comments, bookmarks, fields, content controls or pending revisions require cleanup before structural edits.
+
+### Word-level redlines
+
+Tracked plain-text replacements automatically compute word-level redlines in
+`replace_text`, `revise_text`, and `replace_paragraph`. This is an internal
+engine policy; no additional API parameter is needed. Unchanged words retain
+their runs and formatting. Adjacent changed words form one deletion followed by
+one insertion, including matching spaces or punctuation between them. Unchanged
+words separate changes. Identical text creates no revisions.
+
+Rich replacements (formatting, links, breaks, or equations), selections with
+pending revisions, and comparisons exceeding the internal size limit retain
+the existing whole-selection tracking path and its safety checks.
+
+Example: replacing `Payment is due within thirty days.` with
+`Payment is due within sixty days.` tracks only `thirty` → `sixty`.

@@ -459,3 +459,21 @@ test('stored reviewed plan is core-canonical', async () => {
   const output = runPlan(source, JSON.parse(bundle.store.lookup(reviewed.commit_key, 0).record.canonicalPlan));
   assert.equal(output.outcome, 'previewed');
 });
+
+test('auto_diff reviews and commits broad replacements with only changed words redlined', async () => {
+  const bundle = makeHost();
+  const fixture = await createFixture(bundle.host);
+  const result = await bundle.host.externalLookup._docx_review('demo.docx', {
+    plan: { author: 'test', change_mode: 'track', ops: [
+      replaceTextOp(fixture.id, 'Hello old world', 'Hello new world'),
+    ] },
+  });
+  assert.ok(result, JSON.stringify(bundle.notices));
+  bundle.setExecution(2);
+  await bundle.host.externalLookup._docx_commit(result.commit_key);
+  const { markup } = await bundle.host.externalLookup._docx_read('demo.docx');
+  const changedText = tag => [...markup.matchAll(new RegExp(`<${tag}\\b[^>]*>(.*?)</${tag}>`, 'gs'))]
+    .map(match => match[1].replace(/<[^>]*>/g, ''));
+  assert.deepEqual(changedText('del'), ['old']);
+  assert.deepEqual(changedText('ins'), ['new']);
+});
