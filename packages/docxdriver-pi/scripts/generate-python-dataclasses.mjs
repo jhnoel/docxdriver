@@ -64,6 +64,9 @@ const REF_TYPES = {
   HighlightColor: 'str',
   SignedPoints: 'float',
   TableEdit: 'dict',
+  TableFormat: 'dict',
+  RowFormat: 'dict',
+  CellFormat: 'dict',
 };
 
 function pythonName(field) {

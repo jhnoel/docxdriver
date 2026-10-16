@@ -1028,6 +1028,13 @@
         {
           "additionalProperties": false,
           "properties": {
+            "as": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "count": {
               "format": "uint32",
               "minimum": 0.0,
@@ -1086,6 +1093,13 @@
         {
           "additionalProperties": false,
           "properties": {
+            "as": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "column": {
               "format": "uint32",
               "minimum": 0.0,
@@ -2168,6 +2182,36 @@
           "additionalProperties": false,
           "description": "Selective section-property edits. Dimensions are points; omitted fields preserve source.",
           "properties": {
+            "at": {
+              "$ref": "#/$defs/ParagraphAddress"
+            },
+            "break_type": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "op": {
+              "enum": [
+                "set_section_boundary"
+              ],
+              "type": "string"
+            },
+            "remove": {
+              "default": false,
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "at",
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
             "break_type": {
               "default": null,
               "type": [
@@ -2272,6 +2316,13 @@
               "minimum": 0.0,
               "type": [
                 "integer",
+                "null"
+              ]
+            },
+            "section_handle": {
+              "default": null,
+              "type": [
+                "string",
                 "null"
               ]
             },

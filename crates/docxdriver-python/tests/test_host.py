@@ -11,7 +11,7 @@ import threading
 import unittest
 from unittest.mock import patch
 
-from docxdriver import canonical_plan_json, execute_request, run_command
+from docxdriver import canonical_plan_json, execute_request, run_command, run_plan
 from docxdriver.repl import PRELUDE, REFERENCE, host, quotes
 
 
@@ -51,6 +51,55 @@ class NativeHostTests(unittest.TestCase):
         self.assertIn('error', json.loads(canonical_plan_json('{}')))
         self.assertIn('async def docx_review', PRELUDE)
         self.assertIn('(await docx_read(', REFERENCE)
+
+    def test_formatting_operations_and_section_metadata_match_native_contract(self):
+        paragraph = self.context().find('test.docx', 'Hello')[0]['id']
+        data = self.original
+        operations = [
+            {'op': 'format_paragraph', 'at': paragraph, 'indent_left': -12, 'first_line_indent': -18},
+            {'op': 'format_text', 'at': paragraph, 'select': 'Hello', 'highlight': 'cyan'},
+            {'op': 'set_section_layout', 'page_size': 'a4', 'orientation': 'landscape', 'columns': 2},
+        ]
+        for operation in operations:
+            result = run_command(data, 'edit', author='Formatting regression', change_mode='track', op=operation)
+            self.assertEqual(result['outcome'], 'completed', result)
+            data = result['bytes']
+        result = run_command(data, 'read', read_kind='document_ui', view='final')['result']
+        for expected in ['text-indent:-18pt', 'margin-left:-12pt', 'data-docx-highlight="cyan"', 'data-docx-orientation="landscape"']:
+            self.assertIn(expected, result['html'])
+        self.assertIn('world.', result['html'])
+
+    def test_lists_tables_and_section_handles_agree_through_python_plans(self):
+        data = run_command(None, 'create', html='<p>Anchor</p><p>Item</p>')['bytes']
+        inspected = run_command(data, 'read', read_kind='document_ui', view='final')['result']
+        anchor, item = [p['id'] for p in inspected['paragraphs']]
+        plan = {'base': 'sha256:' + hashlib.sha256(data).hexdigest(),
+                'author': 'Formatting regression', 'change_mode': 'direct', 'ops': [
+            {'op': 'set_list', 'at': [item], 'format': 'decimal', 'level': 0},
+            {'op': 'revision_settle', 'target': 'all', 'action': 'accept'},
+            {'op': 'insert_table', 'at': anchor, 'position': 'after', 'rows': 2, 'columns': 2, 'as': 'grid'},
+            {'op': 'edit_table', 'at': '$grid', 'action': {
+                'kind': 'insert_rows', 'row': 1, 'position': 'before', 'count': 1, 'as': 'rows'}},
+            {'op': 'format_cell', 'at': '$rows/row:1/cell:1', 'format': {'fill': '#112233'}},
+            {'op': 'set_section_boundary', 'at': item, 'break_type': 'nextPage'},
+            {'op': 'set_section_layout', 'section_handle': 'section:' + item,
+                'page_size': 'a4', 'orientation': 'landscape', 'columns': 2},
+            {'op': 'set_first_page_mode', 'section': 1, 'enabled': True},
+        ]}
+        preview = run_plan(data, plan)
+        self.assertEqual(preview['outcome'], 'previewed', preview)
+        committed = run_plan(data, plan, preview_key=preview['preview_key'])
+        self.assertEqual(committed['outcome'], 'committed', committed)
+        result = run_command(committed['bytes'], 'read', read_kind='document_ui', view='final')['result']
+        self.assertEqual(len(result['tables'][0]['rows']), 3)
+        self.assertIn('#112233', result['html'])
+        member = next(p for p in result['paragraphs'] if p['id'] == item)
+        self.assertEqual(member['selectable_text'], 'Item')
+        self.assertIn('list', member)
+        self.assertEqual(result['sections'][0]['handle'], 'section:' + item)
+        self.assertEqual(result['sections'][0]['page_size']['orient'], 'landscape')
+        self.assertTrue(result['sections'][0]['first_page'])
+        self.assertEqual(run_plan(committed['bytes'], plan)['outcome'], 'rejected')
 
     def test_shared_authoring_templates_stay_synchronized(self):
         root = Path(__file__).resolve().parents[3]

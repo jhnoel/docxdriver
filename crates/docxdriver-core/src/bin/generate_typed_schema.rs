@@ -104,7 +104,7 @@ export type CellPadding = { top?: Point; right?: Point; bottom?: Point; left?: P
 export type TableFormat = { width?: TableWidth; column_widths?: Point[]; layout?: 'autofit'|'fixed'; alignment?: 'left'|'center'|'right'; borders?: TableBorders; cell_spacing?: Point; padding?: CellPadding; style?: string; clear?: string[] };
 export type RowFormat = { height?: Point; height_rule?: 'auto'|'at_least'|'exact'; repeating_header?: boolean; allow_split?: boolean; clear?: string[] };
 export type CellFormat = { width?: TableWidth; borders?: TableBorders; fill?: string; padding?: CellPadding; vertical_alignment?: 'top'|'center'|'bottom'; clear?: string[] };
-export type TableEdit = { kind: 'insert_rows'; row: number; position: InsertPosition; count: number } | { kind: 'delete_rows'; row: number; count: number } | { kind: 'insert_columns'; column: number; position: InsertPosition; count: number } | { kind: 'delete_columns'; column: number; count: number } | { kind: 'merge_cells'; row: number; column: number; row_span: number; column_span: number } | { kind: 'split_cell'; row: number; column: number } | { kind: 'delete' };
+export type TableEdit = { kind: 'insert_rows'; row: number; position: InsertPosition; count: number; as?: string } | { kind: 'delete_rows'; row: number; count: number } | { kind: 'insert_columns'; column: number; position: InsertPosition; count: number; as?: string } | { kind: 'delete_columns'; column: number; count: number } | { kind: 'merge_cells'; row: number; column: number; row_span: number; column_span: number } | { kind: 'split_cell'; row: number; column: number } | { kind: 'delete' };
 export type EditOp =
   | { op: 'replace_equation'; at: ParagraphAddress; mathml: string; equation?: number; display?: boolean }
   | { op: 'delete_equation'; at: ParagraphAddress; equation?: number }
@@ -122,7 +122,8 @@ export type EditOp =
   | { op: 'edit_table'; at: string; action: TableEdit }
   | { op: 'insert_table'; at: ParagraphAddress; position: InsertPosition; rows: number; columns: number; as?: string }
   | { op: 'set_page_margins'; section?: number; top?: Point; right?: Point; bottom?: Point; left?: Point; header?: Point; footer?: Point; gutter?: Point }
-  | { op: 'set_section_layout'; section?: number; page_size?: 'letter'|'legal'|'a4'|'a3'|'a5'; width?: Point; height?: Point; orientation?: 'portrait'|'landscape'; columns?: number; column_spacing?: Point; column_widths?: Point[]; column_separator?: boolean; break_type?: 'nextPage'|'continuous'|'oddPage'|'evenPage'|'nextColumn'; page_number_format?: 'decimal'|'upperRoman'|'lowerRoman'|'upperLetter'|'lowerLetter'; page_number_start?: number; page_number_continue?: boolean }
+  | { op: 'set_section_boundary'; at: ParagraphAddress; remove?: boolean; break_type?: 'nextPage'|'continuous'|'oddPage'|'evenPage'|'nextColumn' }
+  | { op: 'set_section_layout'; section?: number; section_handle?: string; page_size?: 'letter'|'legal'|'a4'|'a3'|'a5'; width?: Point; height?: Point; orientation?: 'portrait'|'landscape'; columns?: number; column_spacing?: Point; column_widths?: Point[]; column_separator?: boolean; break_type?: 'nextPage'|'continuous'|'oddPage'|'evenPage'|'nextColumn'; page_number_format?: 'decimal'|'upperRoman'|'lowerRoman'|'upperLetter'|'lowerLetter'; page_number_start?: number; page_number_continue?: boolean }
   | { op: 'set_first_page_mode'; section?: number; enabled: boolean }
   | { op: 'set_even_and_odd_headers'; even_and_odd: boolean }
   | { op: 'set_header'; section?: number; kind?: ChromeKind; with: string }

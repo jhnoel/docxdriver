@@ -70,6 +70,7 @@ SYNTHETIC_HTML = (
     '<table><tr><td>Fee schedule</td><td>Amount due</td></tr><tr><td>Initial fee</td><td>5000 dollars</td></tr></table>'
     '<p>The area is <math display="inline"><msup><mi>r</mi><mn>2</mn></msup></math> times pi in each region.</p>'
     '<p>Either party may terminate this agreement with written notice.</p>'
+    '<p>Page <page-number/> of <page-count/></p>'
 )
 
 
@@ -316,6 +317,15 @@ def scenarios(read):
     if not paragraphs:
         return out
     at, words = paragraphs[0]
+    out.append(('edit_table', 'direct', [
+        {'op': 'insert_table', 'at': at, 'position': 'before', 'rows': 2, 'columns': 2, 'as': 'alias_grid'},
+        {'op': 'edit_table', 'at': '$alias_grid', 'action': {'kind': 'insert_rows', 'row': 1, 'position': 'before', 'count': 2, 'as': 'alias_rows'}},
+        {'op': 'edit_table', 'at': '$alias_grid', 'action': {'kind': 'insert_columns', 'column': 1, 'position': 'after', 'count': 2, 'as': 'alias_cols'}},
+        {'op': 'format_cell', 'at': '$alias_rows/row:1/cell:2', 'format': {'fill': '#FF0000'}},
+        {'op': 'format_cell', 'at': '$alias_cols/row:1/cell:2', 'format': {'fill': '#0000FF'}},
+    ]))
+    out.append(('set_section_boundary', 'direct', [{'op': 'set_section_boundary', 'at': at, 'break_type': 'continuous'}]))
+    out.append(('set_section_boundary', 'direct', [{'op': 'set_section_boundary', 'at': at}, {'op': 'set_section_layout', 'section_handle': f'section:{at}', 'columns': 2}, {'op': 'set_section_boundary', 'at': at, 'remove': True}]))
     out.append(('insert_table', 'direct', [{'op': 'insert_table', 'at': at, 'position': 'before', 'rows': 2, 'columns': 2, 'as': 'grid'}, {'op': 'edit_table', 'at': '$grid', 'action': {'kind': 'insert_rows', 'row': 1, 'position': 'after', 'count': 1}}]))
     for action in [
         {'kind': 'insert_columns', 'column': 1, 'position': 'after', 'count': 1},

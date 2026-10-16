@@ -69,3 +69,31 @@ Paragraph `margin-left`, `margin-right`, and `text-indent` accept signed pt/px l
 Setting or clearing `first_line_indent` also removes competing `firstLineChars`/`hangingChars` direct overrides, so the logical offset has one unambiguous mode. Other character/logical indentation attributes remain untouched.
 
 `<li>` accepts multiple paragraphs and child lists, retaining one marker per item. Continuation paragraphs carry explicit persisted DOCX membership; matching indentation alone does not establish membership. Read metadata identifies them with `continuation_paragraph`. Typed `set_list` accepts bounded `levels` definitions for a new list: format/label, start/restart_after, signed paragraph indentation and marker font/color/bold/italic. Array positions are levels; label counters may reference the current level and ancestors.
+
+### Table formatting
+
+The document read result includes a `tables` inventory with source-bound handles, grid widths in twips, physical row/cell indices, grid spans, vertical merge metadata and direct properties. Tables are numbered in preorder, including nested tables. Existing `table:N` insertion anchors remain body-level anchors. Use the inventory handle for `format_table`, `format_row`, or `format_cell`; handles retain source identity across a plan even when structural operations shift positions. Inserted tables can use `$alias` handles.
+
+All three operations take `at` and a typed `format` object. Widths are `{"unit":"auto"}`, `{"unit":"points","value":180}`, or `{"unit":"percent","value":75}`. Percent values must be greater than zero and at most 100. `column_widths` are positive point values matching the existing grid column count. `layout` is `fixed` or `autofit`; table alignment is `left`, `center`, or `right`. `padding` contains optional `top`, `right`, `bottom`, and `left` point values. `borders` contains optional `top`, `left`, `bottom`, `right`, `inside_horizontal`, and `inside_vertical` objects with `style`, optional `color` (`#RRGGBB`) and optional `width` (0.25–12 points in quarter-point increments). Supported border styles are nil, none, single, double, dotted, dashed, dotDash, dotDotDash, triple, wave, and doubleWave. `cell_spacing` uses points. `style` selects an existing table style ID.
+
+Rows support `height` in points, `height_rule` (`auto`, `at_least`, `exact`), `repeating_header`, and `allow_split`. Cells support width, borders, `fill` (`#RRGGBB`), padding, and `vertical_alignment` (`top`, `center`, `bottom`). Address a vertically merged logical cell through its restart cell; formatting applies to its backing continuation cells. Addressing a continuation directly is rejected. Legacy horizontal merges require normalization before formatting.
+
+Omitted properties preserve direct OOXML. Explicit false overrides row flags. `clear` removes supported direct settings and inherits; it wins over a value supplied in the same format. Grid column dimensions cannot be cleared. Tracked edits preserve complete property snapshots; accept keeps the new formatting and reject restores prior properties. Settle an existing pending change to a property bag before formatting it again.
+
+HTML creation accepts the same typed format objects as JSON in `data-format` attributes on `<table>`, `<tr>`, and `<td>` (or `<th>`). For example:
+
+```html
+<table data-format='{"width":{"unit":"percent","value":75},"layout":"fixed"}'>
+  <tr data-format='{"repeating_header":true}'>
+    <td data-format='{"fill":"#EEEEEE","padding":{"top":4}}'><p>Heading</p></td>
+  </tr>
+</table>
+```
+
+Unknown attributes inside the format object and invalid values are rejected. Arbitrary table CSS remains outside the authoring contract. HTML preview carries `data-docx-handle` and renders supported direct dimensions, alignment, borders, padding, fill, row height and split intent. It communicates layout intent and does not establish Word pagination fidelity.
+
+Use empty `<page-number/>` and `<page-count/>` helpers inside paragraphs (including header/footer HTML) to author Word PAGE/NUMPAGES fields. A decimal cached value can also be supplied with `<span data-docx-field="PAGE">1</span>`. Word recalculates these fields; the HTML preview shows cached values, not page layout fidelity.
+
+Document `sections` metadata contains stable `section:<boundary-paragraph-ID>` / `section:final` handles. Pass `section_handle` to `set_section_layout` instead of a numeric section. `set_section_boundary(at=...)` inserts after a body paragraph; `remove=True` merges into the following section using its layout. Insertion clones containing section properties. These structural edits require direct mode; settle pending section/paragraph property changes first. The final body section is retained, and removing a boundary preserves effective following story references.
+
+`set_list` rejects membership edits on lists containing explicit continuation paragraphs, including numbered parents and continuations independently. Use the supported HTML creation/reconstruction model; independent tracked continuation membership changes are not implemented.

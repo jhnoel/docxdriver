@@ -46,6 +46,8 @@ pub struct DocxXml {
     /// part. Allocation is monotonic from there, so a plan pays for one scan
     /// rather than one per tracked change.
     next_revision: std::sync::atomic::AtomicU64,
+    /// IDs reserved by source revisions and previous operation allocations.
+    revision_ids: Option<HashSet<String>>,
 }
 
 /// A projected paragraph: 1-based index plus its node.
@@ -191,6 +193,7 @@ impl DocxXml {
         Ok(DocxXml {
             doc,
             next_revision: std::sync::atomic::AtomicU64::new(0),
+            revision_ids: None,
         })
     }
 
@@ -701,25 +704,68 @@ impl DocxXml {
             .collect()
     }
 
-    /// Give every revision element created since `before` was taken a
-    /// unique w:id. Operations stamp one allocated id on each element they
-    /// create; Word writes one id per element and the Open XML SDK rejects
-    /// duplicates. Pre-existing elements keep their ids.
-    pub fn renumber_new_revision_ids(&mut self, before: &HashSet<NodeId>) {
-        let elements = self.revision_elements();
-        let mut seen: HashSet<String> = elements
-            .iter()
-            .filter(|node| before.contains(node))
-            .filter_map(|&node| self.attr(node, "id").map(str::to_string))
-            .collect();
-        for node in elements.into_iter().filter(|node| !before.contains(node)) {
-            let id = self.attr(node, "id").unwrap_or("").to_string();
-            if !seen.insert(id) {
+    /// Capture an allocation watermark before an operation. The source IDs
+    /// are indexed once per working part; the append-only DOM arena lets the
+    /// post-operation pass inspect only newly allocated nodes.
+    pub fn revision_checkpoint(&mut self) -> usize {
+        if self.revision_ids.is_none() {
+            self.revision_ids = Some(self.revision_elements().into_iter()
+                .filter_map(|node| self.attr(node, "id").map(str::to_owned)).collect());
+        }
+        self.doc.node_count()
+    }
+
+    /// Give newly allocated, attached revision elements unique IDs. Source
+    /// elements retain their IDs, and IDs remain reserved after settlement.
+    /// Detached temporary clones are ignored. Every revision family shares
+    /// the allocator, except paired move-range markers.
+    pub fn renumber_allocated_revision_ids(&mut self, before: usize) {
+        let mut seen = self.revision_ids.take().unwrap_or_default();
+        for raw in before + 1..=self.doc.node_count() {
+            let Some(node) = u32::try_from(raw).ok().and_then(NodeId::from_raw) else { continue; };
+            if !REVISION_ID_TAGS[..REVISION_RANGE_MARKERS].iter().any(|tag| self.is_w(node, tag)) {
+                continue;
+            }
+            let Some(id) = self.attr(node, "id").map(str::to_owned) else { continue; };
+            let mut ancestor = node;
+            let attached = loop {
+                if ancestor == self.doc.root() { break true; }
+                let Some(parent) = self.doc.parent(ancestor) else { break false; };
+                ancestor = parent;
+            };
+            if !attached || seen.insert(id) { continue; }
+            loop {
                 let fresh = self.next_revision_id().to_string();
-                self.doc.set_attribute(node, "w:id", &fresh);
-                seen.insert(fresh);
+                if seen.insert(fresh.clone()) {
+                    self.doc.remove_attribute(node, "w:id");
+                    self.doc.remove_attribute(node, "id");
+                    self.doc.set_attribute(node, "w:id", &fresh);
+                    break;
+                }
             }
         }
+        self.revision_ids = Some(seen);
+    }
+
+    /// Compatibility entry point for callers that capture attached revision
+    /// nodes themselves. Plan execution uses allocation watermarks instead.
+    pub fn renumber_new_revision_ids(&mut self, before: &HashSet<NodeId>) {
+        let elements=self.revision_elements();
+        let mut seen=elements.iter().filter(|node|before.contains(node))
+            .filter_map(|&node|self.attr(node,"id").map(str::to_owned)).collect::<HashSet<_>>();
+        for node in elements.into_iter().filter(|node|!before.contains(node)) {
+            if seen.insert(self.attr(node,"id").unwrap_or("").to_string()) {continue;}
+            loop {
+                let fresh=self.next_revision_id().to_string();
+                if seen.insert(fresh.clone()) {
+                    self.doc.remove_attribute(node,"w:id");self.doc.remove_attribute(node,"id");
+                    self.doc.set_attribute(node,"w:id",&fresh);break;
+                }
+            }
+        }
+        // A compatibility caller may change IDs after an earlier checkpoint.
+        // Rebuild lazily before a later incremental operation.
+        self.revision_ids=None;
     }
 
     /// Highest revision id present in this part, if any.
@@ -895,5 +941,52 @@ mod tests {
         let paragraph = xml.paragraphs()[0].node;
 
         assert_eq!(xml.paragraph_text(paragraph, View::Current), "beforeafter");
+    }
+}
+
+#[cfg(test)]
+mod revision_allocation_tests {
+    use super::*;
+
+    #[test]
+    fn cloned_pending_source_property_revisions_receive_fresh_ids() {
+        let mut xml=DocxXml::parse(format!(r#"<w:document xmlns:w="{W_NS}"><w:body><w:p><w:pPr><w:pPrChange w:id="21" w:author="source"><w:pPr/></w:pPrChange></w:pPr><w:r><w:rPr><w:rPrChange w:id="22" w:author="source"><w:rPr/></w:rPrChange></w:rPr><w:t>text</w:t></w:r></w:p></w:body></w:document>"#).as_bytes()).unwrap();
+        let body=xml.body().unwrap();let paragraph=xml.child_w(body,"p").unwrap();
+        let originals=xml.revision_elements();
+        let before=xml.revision_checkpoint();
+        let clone=xml.doc.clone_node(paragraph,true);xml.doc.append_child(body,clone);
+        xml.renumber_allocated_revision_ids(before);
+        assert_eq!(xml.attr(originals[0],"id"),Some("21"));
+        assert_eq!(xml.attr(originals[1],"id"),Some("22"));
+        let ids=xml.revision_elements().into_iter().map(|n|xml.attr(n,"id").unwrap().to_owned()).collect::<HashSet<_>>();
+        assert_eq!(ids.len(),4);
+    }
+
+    #[test]
+    fn incremental_revision_ids_preserve_sources_and_skip_temporary_clones() {
+        let mut xml=DocxXml::parse(format!(r#"<w:hdr xmlns:w="{W_NS}"><w:ins w:id="7"/></w:hdr>"#).as_bytes()).unwrap();
+        let root=xml.doc.root_element().unwrap();
+        let original=xml.revision_elements()[0];
+        let before=xml.revision_checkpoint();
+        assert_eq!(xml.next_revision_id(),8);
+        // Some writers allocate once then stamp adjacent IDs on sibling
+        // revisions. Renumbering must skip already retained adjacent IDs too.
+        for value in [8,9,9,7] {
+            let n=xml.doc.create_element("w:ins");xml.doc.set_attribute(n,"w:id",&value.to_string());xml.doc.append_child(root,n);
+        }
+        let temporary=xml.doc.clone_node(original,true);
+        xml.renumber_allocated_revision_ids(before);
+        assert_eq!(xml.attr(original,"id"),Some("7"));
+        assert_eq!(xml.attr(temporary,"id"),Some("7"));
+        let ids=xml.revision_elements().into_iter().map(|n|xml.attr(n,"id").unwrap().to_string()).collect::<HashSet<_>>();
+        assert_eq!(ids.len(),5);
+        // A settled source ID stays reserved, even after its node is detached.
+        xml.doc.detach(original);
+        let before=xml.revision_checkpoint();
+        let new=xml.doc.create_element("w:del");xml.doc.set_attribute(new,"w:id","7");xml.doc.append_child(root,new);
+        xml.renumber_allocated_revision_ids(before);
+        assert_ne!(xml.attr(new,"id"),Some("7"));
+        let ids=xml.revision_elements().into_iter().map(|n|xml.attr(n,"id").unwrap().to_string()).collect::<HashSet<_>>();
+        assert_eq!(ids.len(),5);
     }
 }

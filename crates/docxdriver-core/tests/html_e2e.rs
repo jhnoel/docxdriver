@@ -895,3 +895,89 @@ fn agent_read_separates_css_and_resolves_named_paragraph_styles() {
         assert!(!result["css"].as_object().unwrap().is_empty());
     }
 }
+
+#[test]
+fn page_number_helpers_author_safe_word_fields_in_body_and_footer() {
+    let input=create("<section><footer><p>Page <span data-docx-field='PAGE'>1</span> of <page-count/></p></footer><p>Page <page-number/> of <page-count/></p></section>");
+    let mut zip=zip::ZipArchive::new(Cursor::new(&input)).unwrap();
+    for part in ["word/document.xml","word/footer1.xml"] {
+        let mut xml=String::new();zip.by_name(part).unwrap().read_to_string(&mut xml).unwrap();
+        assert!(xml.contains("w:instr=\"PAGE\"")&&xml.contains("w:instr=\"NUMPAGES\"")&&xml.contains("w:dirty=\"true\""),"{xml}");
+    }
+    let doc=read(&input,"document","final");assert!(html(&doc).contains("data-docx-field=\"PAGE\""));
+    assert!(matches!(command(None,Command::Create(CreateCommand{html:Some("<p><span data-docx-field='INCLUDETEXT evil'>1</span></p>".into()),paragraphs:vec![]})),CommandResult::Rejected{..}));
+}
+
+#[test]
+fn removing_section_boundary_preserves_inherited_following_header() {
+    let input=create("<section><header><p>Shared header</p></header><p>First section</p></section><section><p>Second section</p></section>");
+    let doc=read(&input,"document","final");
+    let at=doc["paragraphs"][0]["id"].as_str().unwrap();
+    let remove:EditOp=serde_json::from_value(json!({"op":"set_section_boundary","at":at,"remove":true})).unwrap();
+    let merged=commit(&input,vec![remove],ChangeMode::Direct);
+    let after=read(&merged,"document","final");
+    assert_eq!(after["sections"].as_array().unwrap().len(),1,"{after}");
+    assert!(html(&after).contains("Shared header")&&html(&after).contains("First section")&&html(&after).contains("Second section"));
+    assert!(after["sections"][0]["stories"].as_array().unwrap().iter().any(|s|s["scope"]=="hdr"&&s["explicit"]==true),"{after}");
+}
+
+#[test]
+fn report_sections_expose_layout_stories_numbering_and_unequal_columns() {
+    let source=create("<section first-page><header><p>Default report</p></header><header first><p>First report</p></header><header even><p>Even report</p></header><footer><p>Page <page-number/> of <page-count/></p></footer><p>Portrait opening</p></section><section><header><p>Landscape report</p></header><p>Landscape figures</p></section><section><p>Unequal appendix</p></section>");
+    let doc=read(&source,"document","final");
+    let sections=doc["sections"].as_array().unwrap();assert_eq!(sections.len(),3,"{doc}");
+    let operations:Vec<EditOp>=serde_json::from_value(json!([
+        {"op":"set_section_layout","section_handle":sections[0]["handle"],"page_size":"a4","orientation":"portrait","columns":1,"page_number_start":1},
+        {"op":"set_section_layout","section_handle":sections[1]["handle"],"page_size":"letter","orientation":"landscape","columns":2,"column_spacing":18,"column_separator":true,"page_number_format":"lowerRoman","page_number_start":1},
+        {"op":"set_section_layout","section_handle":sections[2]["handle"],"page_size":"a4","orientation":"portrait","columns":2,"column_widths":[180,252],"column_spacing":18,"page_number_continue":true},
+        {"op":"set_even_and_odd_headers","even_and_odd":true},
+        {"op":"set_first_page_mode","section":1,"enabled":false},
+        {"op":"set_first_page_mode","section":1,"enabled":true}
+    ])).unwrap();
+    let output=commit(&source,operations,ChangeMode::Direct);
+    let final_doc=read(&output,"document","final");let s=final_doc["sections"].as_array().unwrap();
+    assert_eq!(s[0]["page_size"]["orient"],"portrait");assert_eq!(s[1]["page_size"]["orient"],"landscape");
+    assert_eq!(s[1]["page_numbering"]["fmt"],"lowerRoman");assert_eq!(s[1]["page_numbering"]["start"],"1");
+    assert_eq!(s[2]["columns"]["definitions"][0]["width_twips"],"3600");
+    assert_eq!(s[2]["columns"]["definitions"][0]["spacing_twips"],"360");
+    assert_eq!(s[0]["first_page"],true);assert_eq!(s[0]["stories"].as_array().unwrap().len(),4);
+    assert!(s[2]["stories"].as_array().unwrap().iter().any(|v|v["scope"]=="hdr"&&v["inherited"]==true));
+    for text in ["Default report","First report","Even report","Landscape report","Portrait opening","Landscape figures","Unequal appendix"] {assert!(html(&final_doc).contains(text),"{final_doc}");}
+}
+
+#[test]
+fn adjacent_sections_with_nested_blocks_keep_every_boundary() {
+    let input=create("<section><p>First</p><ol><li><p>Item</p><p>Continuation</p></li></ol><table><tr><td><p>Cell</p><table><tr><td>Nested</td></tr></table></td></tr></table></section><section><header><p>Second header</p></header><p>Second</p></section>\n<section><p>Third</p><ul><li><p>Another</p><p>Another continuation</p></li></ul></section>");
+    let doc=read(&input,"document","final");assert_eq!(doc["sections"].as_array().unwrap().len(),3,"{doc}");
+    for text in ["First","Second","Third","Nested","Continuation","Another continuation"] {assert!(html(&doc).contains(text),"{doc}");}
+    let raw=part(&input,"word/document.xml");let xml=String::from_utf8_lossy(&raw);
+    assert!(xml.contains("_docxdriver_cont_1_0_100000")&&xml.contains("100001"),"{xml}");
+}
+
+#[test]
+fn created_section_after_terminal_nested_table_has_body_boundary_paragraph() {
+    let input=create("<section><h1>Opening</h1><table><tr><td><p>Outer</p><table><tr><td>Nested</td></tr></table></td></tr></table></section><section><h1>Following</h1><p>End</p></section>");
+    let raw=part(&input,"word/document.xml");let xml=xmloxide::tree::Document::parse_bytes(&raw).unwrap();
+    let name=|n|xml.node_name(n).unwrap_or("").rsplit(':').next().unwrap();
+    let sections:Vec<_>=xml.descendants(xml.root()).filter(|&n|name(n)=="sectPr").collect();assert_eq!(sections.len(),2);
+    let ppr=xml.parent(sections[0]).unwrap();let paragraph=xml.parent(ppr).unwrap();let body=xml.parent(paragraph).unwrap();
+    assert_eq!((name(ppr),name(paragraph),name(body)),("pPr","p","body"));
+    assert_eq!(xml.children(paragraph).filter(|&n|name(n)=="pPr").count(),1);
+    let first=xml.children(paragraph).next().unwrap();assert_eq!(first,ppr);
+}
+
+#[test]
+fn typed_membership_rejects_multi_paragraph_lists_without_detaching_continuations() {
+    let input=create("<ol><li><p>Item</p><p>Continuation</p></li><li>Neighbor item</li></ol>");
+    let doc=read(&input,"document","final");
+    for paragraph in doc["paragraphs"].as_array().unwrap() {
+        let at=paragraph["id"].as_str().unwrap();
+        for change_mode in [ChangeMode::Direct,ChangeMode::Track] {
+            let op=serde_json::from_value(json!({"op":"set_list","at":[at],"remove":true})).unwrap();
+            let plan=Plan{base:SourceHash::from_bytes(&input),author:"test".into(),change_mode,ops:vec![op]};
+            let PlanResult::Rejected{diagnostic,..}=execute_plan(&input,&PlanRequest{plan,preview_key:None})else{panic!("membership edit was accepted")};
+            assert!(diagnostic.message.contains("explicit continuation"),"{diagnostic:?}");
+        }
+    }
+    assert_eq!(html(&read(&input,"document","final")),html(&doc));
+}

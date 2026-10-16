@@ -348,12 +348,18 @@
     },
     {
       "id": "table_formatting",
-      "read": "preserved_only",
-      "html_authoring": "unsupported",
-      "typed_edit": "unsupported",
-      "python_repl": "unsupported",
-      "note": "Table/row/cell presentation attributes are rejected; paragraph/inline styling inside cells is supported.",
-      "html_example": "<table style=\"width:100pt\"><tr><td>sample text</td></tr></table>"
+      "read": "partial",
+      "html_authoring": "supported",
+      "typed_edit": "supported",
+      "python_repl": "exposed",
+      "note": "Source-bound table/row/logical-cell formatting and property snapshots; direct supported properties project to CSS. HTML data-format uses the typed format objects. Arbitrary table CSS and full table-style visual inheritance remain outside the preview contract.",
+      "html_example": "<table data-format='{\"width\":{\"unit\":\"percent\",\"value\":75},\"layout\":\"fixed\"}'><tr data-format='{\"repeating_header\":true}'><td data-format='{\"fill\":\"#EEEEEE\"}'>sample text</td></tr></table>",
+      "operations": [
+        "format_table",
+        "format_row",
+        "format_cell"
+      ],
+      "read_contains": "width:75%"
     },
     {
       "id": "page_margins",

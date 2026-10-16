@@ -159,9 +159,9 @@ pub struct RowFormat {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum TableEdit {
-    InsertRows { row: u32, position: InsertPosition, count: u32 },
+    InsertRows { row: u32, position: InsertPosition, count: u32, #[serde(rename = "as", default)] alias: Option<String> },
     DeleteRows { row: u32, count: u32 },
-    InsertColumns { column: u32, position: InsertPosition, count: u32 },
+    InsertColumns { column: u32, position: InsertPosition, count: u32, #[serde(rename = "as", default)] alias: Option<String> },
     DeleteColumns { column: u32, count: u32 },
     MergeCells { row: u32, column: u32, row_span: u32, column_span: u32 },
     SplitCell { row: u32, column: u32 },
@@ -665,7 +665,9 @@ pub enum EditOp {
         gutter: Option<Points>,
     },
     /// Selective section-property edits. Dimensions are points; omitted fields preserve source.
+    SetSectionBoundary { at: ParagraphAddress, #[serde(default)] remove: bool, #[serde(default)] break_type: Option<String> },
     SetSectionLayout {
+        #[serde(default)] section_handle: Option<String>,
         #[serde(default)]
         section: Option<u32>,
         #[serde(default)]
@@ -1480,7 +1482,7 @@ fn normalize_op(op: &mut EditOp) -> Result<(), String> {
                     return Err("levels requires a new list with 1..9 definitions covering the selected level".into());
                 }
                 for (i, def) in defs.iter().enumerate() {
-                    if !["bullet","decimal","lowerLetter","upperLetter","lowerRoman","upperRoman"].contains(&def.format.as_str()) || def.start == Some(0) || def.label.is_empty() || def.label.len() > 255 || def.restart_after.is_some_and(|v| v as usize >= i) {
+                    if !["bullet","decimal","lowerLetter","upperLetter","lowerRoman","upperRoman"].contains(&def.format.as_str()) || def.start.is_some_and(|v|v == 0 || v > i32::MAX as u32) || def.label.is_empty() || def.label.len() > 255 || def.restart_after.is_some_and(|v| v as usize >= i) {
                         return Err("invalid list level format, label, start or restart ancestor".into());
                     }
                     if [def.indent_left,def.indent_right,def.first_line_indent].into_iter().flatten().any(|v| v.0.unsigned_abs() > 2_000_000) { return Err("list indentation is out of range".into()); }
@@ -1491,8 +1493,8 @@ fn normalize_op(op: &mut EditOp) -> Result<(), String> {
                     if def.marker_font.as_ref().is_some_and(|v| v.is_empty()) || def.marker_color.as_ref().is_some_and(|v| v.len() != 6 || !v.bytes().all(|c| c.is_ascii_hexdigit())) { return Err("invalid list marker font or six-digit RGB color".into()); }
                 }
             }
-            if at.is_empty() || *level > 8 || *start == Some(0) || *num_id == Some(0) {
-                return Err("set_list requires paragraphs, level 0..8 and positive IDs/starts".into());
+            if at.is_empty() || *level > 8 || start.is_some_and(|v|v == 0 || v > i32::MAX as u32) || num_id.is_some_and(|v|v == 0 || v > i32::MAX as u32) {
+                return Err("set_list requires paragraphs, level 0..8 and IDs/starts in 1..2147483647".into());
             }
             if *remove && (num_id.is_some() || format.is_some() || start.is_some() || *level != 0) {
                 return Err("set_list remove cannot be combined with list settings".into());
@@ -1516,7 +1518,13 @@ fn normalize_op(op: &mut EditOp) -> Result<(), String> {
                 return Err("at must not be empty".into());
             }
         }
-        EditOp::SetSectionLayout { section, page_size, width, height, orientation, columns, column_spacing, column_widths, column_separator, break_type, page_number_format, page_number_start, page_number_continue } => {
+        EditOp::SetSectionBoundary {remove,break_type,..} => {
+            if *remove && break_type.is_some(){return Err("removing a boundary cannot set break_type".into());}
+            if break_type.as_ref().is_some_and(|v|!matches!(v.as_str(),"nextPage"|"continuous"|"oddPage"|"evenPage"|"nextColumn")){return Err("unsupported section break_type".into());}
+        }
+        EditOp::SetSectionLayout { section, section_handle, page_size, width, height, orientation, columns, column_spacing, column_widths, column_separator, break_type, page_number_format, page_number_start, page_number_continue } => {
+            if section.is_some() && section_handle.is_some() {return Err("section and section_handle are mutually exclusive".into());}
+            if section_handle.as_ref().is_some_and(|v|!v.starts_with("section:")){return Err("section_handle must use an inventory handle".into());}
             if section == &Some(0) { return Err("section must be positive".into()); }
             if let Some(size) = page_size { if !matches!(size.as_str(), "letter" | "legal" | "a4" | "a3" | "a5") { return Err("page_size must be letter/legal/a4/a3/a5".into()); } }
             if page_size.is_some() && (width.is_some() || height.is_some()) { return Err("page_size conflicts with width/height".into()); }
@@ -1524,11 +1532,13 @@ fn normalize_op(op: &mut EditOp) -> Result<(), String> {
             if [width.as_ref(), height.as_ref()].into_iter().flatten().any(|value| value.0 <= 0 || value.0 > 31680) { return Err("page dimensions must be >0 and <=1584 points".into()); }
             if orientation.as_ref().is_some_and(|v| !matches!(v.as_str(), "portrait" | "landscape")) { return Err("orientation must be portrait/landscape".into()); }
             if columns.is_some_and(|v| v == 0 || v > 45) { return Err("columns must be between 1 and 45".into()); }
-            if column_widths.as_ref().is_some_and(|v| v.is_empty() || v.len() > 45 || v.iter().any(|p| p.0 <= 0)) { return Err("column_widths requires 1..45 positive widths".into()); }
+            if column_spacing.is_some_and(|p| !(0..=31680).contains(&p.0)) { return Err("column_spacing must be between 0 and 1584 points".into()); }
+            if column_widths.as_ref().is_some_and(|v| v.is_empty() || v.len() > 45 || v.iter().any(|p| p.0 <= 0 || p.0 > 31680)) { return Err("column_widths requires 1..45 positive widths of at most 1584 points".into()); }
             if let (Some(count), Some(widths)) = (columns.as_ref(), column_widths.as_ref()) { if *count as usize != widths.len() { return Err("columns must match column_widths length".into()); } }
             if break_type.as_ref().is_some_and(|v| !matches!(v.as_str(), "nextPage" | "continuous" | "oddPage" | "evenPage" | "nextColumn")) { return Err("unsupported section break_type".into()); }
             if page_number_format.as_ref().is_some_and(|v| !matches!(v.as_str(), "decimal" | "upperRoman" | "lowerRoman" | "upperLetter" | "lowerLetter")) { return Err("unsupported page_number_format".into()); }
-            if page_number_start == &Some(0) { return Err("page_number_start must be positive".into()); }
+            if page_number_continue == &Some(false) { return Err("page_number_continue only accepts true; use page_number_start to restart".into()); }
+            if page_number_start.is_some_and(|value| value == 0 || value > i32::MAX as u32) { return Err("page_number_start must be between 1 and 2147483647".into()); }
             if page_number_start.is_some() && page_number_continue == &Some(true) { return Err("page_number_start conflicts with page_number_continue".into()); }
             if page_size.is_none() && width.is_none() && orientation.is_none() && columns.is_none() && column_spacing.is_none() && column_widths.is_none() && column_separator.is_none() && break_type.is_none() && page_number_format.is_none() && page_number_start.is_none() && page_number_continue.is_none() { return Err("set_section_layout requires a property".into()); }
         }
@@ -1833,6 +1843,7 @@ fn fold_typed(
         let resolved = match resolve_typed_aliases(op, &aliases) {
             Ok(value) => value,
             Err(error) => {
+                attach_affected(&mut state, &mut reports, &affected_ids);
                 let report = PlanReport {
                     completed: index,
                     stopped_at: Some(index),
@@ -1872,7 +1883,7 @@ fn fold_typed(
                     report.summary.push_str(&note);
                 }
             }
-            attach_affected(&state, &mut reports, &affected_ids);
+            attach_affected(&mut state, &mut reports, &affected_ids);
             let report = PlanReport {
                 completed: index,
                 stopped_at: Some(index),
@@ -1892,10 +1903,11 @@ fn fold_typed(
             );
         }
         if let EditOp::InsertParagraph { alias: Some(alias), .. }
-            | EditOp::InsertTable { alias: Some(alias), .. } = op
+            | EditOp::InsertTable { alias: Some(alias), .. }
+            | EditOp::EditTable { action: TableEdit::InsertRows { alias: Some(alias), .. } | TableEdit::InsertColumns { alias: Some(alias), .. }, .. } = op
         {
             if aliases.contains_key(alias) {
-                attach_affected(&state, &mut reports, &affected_ids);
+                attach_affected(&mut state, &mut reports, &affected_ids);
                 let report = PlanReport {
                     completed: index,
                     stopped_at: Some(index),
@@ -1917,7 +1929,7 @@ fn fold_typed(
                     )),
                 );
             }
-            if let EditOp::InsertTable { .. } = op {
+            if matches!(op, EditOp::InsertTable { .. } | EditOp::EditTable { .. }) {
                 aliases.insert(alias.clone(), Value::String(format!("${alias}")));
             }
             if let Some(id) = outcome
@@ -1931,7 +1943,7 @@ fn fold_typed(
             }
         }
     }
-    attach_affected(&state, &mut reports, &affected_ids);
+    attach_affected(&mut state, &mut reports, &affected_ids);
     let report = PlanReport {
         completed: plan.ops.len(),
         stopped_at: None,
@@ -2013,10 +2025,11 @@ fn explain_selector_drift(
 /// Fill each operation report with the rendered markup of the paragraphs it
 /// affected, as they stand in `state`, from one render of the document.
 fn attach_affected(
-    state: &crate::commands::WorkState,
+    state: &mut crate::commands::WorkState,
     reports: &mut [OperationReport],
     affected_ids: &[Vec<String>],
 ) {
+    state.flush_lists();
     let wanted = affected_ids.iter().flatten().cloned().collect();
     let markup = crate::commands::affected_markup(state, &wanted);
     for (report, ids) in reports.iter_mut().zip(affected_ids) {
@@ -2058,6 +2071,7 @@ fn operation_name(op: &EditOp) -> &'static str {
         EditOp::InsertParagraph { .. } => "insert_paragraph",
         EditOp::DeleteParagraphs { .. } => "delete_paragraphs",
         EditOp::SetPageMargins { .. } => "set_page_margins",
+        EditOp::SetSectionBoundary { .. } => "set_section_boundary",
         EditOp::SetSectionLayout { .. } => "set_section_layout",
         EditOp::SetFirstPageMode { .. } => "set_first_page_mode",
         EditOp::SetEvenAndOddHeaders { .. } => "set_even_and_odd_headers",
@@ -2097,6 +2111,7 @@ fn resolve_typed_aliases(
         | EditOp::ReplaceParagraph { at, .. }
         | EditOp::FormatText { at, .. }
         | EditOp::InsertTable { at, .. }
+        | EditOp::SetSectionBoundary { at, .. }
         | EditOp::FormatParagraph { at, .. }
         | EditOp::CommentAdd { at, .. } => resolve(at)?,
         EditOp::ReviseText { at: Some(at), .. } => resolve(at)?,
@@ -2108,6 +2123,12 @@ fn resolve_typed_aliases(
         EditOp::DeleteParagraphs { at } | EditOp::SetList { at, .. } => {
             for address in at {
                 resolve(address)?;
+            }
+        }
+        EditOp::SetSectionLayout { section_handle:Some(handle),.. } => {
+            if let Some(alias)=handle.strip_prefix("section:$") {
+                let Some(Value::String(id))=aliases.get(alias) else { return Err(diag("unknown_alias",format!("unknown section paragraph alias ${alias}"),None)); };
+                *handle=format!("section:{id}");
             }
         }
         _ => {}
@@ -2305,6 +2326,7 @@ fn typed_read(input: Option<&[u8]>, kind: &str, view: Option<&str>) -> crate::ou
                 map.insert("markup".into(), serde_json::json!(markup));
                 map.insert("css".into(), serde_json::json!(css));
                 map.insert("tables".into(), crate::commands::tables::inventory(&state.xml));
+                map.insert("sections".into(), crate::commands::sections::inventory(&state.package,&state.xml,&paragraph_ids,view==Some("original")));
                 map.insert("styles".into(), serde_json::json!(crate::html::styles::Styles::load(&state.package).catalog()));
                 if !equations.is_empty() {
                     map.insert("equations".into(), serde_json::json!(equations));
@@ -2379,6 +2401,7 @@ fn typed_read(input: Option<&[u8]>, kind: &str, view: Option<&str>) -> crate::ou
             }).collect();
             let mut result = result;
             if let Some(map) = result.result.as_mut().and_then(Value::as_object_mut) {
+                map.insert("sections".into(),crate::commands::sections::inventory(&state.package,&state.xml,&paragraph_ids,view==Some("original")));
                 if let Some(Value::Array(paragraphs)) = map.get("paragraphs") {
                     let equations: Vec<Value> = paragraphs
                         .iter()
@@ -2409,6 +2432,7 @@ fn typed_read(input: Option<&[u8]>, kind: &str, view: Option<&str>) -> crate::ou
                     serde_json::json!(crate::html::assets::manifest(&state.package, false)),
                 );
                 map.insert("tables".into(), crate::commands::tables::inventory(&state.xml));
+                map.insert("sections".into(), crate::commands::sections::inventory(&state.package,&state.xml,&paragraph_ids,view==Some("original")));
                 map.insert("html".into(), Value::String(rendered.html));
             }
             if let Some(map) = result.result.as_mut().and_then(Value::as_object_mut) {

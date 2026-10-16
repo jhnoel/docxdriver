@@ -55,6 +55,7 @@ pub struct RenderCtx {
     pub images: HashMap<String, String>,
     pub image_parts: HashMap<String, String>,
     pub styles: super::styles::Styles,
+    pub table_handles: HashMap<NodeId, String>,
     pub math_limits: super::omml_mathml::Limits,
     pub lists: HashMap<NodeId, ListInfo>,
     /// w:p node → rendered list marker ("1.", "a)", "•", …).
@@ -146,6 +147,7 @@ impl RenderCtx {
             images,
             image_parts,
             styles: super::styles::Styles::load(package),
+            table_handles: crate::commands::table_positions(xml),
             math_limits: super::omml_mathml::Limits::load(package),
             lists: list_info(package, xml, scope),
             markers: list_markers(package, xml, scope),
@@ -440,7 +442,8 @@ fn continuation_membership(xml: &DocxXml, paragraph: NodeId) -> Option<(String, 
     for n in xml.doc.children(paragraph) {
         if xml.is_w(n, "bookmarkStart") {
             if let Some(name) = xml.attr(n, "name").and_then(|s| s.strip_prefix("_docxdriver_cont_")) {
-                let (id, level) = name.split_once('_')?;
+                let mut parts=name.split('_');
+                let id=parts.next()?;let level=parts.next()?;
                 return Some((id.to_string(), level.parse().ok()?));
             }
         }

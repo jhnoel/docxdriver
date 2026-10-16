@@ -838,3 +838,311 @@ fn table_grid_insert_merge_split_and_delete_preserve_required_structure() {
     assert!(!raw.contains("<w:tbl>"));
     assert!(raw.contains("before selected after"));
 }
+
+fn assert_table_grids(input: &[u8]) {
+    let d=xml(input);
+    for table in d.descendants(d.root()).filter(|&n|local(&d,n)=="tbl") {
+        let grid=child(&d,table,"tblGrid").unwrap();
+        let width=d.children(grid).filter(|&n|local(&d,n)=="gridCol").count();
+        for row in d.children(table).filter(|&n|local(&d,n)=="tr") {
+            let mut occupied=0usize;
+            for cell in d.children(row).filter(|&n|local(&d,n)=="tc") {
+                assert_eq!(local(&d,d.children(cell).last().unwrap()),"p");
+                let span=child(&d,cell,"tcPr").and_then(|p|child(&d,p,"gridSpan")).and_then(|s|d.attribute(s,"w:val").or_else(||d.attribute(s,"val"))).map(|v|v.parse::<usize>().unwrap()).unwrap_or(1);
+                occupied+=span;
+            }
+            assert_eq!(occupied,width);
+        }
+    }
+}
+#[test]
+fn structural_tables_preserve_nested_content_and_grid_invariants() {
+    let input=create("<table><tr><td><p>A</p><table><tr><td>nested</td></tr></table><p>tail</p></td><td>B</td></tr><tr><td>C</td><td>D</td></tr></table><p>neighbor</p>");
+    let original=xml(&input);
+    let nested=original.descendants(original.root()).filter(|&n|local(&original,n)=="tbl").nth(1).unwrap();
+    let nested_before=signature(&original,nested);
+    let op=|v|serde_json::from_value::<EditOp>(v).unwrap();
+    let merged=direct_commit(&input,vec![op(json!({"op":"edit_table","at":"table:1","action":{"kind":"merge_cells","row":1,"column":1,"row_span":2,"column_span":2}}))]);
+    assert_table_grids(&merged);
+    let d=xml(&merged);let nested=d.descendants(d.root()).filter(|&n|local(&d,n)=="tbl").nth(1).unwrap();
+    assert_eq!(nested_before,signature(&d,nested));
+    let outer=d.descendants(d.root()).find(|&n|local(&d,n)=="tbl").unwrap();
+    let text=d.descendants(outer).filter(|&n|local(&d,n)=="t").map(|n|d.text_content(n)).collect::<Vec<_>>();
+    assert_eq!(text,vec!["A","nested","tail","B","C","D"]);
+    let split=direct_commit(&merged,vec![op(json!({"op":"edit_table","at":"table:1","action":{"kind":"split_cell","row":1,"column":1}}))]);
+    assert_table_grids(&split);
+    assert!(read(&split,"final").to_string().contains("neighbor"));
+}
+#[test]
+fn table_structural_failures_are_atomic_and_tracking_is_explicit() {
+    let input=create("<table><tr><td>A</td><td>B</td></tr><tr><td>C</td><td>D</td></tr></table>");
+    let op=|v|serde_json::from_value::<EditOp>(v).unwrap();
+    let attempts=vec![
+        (ChangeMode::Track,vec![json!({"op":"edit_table","at":"table:1","action":{"kind":"delete"}})]),
+        (ChangeMode::Direct,vec![json!({"op":"edit_table","at":"table:1","action":{"kind":"insert_rows","row":1,"position":"before","count":1}}),json!({"op":"edit_table","at":"table:1","action":{"kind":"delete_columns","column":9,"count":1}})]),
+        (ChangeMode::Direct,vec![json!({"op":"edit_table","at":"table:1","action":{"kind":"delete"}}),json!({"op":"format_table","at":"table:1","format":{"alignment":"center"}})]),
+        (ChangeMode::Direct,vec![json!({"op":"edit_table","at":"table:1","action":{"kind":"delete_rows","row":1,"count":2}})]),
+    ];
+    for(mode,ops)in attempts {
+        let plan=Plan{base:SourceHash::from_bytes(&input),author:"grid".into(),change_mode:mode,ops:ops.into_iter().map(op).collect()};
+        let result=execute_plan(&input,&PlanRequest{plan,preview_key:None});
+        assert!(matches!(result,PlanResult::Rejected{..}),"{result:?}");
+    }
+    assert_table_grids(&input);
+    // An annotation anywhere in the target subtree is a preflight rejection.
+    let mut entries=parts(&input);let raw=String::from_utf8(entries["word/document.xml"].clone()).unwrap();
+    entries.insert("word/document.xml".into(),raw.replacen("<w:r>","<w:bookmarkStart w:id=\"7\" w:name=\"guard\"/><w:bookmarkEnd w:id=\"7\"/><w:r>",1).into_bytes());
+    let mut z=zip::ZipWriter::new(Cursor::new(vec![]));for(name,bytes)in entries{z.start_file(name,zip::write::SimpleFileOptions::default()).unwrap();z.write_all(&bytes).unwrap();}let guarded=z.finish().unwrap().into_inner();
+    let plan=Plan{base:SourceHash::from_bytes(&guarded),author:"grid".into(),change_mode:ChangeMode::Direct,ops:vec![op(json!({"op":"edit_table","at":"table:1","action":{"kind":"delete"}}))]};
+    assert!(matches!(execute_plan(&guarded,&PlanRequest{plan,preview_key:None}),PlanResult::Rejected{..}));
+}
+
+#[test]
+fn highlight_crosses_runs_and_restores_each_original_property_bag() {
+    let source=fixture(RICH_RUN, "");
+    let mut entries=parts(&source);
+    let raw=String::from_utf8(entries["word/document.xml"].clone()).unwrap().replace("<w:t>before selected after</w:t>",r#"<w:t>before sele</w:t></w:r><w:r><w:rPr><w:b/><w:highlight w:val="darkRed"/><w:u w:val="dotted" w:color="123456"/><w:shd w:val="clear" w:fill="EEEEEE"/></w:rPr><w:t>cted after</w:t>"#);
+    entries.insert("word/document.xml".into(),raw.into_bytes());
+    let mut zip=zip::ZipWriter::new(Cursor::new(vec![]));
+    for (name,bytes) in entries {zip.start_file(name,zip::write::SimpleFileOptions::default()).unwrap();zip.write_all(&bytes).unwrap();}
+    let input=zip.finish().unwrap().into_inner();
+    let output=commit(&input,vec![format(json!({"highlight":"cyan"}))]);
+    let raw=String::from_utf8(parts(&output)["word/document.xml"].clone()).unwrap();
+    assert_eq!(raw.matches("w:highlight w:val=\"cyan\"").count(),2,"{raw}");
+    assert!(raw.contains("w:u w:val=\"dotted\" w:color=\"123456\"")&&raw.contains("w:shd w:val=\"clear\" w:fill=\"EEEEEE\""),"{raw}");
+    let rejected=settle(&output,RevisionAction::Reject);
+    let rendered=read(&rejected,"final").to_string();assert!(rendered.contains("#FFFF00")&&rendered.contains("#800000"),"{rendered}");
+    let accepted=settle(&output,RevisionAction::Accept);assert!(read(&accepted,"final").to_string().contains("#00FFFF"));
+}
+
+#[test]
+fn table_validation_and_atomic_failure_leave_source_untouched() {
+    for value in [
+        json!({"op":"format_table","at":"table:0","format":{"layout":"fixed"}}),
+        json!({"op":"format_table","at":"table:1","format":{"width":{"unit":"percent","value":101}}}),
+        json!({"op":"format_row","at":"table:1/row:1","format":{"height_rule":"minimum"}}),
+        json!({"op":"format_cell","at":"table:1/row:1/cell:1","format":{"fill":"red"}}),
+    ] {
+        let op:Result<EditOp,_>=serde_json::from_value(value);
+        if let Ok(op)=op {
+            let input=create("<table><tr><td>text</td></tr></table>");
+            let plan=Plan {base:SourceHash::from_bytes(&input),author:"validation".into(),change_mode:ChangeMode::Track,ops:vec![op]};
+            assert!(!matches!(execute_plan(&input,&PlanRequest{plan,preview_key:None}),PlanResult::Previewed{..}));
+        }
+    }
+    let input=create("<table><tr><td rowspan=\"2\">merged</td><td>next</td></tr><tr><td>last</td></tr></table>");
+    let ops=vec![
+        serde_json::from_value(json!({"op":"format_table","at":"table:1","format":{"alignment":"center"}})).unwrap(),
+        serde_json::from_value(json!({"op":"format_cell","at":"table:1/row:2/cell:1","format":{"fill":"#ABCDEF"}})).unwrap(),
+    ];
+    let plan=Plan{base:SourceHash::from_bytes(&input),author:"validation".into(),change_mode:ChangeMode::Track,ops};
+    let outcome=execute_plan(&input,&PlanRequest{plan,preview_key:None});
+    assert!(!matches!(outcome,PlanResult::Previewed{..}),"{outcome:?}");
+    assert!(!String::from_utf8(parts(&input)["word/document.xml"].clone()).unwrap().contains("ABCDEF"));
+}
+
+#[test]
+fn nested_table_insertion_keeps_the_cell_terminal_paragraph() {
+    let input=create("<table><tr><td>anchor</td></tr></table>");
+    let d=xml(&input);let p=paragraph(&d);
+    let id=d.attribute(p,"w14:paraId").or_else(||d.attribute(p,"paraId")).unwrap();
+    let output=direct_commit(&input,vec![serde_json::from_value(json!({"op":"insert_table","at":id,"position":"after","rows":1,"columns":1})).unwrap()]);
+    assert_table_grids(&output);
+    let out=xml(&output);
+    assert_eq!(out.descendants(out.root()).filter(|&n|local(&out,n)=="tbl").count(),2);
+    assert!(read(&output,"final").to_string().contains("anchor"));
+}
+
+#[test]
+fn unequal_section_spacing_updates_each_column_and_bounds_large_values() {
+    let source=fixture("", "");
+    let mut entries=parts(&source);
+    let raw=String::from_utf8(entries["word/document.xml"].clone()).unwrap().replace("<w:sectPr/>",r#"<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:cols w:num="2" w:equalWidth="0"><w:col w:w="3600" w:space="360"/><w:col w:w="3600" w:space="0"/></w:cols></w:sectPr>"#);
+    entries.insert("word/document.xml".into(),raw.into_bytes());
+    let mut zip=zip::ZipWriter::new(Cursor::new(vec![]));
+    for (name,bytes) in entries {zip.start_file(name,zip::write::SimpleFileOptions::default()).unwrap();zip.write_all(&bytes).unwrap();}
+    let input=zip.finish().unwrap().into_inner();
+    let operation=|value:Value|serde_json::from_value::<EditOp>(value).unwrap();
+    let output=commit(&input,vec![operation(json!({"op":"set_section_layout","column_spacing":27}))]);
+    let doc=xml(&output);let cols=doc.descendants(doc.root()).find(|&n|local(&doc,n)=="cols").unwrap();
+    let widths=doc.children(cols).filter(|&n|local(&doc,n)=="col").map(|n|(doc.attribute(n,"w").unwrap().to_owned(),doc.attribute(n,"space").unwrap().to_owned())).collect::<Vec<_>>();
+    assert_eq!(widths,vec![("3600".into(),"540".into()),("3600".into(),"0".into())]);
+    let huge=operation(json!({"op":"set_section_layout","columns":45,"column_spacing":1e20}));
+    let plan=Plan{base:SourceHash::from_bytes(&input),author:"validation".into(),change_mode:ChangeMode::Track,ops:vec![huge]};
+    assert!(!matches!(execute_plan(&input,&PlanRequest{plan,preview_key:None}),PlanResult::Previewed{..}));
+}
+
+#[test]
+fn inserted_row_and_column_group_aliases_bind_new_objects() {
+    let input=create("<table><tr><td>A</td><td>B</td></tr><tr><td>C</td><td>D</td></tr></table>");
+    let ops=vec![
+        json!({"op":"edit_table","at":"table:1","action":{"kind":"insert_rows","row":1,"position":"before","count":2,"as":"rows"}}),
+        json!({"op":"edit_table","at":"table:1","action":{"kind":"insert_columns","column":1,"position":"after","count":2,"as":"cols"}}),
+        json!({"op":"format_row","at":"$rows/row:2","format":{"repeating_header":true}}),
+        json!({"op":"format_cell","at":"$rows/row:1/cell:2","format":{"fill":"#FF0000"}}),
+        json!({"op":"format_cell","at":"$cols/row:1/cell:2","format":{"fill":"#0000FF"}}),
+    ];
+    let output=direct_commit(&input,ops.iter().cloned().map(|v|serde_json::from_value(v).unwrap()).collect());
+    assert_table_grids(&output);
+    let d=xml(&output);let rows=d.descendants(d.root()).filter(|&n|local(&d,n)=="tr").collect::<Vec<_>>();
+    assert_eq!(rows.len(),4);
+    assert!(child(&d,rows[1],"trPr").and_then(|p|child(&d,p,"tblHeader")).is_some());
+    let first_cells=d.children(rows[0]).filter(|&n|local(&d,n)=="tc").collect::<Vec<_>>();
+    let fill=|c|child(&d,c,"tcPr").and_then(|p|child(&d,p,"shd")).and_then(|s|d.attribute(s,"w:fill").or_else(||d.attribute(s,"fill")));
+    assert_eq!(fill(first_cells[2]),Some("0000FF"));
+    assert_eq!(fill(first_cells[3]),Some("FF0000"));
+    let duplicate=vec![ops[0].clone(),ops[0].clone()].into_iter().map(|v|serde_json::from_value(v).unwrap()).collect();
+    let plan=Plan{base:SourceHash::from_bytes(&input),author:"grid".into(),change_mode:ChangeMode::Direct,ops:duplicate};
+    assert!(matches!(execute_plan(&input,&PlanRequest{plan,preview_key:None}),PlanResult::Rejected{..}));
+}
+
+#[test]
+fn section_continue_action_rejects_false_instead_of_recording_an_empty_change() {
+    let input = fixture("", "");
+    let op: EditOp = serde_json::from_value(json!({"op":"set_section_layout","page_number_continue":false})).unwrap();
+    let result = command(Some(&input), Command::Edit(EditCommand {author:"validation".into(),change_mode:ChangeMode::Track,op}));
+    assert!(matches!(result, CommandResult::Rejected { .. }), "{result:?}");
+}
+
+#[test]
+fn public_rust_tuple_dimensions_reject_extreme_values_without_overflow() {
+    let input=fixture("", "");
+    let mut paragraph:EditOp=serde_json::from_value(json!({"op":"format_paragraph","at":AT,"first_line_indent":1})).unwrap();
+    let mut list:EditOp=serde_json::from_value(json!({"op":"set_list","at":[AT],"levels":[{"format":"decimal","label":"%1."}]})).unwrap();
+    let mut spacing:EditOp=serde_json::from_value(json!({"op":"set_section_layout","column_spacing":1})).unwrap();
+    let mut widths:EditOp=serde_json::from_value(json!({"op":"set_section_layout","column_widths":[1]})).unwrap();
+    if let EditOp::FormatParagraph{first_line_indent,..}=&mut paragraph {*first_line_indent=Some(SignedPoints(i64::MIN));}
+    if let EditOp::SetList{levels:Some(levels),..}=&mut list {levels[0].first_line_indent=Some(SignedPoints(i64::MIN));}
+    if let EditOp::SetSectionLayout{column_spacing,..}=&mut spacing {*column_spacing=Some(Points(-1));}
+    if let EditOp::SetSectionLayout{column_widths,..}=&mut widths {*column_widths=Some(vec![Points(i64::MAX)]);}
+    for op in [paragraph,list,spacing,widths] {
+        let plan=Plan{base:SourceHash::from_bytes(&input),author:"rust validation".into(),change_mode:ChangeMode::Track,ops:vec![op]};
+        assert!(matches!(execute_plan(&input,&PlanRequest{plan,preview_key:None}),PlanResult::Rejected{..}));
+    }
+}
+
+#[test]
+fn styled_indentation_modes_zero_clear_and_views_follow_one_logical_offset() {
+    let source=fixture(RICH_RUN,"<w:ind w:left=\"120\" w:firstLine=\"240\" w:firstLineChars=\"100\" w:leftChars=\"200\"/>");
+    let mut entries=parts(&source);
+    entries.insert("word/styles.xml".into(),format!(r#"<w:styles xmlns:w="{W}"><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:pPr><w:ind w:left="360" w:firstLine="180"/></w:pPr></w:style></w:styles>"#).into_bytes());
+    let mut zip=zip::ZipWriter::new(Cursor::new(vec![]));for(name,bytes)in entries{zip.start_file(name,zip::write::SimpleFileOptions::default()).unwrap();zip.write_all(&bytes).unwrap();}let source=zip.finish().unwrap().into_inner();
+    let hanging=commit(&source,vec![para_format(json!({"first_line_indent":-18,"indent_left":-6}))]);
+    assert!(read(&hanging,"final")["html"].as_str().unwrap().contains("text-indent:-18pt"));
+    assert!(read(&hanging,"original")["html"].as_str().unwrap().contains("text-indent:12pt"));
+    let raw=String::from_utf8(parts(&hanging)["word/document.xml"].clone()).unwrap();let direct=raw.split("<w:pPrChange").next().unwrap();
+    assert!(!direct.contains("firstLineChars")&&direct.contains("leftChars=\"200\""),"{raw}");
+    let restored=settle(&hanging,RevisionAction::Reject);assert!(String::from_utf8(parts(&restored)["word/document.xml"].clone()).unwrap().contains("firstLineChars=\"100\""));
+    let zero=commit(&settle(&hanging,RevisionAction::Accept),vec![para_format(json!({"first_line_indent":0}))]);
+    assert!(read(&zero,"final")["html"].as_str().unwrap().contains("text-indent:0pt"));
+    let cleared=commit(&settle(&zero,RevisionAction::Accept),vec![para_format(json!({"clear":["first_line_indent","indent_left"]}))]);
+    let html=read(&cleared,"final")["html"].as_str().unwrap().to_owned();assert!(html.contains("text-indent:9pt")&&html.contains("margin-left:18pt"),"{html}");
+    assert!(read(&cleared,"markup")["html"].as_str().unwrap().contains("before selected after"));
+}
+
+#[test]
+fn explicit_cell_rgb_removes_competing_themes_and_preserves_shading_pattern() {
+    let source=create("<table><tr><td>cell</td></tr></table>");
+    let mut entries=parts(&source);
+    let properties=r#"<w:tcBorders><w:top w:val="dotted" w:color="112233" w:themeColor="accent1" w:themeTint="80" w:themeShade="40" w:sz="8" w:space="3" w:shadow="true"/><w:bottom w:val="double" w:themeColor="accent2" w:sz="12"/></w:tcBorders><w:shd w:val="pct20" w:color="010203" w:themeColor="accent3" w:themeTint="80" w:fill="AABBCC" w:themeFill="accent4" w:themeFillTint="70" w:themeFillShade="50"/>"#;
+    let raw=String::from_utf8(entries["word/document.xml"].clone()).unwrap().replace("<w:tcPr/>",&format!("<w:tcPr>{properties}</w:tcPr>")).replace("<w:tcPr></w:tcPr>",&format!("<w:tcPr>{properties}</w:tcPr>"));
+    entries.insert("word/document.xml".into(),raw.into_bytes());
+    let mut zip=zip::ZipWriter::new(Cursor::new(vec![]));
+    for(name,bytes)in entries{zip.start_file(name,zip::write::SimpleFileOptions::default()).unwrap();zip.write_all(&bytes).unwrap();}
+    let input=zip.finish().unwrap().into_inner();
+    let op=serde_json::from_value(json!({"op":"format_cell","at":"table:1/row:1/cell:1","format":{"fill":"#FFEECC","borders":{"top":{"style":"single","color":"#445566"}}}})).unwrap();
+    let output=commit(&input,vec![op]);let doc=xml(&output);
+    let cell=doc.descendants(doc.root()).find(|&n|local(&doc,n)=="tc").unwrap();let p=child(&doc,cell,"tcPr").unwrap();
+    let shd=child(&doc,p,"shd").unwrap();
+    assert_eq!(doc.attribute(shd,"fill"),Some("FFEECC"));assert_eq!(doc.attribute(shd,"val"),Some("pct20"));
+    for a in ["themeFill","themeFillTint","themeFillShade"]{assert_eq!(doc.attribute(shd,a),None);}
+    assert_eq!(doc.attribute(shd,"color"),Some("010203"));assert_eq!(doc.attribute(shd,"themeColor"),Some("accent3"));assert_eq!(doc.attribute(shd,"themeTint"),Some("80"));
+    let borders=child(&doc,p,"tcBorders").unwrap();let top=child(&doc,borders,"top").unwrap();
+    assert_eq!(doc.attribute(top,"color"),Some("445566"));for a in ["themeColor","themeTint","themeShade"]{assert_eq!(doc.attribute(top,a),None);}
+    assert_eq!(doc.attribute(top,"sz"),Some("8"));assert_eq!(doc.attribute(top,"space"),Some("3"));assert_eq!(doc.attribute(top,"shadow"),Some("true"));
+    let source=xml(&input);let source_p=source.descendants(source.root()).find(|&n|local(&source,n)=="tcPr").unwrap();
+    assert_eq!(signature(&source,child(&source,child(&source,source_p,"tcBorders").unwrap(),"bottom").unwrap()),signature(&doc,child(&doc,borders,"bottom").unwrap()));
+    let rejected=settle(&output,RevisionAction::Reject);let rejected=xml(&rejected);let rejected_p=rejected.descendants(rejected.root()).find(|&n|local(&rejected,n)=="tcPr").unwrap();assert_eq!(signature(&source,source_p),signature(&rejected,rejected_p));
+}
+
+#[test]
+fn cached_list_definitions_support_cross_operation_continue_restart_and_settlement() {
+    let input=create("<p>A</p><p>B</p><p>C</p><p>D</p>");
+    let d=xml(&input);let ids=d.descendants(d.root()).filter(|&n|local(&d,n)=="p").map(|n|d.attribute(n,"w14:paraId").or_else(||d.attribute(n,"paraId")).unwrap().to_owned()).collect::<Vec<_>>();
+    let ops=vec![
+        json!({"op":"set_list","at":[ids[0]],"format":"decimal","level":1,"start":4}),
+        json!({"op":"set_list","at":[ids[1]],"num_id":1,"level":1}),
+        json!({"op":"set_list","at":[ids[2]],"num_id":1,"level":1,"start":9}),
+        json!({"op":"set_list","at":[ids[3]],"num_id":2,"level":1}),
+    ];
+    let changed=commit(&input,ops.into_iter().map(|v|serde_json::from_value(v).unwrap()).collect());
+    let ns=Document::parse_bytes(&parts(&changed)["word/numbering.xml"]).unwrap();
+    let starts=ns.descendants(ns.root()).filter(|&n|local(&ns,n)=="lvl").map(|n|child(&ns,n,"start").and_then(|s|ns.attribute(s,"w:val").or_else(||ns.attribute(s,"val"))).unwrap().to_string()).collect::<Vec<_>>();
+    assert_eq!(&starts[..3],&["1","4","1"]);
+    let html=read(&changed,"final").to_string();
+    assert!(html.contains("4.") && html.contains("5.") && html.contains("9.") && html.contains("10."),"{html}");
+    let rejected=settle(&changed,RevisionAction::Reject);
+    assert!(!String::from_utf8(parts(&rejected)["word/document.xml"].clone()).unwrap().contains("w:numPr"));
+    assert_eq!(parts(&changed)["word/numbering.xml"],parts(&rejected)["word/numbering.xml"]);
+    let accepted=settle(&changed,RevisionAction::Accept);
+    assert!(!String::from_utf8(parts(&accepted)["word/document.xml"].clone()).unwrap().contains("w:pPrChange"));
+    assert!(read(&accepted,"final").to_string().contains("10."));
+}
+
+#[test]
+fn section_page_number_start_respects_the_sdk_signed_integer_range() {
+    let input = fixture("", "");
+    let op: EditOp = serde_json::from_value(json!({"op":"set_section_layout","page_number_start":4294967295u32})).unwrap();
+    let result = command(Some(&input), Command::Edit(EditCommand {author:"validation".into(),change_mode:ChangeMode::Track,op}));
+    assert!(matches!(result, CommandResult::Rejected { .. }), "{result:?}");
+}
+
+#[test]
+fn cached_list_definitions_survive_in_plan_rejection_and_error_reports_are_flushed() {
+    let input=create("<p>A</p><p>B</p>");let d=xml(&input);
+    let ids=d.descendants(d.root()).filter(|&n|local(&d,n)=="p").map(|n|d.attribute(n,"w14:paraId").or_else(||d.attribute(n,"paraId")).unwrap().to_owned()).collect::<Vec<_>>();
+    let op=|v|serde_json::from_value::<EditOp>(v).unwrap();
+    let changed=commit(&input,vec![op(json!({"op":"set_list","at":[ids[0]],"format":"decimal","start":4})),op(json!({"op":"revision_settle","target":"all","action":"reject"})),op(json!({"op":"set_list","at":[ids[1]],"num_id":1}))]);
+    let raw=String::from_utf8(parts(&changed)["word/document.xml"].clone()).unwrap();assert_eq!(raw.matches("<w:numPr>").count(),1);assert!(read(&changed,"final").to_string().contains("4."));
+    let plan=Plan{base:SourceHash::from_bytes(&input),author:"cache".into(),change_mode:ChangeMode::Track,ops:vec![op(json!({"op":"set_list","at":[ids[0]],"start":4})),op(json!({"op":"format_paragraph","at":"$unknown","alignment":"center"}))]};
+    let PlanResult::Rejected{report:Some(report),..}=execute_plan(&input,&PlanRequest{plan,preview_key:None})else{panic!("expected rejected report")};
+    assert_eq!(report.completed,1);assert!(json!(report.ops[0].affected).to_string().contains("4."));
+}
+
+#[test]
+fn list_integer_boundaries_reject_invalid_int32_authoring() {
+    let input=fixture("","");
+    let check=|v|{let plan=Plan{base:SourceHash::from_bytes(&input),author:"bounds".into(),change_mode:ChangeMode::Track,ops:vec![serde_json::from_value::<EditOp>(v).unwrap()]};canonical_json(&plan)};
+    for invalid in [0u32,i32::MAX as u32+1,u32::MAX] {
+        assert!(check(json!({"op":"set_list","at":[AT],"start":invalid})).is_err());
+        assert!(check(json!({"op":"set_list","at":[AT],"num_id":invalid})).is_err());
+        assert!(check(json!({"op":"set_list","at":[AT],"levels":[{"format":"decimal","label":"%1.","start":invalid}]})).is_err());
+    }
+    assert!(check(json!({"op":"set_list","at":[AT],"start":i32::MAX})).is_ok());
+    assert!(check(json!({"op":"set_list","at":[AT],"num_id":i32::MAX})).is_ok());
+}
+
+#[test]
+fn list_id_exhaustion_blocks_allocations_but_allows_existing_continuation() {
+    let input=create("<ol><li>A</li></ol><p>B</p>");let mut entries=parts(&input);
+    let max=i32::MAX.to_string();
+    let ns=String::from_utf8(entries["word/numbering.xml"].clone()).unwrap();
+    assert!(ns.contains("w:numId=\"1\""),"{ns}");
+    entries.insert("word/numbering.xml".into(),ns.replace("w:numId=\"1\"",&format!("w:numId=\"{max}\"")).replace("w:abstractNumId=\"1\"",&format!("w:abstractNumId=\"{max}\"")).replace("<w:abstractNumId w:val=\"1\"",&format!("<w:abstractNumId w:val=\"{max}\"")).into_bytes());
+    let raw=String::from_utf8(entries["word/document.xml"].clone()).unwrap();entries.insert("word/document.xml".into(),raw.replace("<w:numId w:val=\"1\"",&format!("<w:numId w:val=\"{max}\"")).into_bytes());
+    let mut z=zip::ZipWriter::new(Cursor::new(vec![]));for(name,bytes)in entries{z.start_file(name,zip::write::SimpleFileOptions::default()).unwrap();z.write_all(&bytes).unwrap();}let input=z.finish().unwrap().into_inner();
+    let d=xml(&input);let p=d.descendants(d.root()).filter(|&n|local(&d,n)=="p").last().unwrap();let at=d.attribute(p,"w14:paraId").or_else(||d.attribute(p,"paraId")).unwrap();
+    let op=|v|serde_json::from_value::<EditOp>(v).unwrap();
+    let continued=commit(&input,vec![op(json!({"op":"set_list","at":[at],"num_id":i32::MAX}))]);
+    assert!(String::from_utf8(parts(&continued)["word/document.xml"].clone()).unwrap().contains(&format!("w:val=\"{max}\"")));
+    for settings in [json!({"format":"decimal"}),json!({"num_id":i32::MAX,"start":2})]{let mut v=json!({"op":"set_list","at":[at]});v.as_object_mut().unwrap().extend(settings.as_object().unwrap().clone());let plan=Plan{base:SourceHash::from_bytes(&input),author:"bounds".into(),change_mode:ChangeMode::Track,ops:vec![op(v)]};assert!(matches!(execute_plan(&input,&PlanRequest{plan,preview_key:None}),PlanResult::Rejected{..}));}
+}
+
+#[test]
+fn prose_cannot_join_a_protected_continuation_list() {
+    let input=create("<ol><li><p>A</p><p>Continuation</p></li></ol><p>Prose</p>");let d=xml(&input);
+    let p=d.descendants(d.root()).filter(|&n|local(&d,n)=="p").last().unwrap();let at=d.attribute(p,"w14:paraId").or_else(||d.attribute(p,"paraId")).unwrap();
+    let n=d.descendants(d.root()).find(|&n|local(&d,n)=="numId").unwrap();let num_id=d.attribute(n,"w:val").or_else(||d.attribute(n,"val")).unwrap().parse::<u32>().unwrap();
+    let plan=Plan{base:SourceHash::from_bytes(&input),author:"guard".into(),change_mode:ChangeMode::Track,ops:vec![serde_json::from_value(json!({"op":"set_list","at":[at],"num_id":num_id})).unwrap()]};
+    assert!(matches!(execute_plan(&input,&PlanRequest{plan,preview_key:None}),PlanResult::Rejected{..}));
+}

@@ -171,6 +171,40 @@ Direct structural edits use `edit_table` with a source-bound table handle and a 
 
 `insert_table` accepts a paragraph `at`, `position`, `rows`, `columns`, and optional `as` alias. Dimensions are 1–100; this is direct-only and section-boundary anchors are rejected. Later operations can target the inserted table alias. Structural deletion preserves unused relationships; it does not collect media from elsewhere in the document.
 
+Document reads expose `sections`: each section has a one-based compatibility index, a stable `section:<terminating-paragraph-ID>` handle (or `section:final`), paragraph boundaries, dimensions, margins, columns, numbering, first-page mode and explicit/inherited story references. `set_section_layout` accepts `section_handle` instead of `section`; handles follow their terminating paragraph when preceding sections are inserted. In a plan, `section:$alias` identifies the boundary on an inserted paragraph alias.
+
+`set_section_boundary` inserts a boundary after body paragraph `at`, optionally with `break_type`; `remove: true` removes that boundary and merges preceding content into the following section using the following layout. Insertion clones the containing section properties. Removal preserves the following section's effective header/footer chains and the final body section. Structural boundaries require direct mode; pending paragraph/section property revisions and tracked boundary edits are rejected explicitly.
+
+In HTML creation and header/footer setters, empty `<page-number/>` and `<page-count/>` helpers author Word PAGE and NUMPAGES fields. `<span data-docx-field="PAGE">1</span>` and NUMPAGES also accept a decimal cached result; Word recalculates dirty fields. These helpers do not calculate pagination or replace existing footer content. Other field instructions remain unsupported for authoring.
+
+Row/column insert actions can assign an `as` group alias. For inserted rows, `$group/row:1` addresses the first inserted row and `$group/row:1/cell:2` its second cell. For inserted columns, `$group/row:2/cell:1` addresses the first inserted cell in the second row. Group coordinates refer to the inserted strip at creation and remain bound to those objects as positions shift. A bare group alias is ambiguous and is rejected.
+
+Section layout edits use `set_section_layout`. Choose `page_size` (`letter`, `legal`,
+`a4`, `a3`, `a5`) or paired positive `width`/`height` in points; `orientation`
+normalizes their ordering. `columns`, `column_spacing`, `column_widths` and
+`column_separator` configure equal or unequal columns within the section text
+area. Setting `columns` selects equal-width mode unless `column_widths` is also
+supplied; spacing/separator-only edits preserve existing unequal widths. `break_type` accepts `nextPage`, `continuous`, `oddPage`, `evenPage` or
+`nextColumn`. `page_number_format` and `page_number_start` configure numbering;
+`page_number_continue: true` removes a direct restart, while false is rejected.
+Page-number starts are limited to 1–2,147,483,647, matching Word’s signed integer representation.
+Visible numbering is authored separately with `<page-number/>` and `<page-count/>`.
+Omitted fields preserve source properties. Section property changes honor the
+plan's tracking mode and reject overlapping pending section-property changes.
+
+`set_first_page_mode` sets a section's `enabled` boolean without deleting stored
+first-page headers or footers. Setting first-kind chrome also enables that mode,
+including when an imported `titlePg` currently holds a false value. Disabling,
+re-enabling and rejecting tracked mode changes preserve the stored stories.
+HTML section metadata communicates layout intent; browser previews do not
+establish Word pagination fidelity.
+
+Typed `set_list` membership changes on a list containing explicit continuation paragraphs are currently rejected, including edits to the numbered parent or a continuation independently. This preserves persisted item membership and tracked restoration. Multi-paragraph item creation and reconstruction remain available through HTML.
+
+List IDs and start values are bounded to 1–2147483647. For new definitions, an operation-level `start` applies only to the selected level; other levels default to 1. An explicit per-level `start` takes precedence. Continuing an existing list allocates no definition and remains supported when the source numbering ID range is exhausted. Typed operations cannot join or alter a list instance containing persisted continuation paragraphs.
+
+List definition review scaling can be checked with `cargo run --release -p docxdriver-core --example list_scaling -- PARAS OPS`. Numbering definitions are cached and indexed for a plan, then serialized at report/output boundaries.
+
 ### Word-level redlines
 
 Tracked plain-text replacements automatically compute word-level redlines in

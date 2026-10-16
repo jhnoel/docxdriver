@@ -137,6 +137,18 @@ class EditTable:
         return value
 
 @dataclass
+class FormatCell:
+    at: str
+    format: dict
+    def to_dict(self):
+        value = {"op": "format_cell"}
+        if self.at is not None:
+            value["at"] = self.at
+        if self.format is not None:
+            value["format"] = self.format
+        return value
+
+@dataclass
 class FormatParagraph:
     at: str
     alignment: str | None = None
@@ -170,6 +182,30 @@ class FormatParagraph:
             value["space_before"] = self.space_before
         if self.style is not None:
             value["style"] = self.style
+        return value
+
+@dataclass
+class FormatRow:
+    at: str
+    format: dict
+    def to_dict(self):
+        value = {"op": "format_row"}
+        if self.at is not None:
+            value["at"] = self.at
+        if self.format is not None:
+            value["format"] = self.format
+        return value
+
+@dataclass
+class FormatTable:
+    at: str
+    format: dict
+    def to_dict(self):
+        value = {"op": "format_table"}
+        if self.at is not None:
+            value["at"] = self.at
+        if self.format is not None:
+            value["format"] = self.format
         return value
 
 @dataclass
@@ -446,6 +482,21 @@ class SetPageMargins:
         return value
 
 @dataclass
+class SetSectionBoundary:
+    at: str
+    break_type: str | None = None
+    remove: bool | None = None
+    def to_dict(self):
+        value = {"op": "set_section_boundary"}
+        if self.at is not None:
+            value["at"] = self.at
+        if self.break_type is not None:
+            value["break_type"] = self.break_type
+        if self.remove is not None:
+            value["remove"] = self.remove
+        return value
+
+@dataclass
 class SetSectionLayout:
     break_type: str | None = None
     column_separator: bool | None = None
@@ -459,6 +510,7 @@ class SetSectionLayout:
     page_number_start: int | None = None
     page_size: str | None = None
     section: int | None = None
+    section_handle: str | None = None
     width: float | None = None
     def to_dict(self):
         value = {"op": "set_section_layout"}
@@ -486,6 +538,8 @@ class SetSectionLayout:
             value["page_size"] = self.page_size
         if self.section is not None:
             value["section"] = self.section
+        if self.section_handle is not None:
+            value["section_handle"] = self.section_handle
         if self.width is not None:
             value["width"] = self.width
         return value
@@ -652,6 +706,12 @@ class EditTable:
     at: str
     def to_dict(self) -> dict: ...
 
+class FormatCell:
+    def __init__(self, at: str, format: dict): ...
+    at: str
+    format: dict
+    def to_dict(self) -> dict: ...
+
 class FormatParagraph:
     def __init__(self, at: str, alignment: str | None = None, clear: list | None = None, first_line_indent: float | None = None, indent_left: float | None = None, indent_right: float | None = None, line_spacing: dict | None = None, space_after: float | None = None, space_before: float | None = None, style: str | None = None): ...
     at: str
@@ -664,6 +724,18 @@ class FormatParagraph:
     space_after: float | None
     space_before: float | None
     style: str | None
+    def to_dict(self) -> dict: ...
+
+class FormatRow:
+    def __init__(self, at: str, format: dict): ...
+    at: str
+    format: dict
+    def to_dict(self) -> dict: ...
+
+class FormatTable:
+    def __init__(self, at: str, format: dict): ...
+    at: str
+    format: dict
     def to_dict(self) -> dict: ...
 
 class FormatText:
@@ -785,8 +857,15 @@ class SetPageMargins:
     top: float | None
     def to_dict(self) -> dict: ...
 
+class SetSectionBoundary:
+    def __init__(self, at: str, break_type: str | None = None, remove: bool | None = None): ...
+    at: str
+    break_type: str | None
+    remove: bool | None
+    def to_dict(self) -> dict: ...
+
 class SetSectionLayout:
-    def __init__(self, break_type: str | None = None, column_separator: bool | None = None, column_spacing: float | None = None, column_widths: list | None = None, columns: int | None = None, height: float | None = None, orientation: str | None = None, page_number_continue: bool | None = None, page_number_format: str | None = None, page_number_start: int | None = None, page_size: str | None = None, section: int | None = None, width: float | None = None): ...
+    def __init__(self, break_type: str | None = None, column_separator: bool | None = None, column_spacing: float | None = None, column_widths: list | None = None, columns: int | None = None, height: float | None = None, orientation: str | None = None, page_number_continue: bool | None = None, page_number_format: str | None = None, page_number_start: int | None = None, page_size: str | None = None, section: int | None = None, section_handle: str | None = None, width: float | None = None): ...
     break_type: str | None
     column_separator: bool | None
     column_spacing: float | None
@@ -799,6 +878,7 @@ class SetSectionLayout:
     page_number_start: int | None
     page_size: str | None
     section: int | None
+    section_handle: str | None
     width: float | None
     def to_dict(self) -> dict: ...
 
@@ -970,12 +1050,23 @@ Delete the paragraphs listed in \`at\` (tracked deletion by default).
 
 \`EditTable(action: dict, at: str)\`
 
-Direct structural table edits using a source-bound table handle. action.kind is insert_rows/delete_rows/insert_columns/delete_columns/merge_cells/split_cell/delete; coordinates and counts are one-based. Insert/delete grid operations and merge require an unmerged rectangular grid. Split keeps content in the first resulting cell; merge concatenates content in row-major order. Rejects tracked mode and tables containing unresolved revisions, bookmarks, comments, fields or content controls. Delete the table instead of its final row or column.
+Direct structural table edits using a source-bound table handle. action.kind is insert_rows/delete_rows/insert_columns/delete_columns/merge_cells/split_cell/delete; coordinates and counts are one-based. Insert/delete grid operations and merge require an unmerged rectangular grid. Split keeps content in the first resulting cell; merge concatenates content in row-major order. Insert actions optionally accept as for a group alias: inserted rows use $name/row:N[/cell:N]; inserted columns use $name/row:N/cell:N within the inserted strip. Rejects tracked mode and tables containing unresolved revisions, bookmarks, comments, fields or content controls. Delete the table instead of its final row or column.
 
 | Field | Type | Required |
 | --- | --- | --- |
 | \`action\` | \`dict\` | yes |
 | \`at\` | \`str\` | yes |
+
+### FormatCell
+
+\`FormatCell(at: str, format: dict)\`
+
+Format a source-bound table:N/row:N/cell:N handle using width, borders, fill (#RRGGBB), padding, vertical_alignment (top/center/bottom), and clear. Cell indices are physical; a vertically merged logical cell is addressed through its restart cell and applies to all backing continuation cells. Continuation targets and legacy hMerge targets are rejected. Tracked plans preserve prior cell property bags. Text, merge structure and nested content remain unchanged.
+
+| Field | Type | Required |
+| --- | --- | --- |
+| \`at\` | \`str\` | yes |
+| \`format\` | \`dict\` | yes |
 
 ### FormatParagraph
 
@@ -995,6 +1086,28 @@ Apply paragraph formatting to the paragraph at \`at\`: \`style\`, \`alignment\` 
 | \`space_after\` | \`float | None\` | no |
 | \`space_before\` | \`float | None\` | no |
 | \`style\` | \`str | None\` | no |
+
+### FormatRow
+
+\`FormatRow(at: str, format: dict)\`
+
+Format a source-bound table:N/row:N handle. format accepts height in points, height_rule (auto/at_least/exact), repeating_header, allow_split and clear. False explicitly disables header repetition or splitting; clear inherits. Tracked plans preserve the complete prior row property bag for rejection.
+
+| Field | Type | Required |
+| --- | --- | --- |
+| \`at\` | \`str\` | yes |
+| \`format\` | \`dict\` | yes |
+
+### FormatTable
+
+\`FormatTable(at: str, format: dict)\`
+
+Format the table at a source-bound table:N handle or inserted $alias. format accepts width (unit auto, points/value, percent/value), column_widths (positive points, exactly matching the grid), layout (fixed/autofit), alignment, borders, cell_spacing, padding and an existing table style ID. Omitted values preserve source properties; clear removes supported direct settings and wins over set. Grid dimensions cannot be cleared. Tracked plans snapshot table and grid properties; settle a pending property change before editing that bag again.
+
+| Field | Type | Required |
+| --- | --- | --- |
+| \`at\` | \`str\` | yes |
+| \`format\` | \`dict\` | yes |
 
 ### FormatText
 
@@ -1156,7 +1269,7 @@ Set section header chrome from inner HTML (\`with\`); optional \`section\` (defa
 
 \`SetList(at: list, format: str | None = None, level: int | None = None, levels: list | None = None, num_id: int | None = None, remove: bool | None = None, start: int | None = None)\`
 
-Assign explicitly selected paragraphs to a new list (format defaults to decimal), continue an existing num_id, or remove membership with remove=True. level is 0..8; start is positive and creates an isolated restarted instance. Optional levels defines 1..9 per-level format/label/start/restart_after, signed indent_left/indent_right/first_line_indent and marker_bold/marker_italic/marker_font/marker_color for a new list. Label placeholders reference this or ancestor levels (%1..%9). Existing definitions are never restyled. Membership changes are tracked; settle pending paragraph changes first. Definitions remain after rejection for safe reference restoration.
+Assign explicitly selected paragraphs to a new list (format defaults to decimal), continue an existing num_id, or remove membership with remove=True. level is 0..8; IDs/starts are 1..2147483647. start creates an isolated restarted instance, and on new lists applies only to the selected level (explicit per-level start wins). Optional levels defines 1..9 per-level format/label/start/restart_after, signed indent_left/indent_right/first_line_indent and marker_bold/marker_italic/marker_font/marker_color for a new list. Label placeholders reference this or ancestor levels (%1..%9). Existing definitions are never restyled. Membership changes are tracked; settle pending paragraph changes first. Definitions remain after rejection for safe reference restoration. Typed membership changes on lists containing explicit continuation paragraphs are rejected, including numbered parents; HTML multi-paragraph creation and reconstruction are supported.
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -1185,9 +1298,21 @@ Set selected nonnegative page margins in points for a section (default 1): top/r
 | \`section\` | \`int | None\` | no |
 | \`top\` | \`float | None\` | no |
 
+### SetSectionBoundary
+
+\`SetSectionBoundary(at: str, break_type: str | None = None, remove: bool | None = None)\`
+
+Insert a section boundary after body paragraph at; remove=True merges its section into the following section using the following layout while preserving effective following story chains. break_type selects nextPage/continuous/oddPage/evenPage/nextColumn. Direct mode only; tracked structural boundaries and pending property revisions are rejected. The final body section is preserved. Inventory handles section:<paragraph ID> remain stable; section:$alias references an inserted paragraph boundary.
+
+| Field | Type | Required |
+| --- | --- | --- |
+| \`at\` | \`str\` | yes |
+| \`break_type\` | \`str | None\` | no |
+| \`remove\` | \`bool | None\` | no |
+
 ### SetSectionLayout
 
-\`SetSectionLayout(break_type: str | None = None, column_separator: bool | None = None, column_spacing: float | None = None, column_widths: list | None = None, columns: int | None = None, height: float | None = None, orientation: str | None = None, page_number_continue: bool | None = None, page_number_format: str | None = None, page_number_start: int | None = None, page_size: str | None = None, section: int | None = None, width: float | None = None)\`
+\`SetSectionLayout(break_type: str | None = None, column_separator: bool | None = None, column_spacing: float | None = None, column_widths: list | None = None, columns: int | None = None, height: float | None = None, orientation: str | None = None, page_number_continue: bool | None = None, page_number_format: str | None = None, page_number_start: int | None = None, page_size: str | None = None, section: int | None = None, section_handle: str | None = None, width: float | None = None)\`
 
 Selectively set section layout (section defaults to 1): page_size letter/legal/a4/a3/a5 or paired width/height in points; orientation portrait/landscape normalizes dimensions. Columns 1..45 with column_spacing, column_widths and column_separator; break_type nextPage/continuous/oddPage/evenPage/nextColumn; page_number_format, page_number_start or page_number_continue=true. Omission preserves properties; tracking snapshots section properties while preserving story relationships. Pending property changes must be settled first.
 
@@ -1205,6 +1330,7 @@ Selectively set section layout (section defaults to 1): page_size letter/legal/a
 | \`page_number_start\` | \`int | None\` | no |
 | \`page_size\` | \`str | None\` | no |
 | \`section\` | \`int | None\` | no |
+| \`section_handle\` | \`str | None\` | no |
 | \`width\` | \`float | None\` | no |
 
 # END GENERATED OPERATION DOCS

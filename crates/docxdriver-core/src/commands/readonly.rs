@@ -461,9 +461,7 @@ pub fn build_package(command: &Value) -> Result<(Package, String, Value), Outcom
                 body = body.replace(&marker, &sect_i);
             } else if i + 1 == chrome.extra_sections.len() {
                 // Last section: final body-level sectPr.
-                if !sect_i.is_empty() || !extra.slots.is_empty() || extra.title_page {
-                    body.push_str(&format!("<w:sectPr>{sect_i}</w:sectPr>"));
-                }
+                body.push_str(&format!("<w:sectPr>{sect_i}</w:sectPr>"));
             }
         }
 

@@ -48,11 +48,6 @@ __pycache__/
 /test-docs/test_comments2.docx
 ~$*
 
-# Unintegrated formatting experiments; remove these rules when the engine
-# exposes section boundaries and inserted row/column group aliases.
-/crates/docxdriver-core/src/commands/sections.rs
-/packages/docxdriver/test/formatting-operations.test.mjs
-
 # Compiled and packaged outputs; keep only WASM build documentation.
 scripts/openxml-validator/bin/
 scripts/openxml-validator/obj/

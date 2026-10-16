@@ -2410,6 +2410,60 @@ fn run_properties_are_written_in_sequence_order() {
     assert!(order.is_empty(), "out of CT_RPr sequence order at {order:?}: {rpr}");
 }
 
+#[test]
+fn section_boundary_replaces_existing_break_type_without_duplicate_attributes() {
+    let source = package_with_body(&format!(
+        r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"><w:body><w:p w14:paraId="{SOURCE_ID}"><w:r><w:t>First</w:t></w:r></w:p><w:sectPr><w:type w:val="nextPage"/></w:sectPr></w:body></w:document>"#
+    ));
+    let insert: EditOp = serde_json::from_value(serde_json::json!({
+        "op": "set_section_boundary", "at": SOURCE_ID, "break_type": "continuous"
+    })).unwrap();
+    let output = commit_plan(&source, vec![insert]);
+    let xml = document_xml(&output);
+    xmloxide::tree::Document::parse_str(&xml).expect("boundary output must be well-formed XML");
+    let read = read_listing(&output, "document", None);
+    assert_eq!(read["sections"][0]["break_type"], "continuous");
+    assert_eq!(read["sections"][1]["break_type"], "nextPage");
+}
+
+#[test]
+fn section_handles_survive_boundaries_and_merging_preserves_final_layout() {
+    let source = document(&[(SOURCE_ID,"First"),(SECOND_ID,"Second")]);
+    let insert:EditOp=serde_json::from_value(serde_json::json!({"op":"set_section_boundary","at":SOURCE_ID,"break_type":"continuous"})).unwrap();
+    let mut request=plan(&source,vec![insert.clone()]);request.change_mode=ChangeMode::Track;
+    assert!(matches!(execute_plan(&source,&PlanRequest{plan:request,preview_key:None}),PlanResult::Rejected{..}));
+    let mut request=plan(&source,vec![insert]);request.change_mode=ChangeMode::Direct;
+    let key=PreviewKey::new(&request);
+    let PlanResult::Committed {bytes:split,..}=execute_plan(&source,&PlanRequest{plan:request,preview_key:Some(key)})else{panic!("insert failed")};
+    let read=read_listing(&split,"document",None);
+    assert_eq!(read["sections"].as_array().unwrap().len(),2,"{read}");
+    assert_eq!(read["sections"][0]["handle"],format!("section:{SOURCE_ID}"));
+    assert_eq!(read["sections"][1]["handle"],"section:final");
+    let layout:EditOp=serde_json::from_value(serde_json::json!({"op":"set_section_layout","section_handle":"section:final","orientation":"landscape"})).unwrap();
+    let mut request=plan(&split,vec![layout]);request.change_mode=ChangeMode::Direct;let key=PreviewKey::new(&request);
+    let PlanResult::Committed {bytes:landscape,..}=execute_plan(&split,&PlanRequest{plan:request,preview_key:Some(key)})else{panic!("layout failed")};
+    let remove:EditOp=serde_json::from_value(serde_json::json!({"op":"set_section_boundary","at":SOURCE_ID,"remove":true})).unwrap();
+    let mut request=plan(&landscape,vec![remove]);request.change_mode=ChangeMode::Direct;let key=PreviewKey::new(&request);
+    let PlanResult::Committed {bytes:merged,..}=execute_plan(&landscape,&PlanRequest{plan:request,preview_key:Some(key)})else{panic!("remove failed")};
+    let xml=document_xml(&merged);assert_eq!(xml.matches("<w:sectPr").count(),1,"{xml}");
+    assert!(xml.contains("w:orient=\"landscape\"")&&xml.contains("First")&&xml.contains("Second"),"{xml}");
+}
+
+#[test]
+fn section_boundary_handles_follow_inserted_paragraph_aliases() {
+    let source=document(&[(SOURCE_ID,"First"),(SECOND_ID,"Second")]);
+    let ops:Vec<EditOp>=serde_json::from_value(serde_json::json!([
+        {"op":"insert_paragraph","at":SOURCE_ID,"position":"after","with":"Middle","as":"middle"},
+        {"op":"set_section_boundary","at":"$middle","break_type":"continuous"},
+        {"op":"set_section_layout","section_handle":"section:$middle","columns":2}
+    ])).unwrap();
+    let result=commit_plan(&source,ops);
+    let doc=read_listing(&result,"document",None);
+    assert_eq!(doc["sections"].as_array().unwrap().len(),2,"{doc}");
+    assert_eq!(doc["sections"][0]["columns"]["num"],"2","{doc}");
+    assert!(doc["sections"][0]["handle"].as_str().unwrap().starts_with("section:"));
+}
+
 fn commit_auto_diff(bytes: &[u8], op: EditOp) -> Vec<u8> {
     let mut p = plan(bytes, vec![op]);
     p.change_mode = ChangeMode::Track;

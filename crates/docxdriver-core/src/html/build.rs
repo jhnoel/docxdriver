@@ -40,6 +40,7 @@ pub struct CreateDeferred {
     /// Image payloads `(mime, bytes)` in placeholder order (`__IMG{n}__`).
     pub images: Vec<(String, Vec<u8>)>,
     pub lists: Vec<super::ListAttrs>,
+    continuation_bookmarks: usize,
 }
 
 impl CreateDeferred {
@@ -87,6 +88,7 @@ pub fn image_placeholder(i: usize) -> String {
 /// A piece of paragraph content with an optional hyperlink href index into
 /// [`CreateDeferred::hyperlinks`].
 struct LinkedPiece {
+    field_instr: Option<String>,
     href_idx: Option<usize>,
     piece: InsPiece,
 }
@@ -169,6 +171,7 @@ pub fn body_and_chrome_from_html(
         };
         total_paras += count;
         if !is_last {
+            if !sect_body.trim_end().ends_with("</w:p>") { total_paras += 1; }
             // Mid-section boundary: placeholder filled by build_package.
             body.push_str(&attach_sectpr_placeholder(
                 &sect_body,
@@ -194,17 +197,27 @@ pub fn body_and_chrome_from_html(
 }
 
 fn attach_sectpr_placeholder(body_xml: &str, placeholder: &str) -> String {
-    if let Some(pos) = body_xml.rfind("</w:p>") {
-        let mut out = String::with_capacity(body_xml.len() + placeholder.len() + 48);
-        out.push_str(&body_xml[..pos]);
-        out.push_str("<w:pPr><w:sectPr>");
-        out.push_str(placeholder);
-        out.push_str("</w:sectPr></w:pPr>");
-        out.push_str(&body_xml[pos..]);
-        out
-    } else {
-        format!("{body_xml}<w:p><w:pPr><w:sectPr>{placeholder}</w:sectPr></w:pPr></w:p>")
+    let section = format!("<w:sectPr>{placeholder}</w:sectPr>");
+    // Creation emits only body-level p/tbl blocks. A final table's last
+    // descendant paragraph is a cell paragraph, never a section anchor.
+    // A boundary must live on a body paragraph, with pPr before its content.
+    if body_xml.trim_end().ends_with("</w:p>") {
+        if let Some(start) = body_xml.rfind("<w:p>") {
+            let tail = &body_xml[start..];
+            let position = if let Some(end) = tail.find("</w:pPr>") {
+                start + end
+            } else {
+                start + "<w:p>".len()
+            };
+            let properties = if tail.starts_with("<w:p><w:pPr>") {
+                section
+            } else {
+                format!("<w:pPr>{section}</w:pPr>")
+            };
+            return format!("{}{}{}", &body_xml[..position], properties, &body_xml[position..]);
+        }
     }
+    format!("{body_xml}<w:p><w:pPr>{section}</w:pPr></w:p>")
 }
 
 #[derive(Debug, Clone, Default)]
@@ -269,10 +282,7 @@ fn parse_create_sections(
         if rest.is_empty() {
             break;
         }
-        let next_sect = rest
-            .find("\n<section")
-            .or_else(|| rest.find("<section"))
-            .unwrap_or(rest.len());
+        let next_sect = rest.find("<section").unwrap_or(rest.len());
         let chunk = rest[..next_sect].trim();
         if !chunk.is_empty() {
             if !cur.body_html.is_empty() {
@@ -395,7 +405,9 @@ fn body_xml_from_html_with(
                 if let Some((id, level)) = continuation {
                     // Empty bookmark is a schema-valid, persistent application marker.
                     // numId=0 suppresses the marker in Word; membership is explicit.
-                    let bookmark = format!("<w:bookmarkStart w:id=\"{}\" w:name=\"_docxdriver_cont_{id}_{level}\"/><w:bookmarkEnd w:id=\"{}\"/>", 100000 + para_count, 100000 + para_count);
+                    let bookmark_id=100000 + deferred.continuation_bookmarks;
+                    deferred.continuation_bookmarks += 1;
+                    let bookmark = format!("<w:bookmarkStart w:id=\"{bookmark_id}\" w:name=\"_docxdriver_cont_{id}_{level}_{bookmark_id}\"/><w:bookmarkEnd w:id=\"{bookmark_id}\"/>");
                     paragraph = paragraph.replacen("</w:p>", &format!("{bookmark}</w:p>"), 1);
                 }
                 pieces.clear();
@@ -421,11 +433,9 @@ fn body_xml_from_html_with(
                             .into(),
                     );
                 }
-                if atom.field().is_some() {
-                    return Err(
-                        "fields are not supported in create — their results are computed by Word"
-                            .into(),
-                    );
+                if let Some(instr) = atom.field() {
+                    if !matches!(instr.trim(), "PAGE"|"NUMPAGES") { return Err("only PAGE and NUMPAGES fields can be authored".into()); }
+                    if !matches!(atom, Atom::Char {ch,..} if ch.is_ascii_digit()) { return Err("PAGE/NUMPAGES cached results must contain decimal digits".into()); }
                 }
                 let href_idx = atom.link().map(|href| deferred.hyperlink_idx(href));
                 match atom {
@@ -440,22 +450,26 @@ fn body_xml_from_html_with(
                     }
                     Atom::Char { ch, fmt, .. } => match pieces.last_mut() {
                         Some(LinkedPiece {
+                            field_instr: open_field,
                             href_idx: open_href,
                             piece: InsPiece::Text(text, piece_fmt),
-                        }) if *open_href == href_idx && piece_fmt == fmt =>
+                        }) if *open_href == href_idx && open_field.as_deref() == atom.field() && piece_fmt == fmt =>
                         {
                             text.push(*ch);
                         }
                         _ => pieces.push(LinkedPiece {
+                            field_instr: atom.field().map(str::to_string),
                             href_idx,
                             piece: InsPiece::Text(ch.to_string(), *fmt),
                         }),
                     },
                     Atom::Br { kind, .. } => pieces.push(LinkedPiece {
+                            field_instr: atom.field().map(str::to_string),
                         href_idx,
                         piece: InsPiece::Br(*kind),
                     }),
                     Atom::Tab { .. } => pieces.push(LinkedPiece {
+                            field_instr: atom.field().map(str::to_string),
                         href_idx,
                         piece: InsPiece::Tab,
                     }),
@@ -472,6 +486,7 @@ fn body_xml_from_html_with(
                         )
                     }
                     Atom::Equation { text, display, .. } => pieces.push(LinkedPiece {
+                            field_instr: atom.field().map(str::to_string),
                         href_idx,
                         piece: InsPiece::Equation {
                             mathml: text.clone(),
@@ -493,6 +508,7 @@ fn body_xml_from_html_with(
                         let (mime, bytes) = crate::media::parse_data_url(src)?;
                         let idx = deferred.image_idx(mime, bytes);
                         pieces.push(LinkedPiece {
+                            field_instr: atom.field().map(str::to_string),
                             href_idx,
                             piece: InsPiece::Image {
                                 rid: image_placeholder(idx),
@@ -638,12 +654,15 @@ fn paragraph_xml(
     while i < pieces.len() {
         let href = pieces[i].href_idx;
         let mut j = i + 1;
-        while j < pieces.len() && pieces[j].href_idx == href {
+        while j < pieces.len() && pieces[j].href_idx == href && pieces[j].field_instr == pieces[i].field_instr {
             j += 1;
         }
         let mut inner = String::new();
         for p in &pieces[i..j] {
             inner.push_str(&run_xml(&p.piece)?);
+        }
+        if let Some(instr) = &pieces[i].field_instr {
+            inner=format!("<w:fldSimple w:instr=\"{}\" w:dirty=\"true\">{inner}</w:fldSimple>", escape_attr(instr));
         }
         if let Some(idx) = href {
             runs.push_str(&format!(

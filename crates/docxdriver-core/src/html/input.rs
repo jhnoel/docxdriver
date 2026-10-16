@@ -14,7 +14,7 @@ pub fn normalize(input: &str, document: bool) -> Result<String, String> {
         .replace("<header/>", "<header></header>")
         .replace("<footer/>", "<footer></footer>");
     let input = regex_lite::Regex::new(
-        r"<(image|comment-start|comment-end|header|footer|section)\b([^<>]*?)/>",
+        r"<(image|comment-start|comment-end|header|footer|section|page-number|page-count)\b([^<>]*?)/>",
     )
     .expect("constant regex")
     .replace_all(&input, "<$1$2></$1>");
@@ -522,6 +522,10 @@ impl Lower<'_> {
                         .replace("<math ", "<math data-docx-legacy-display=\"auto\" ")
                 };
                 Ok(format!("<equation>{}</equation>", escape_text(&math)))
+            }
+            "page-number" | "page-count" => {
+                if !self.children(n, true)?.trim().is_empty() { return Err("page-number/page-count helpers must be empty".into()); }
+                Ok(format!("<field instr=\"{}\">1</field>",if name=="page-number" {"PAGE"}else{"NUMPAGES"}))
             }
             "field" | "format" | "footnote" | "endnote" => {
                 let attrs = self.attrs(

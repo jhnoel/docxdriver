@@ -346,19 +346,22 @@ pub fn set_section_layout(
     if page_size.is_some() || width.is_some() || orientation.is_some() {
         if (orient == "landscape" && w < h) || (orient == "portrait" && w > h) { std::mem::swap(&mut w, &mut h); }
     }
-    let area = w - dimension("pgMar", "left", 1440) - dimension("pgMar", "right", 1440) - dimension("pgMar", "gutter", 0);
+    let area = w.saturating_sub(dimension("pgMar", "left", 1440)).saturating_sub(dimension("pgMar", "right", 1440)).saturating_sub(dimension("pgMar", "gutter", 0));
     let cols = xml.child_w(sect, "cols");
     let old_widths: Vec<i64> = cols.map(|n| xml.doc.children(n).filter(|&n| xml.is_w(n, "col")).filter_map(|n| xml.attr(n, "w").and_then(|v| v.parse().ok())).collect()).unwrap_or_default();
     let count = columns.map(|v| v as i64).or_else(|| column_widths.as_ref().map(|v| v.len() as i64)).unwrap_or_else(|| dimension("cols", "num", if old_widths.is_empty() { 1 } else { old_widths.len() as i64 }));
     let gap = column_spacing.map(|p| p.0).unwrap_or_else(|| dimension("cols", "space", 720));
+    let original_gaps = cols.map(|n| xml.doc.children(n).filter(|&n| xml.is_w(n, "col")).collect::<Vec<_>>()).unwrap_or_default();
+    let inherited_gap_total = original_gaps.iter().take(original_gaps.len().saturating_sub(1)).fold(0_i64, |total, &n| total.saturating_add(xml.attr(n, "space").and_then(|v| v.parse::<i64>().ok()).unwrap_or(gap)));
+    let gap_total = if column_spacing.is_none() && column_widths.is_none() && columns.is_none() && !old_widths.is_empty() { inherited_gap_total } else { gap.saturating_mul(count.saturating_sub(1)) };
     let unequal: Vec<i64> = column_widths.as_ref().map(|v| v.iter().map(|p| p.0).collect()).unwrap_or_else(|| old_widths.clone());
     let changes_columns = columns.is_some() || column_spacing.is_some() || column_widths.is_some() || column_separator.is_some();
     if changes_columns || width.is_some() || orientation.is_some() || page_size.is_some() {
-        if area <= 0 || gap.saturating_mul(count - 1) >= area { return Err(Outcome::blocked("columns do not fit the section text area")); }
-        if !unequal.is_empty() && columns.is_none() && (unequal.iter().sum::<i64>() + gap * (count - 1) > area) {
+        if area <= 0 || gap_total >= area { return Err(Outcome::blocked("columns do not fit the section text area")); }
+        if !unequal.is_empty() && columns.is_none() && (unequal.iter().fold(0_i64, |total, width| total.saturating_add(*width)).saturating_add(gap_total) > area) {
             return Err(Outcome::blocked("column widths and spacing exceed the section text area"));
         }
-        if let Some(widths) = column_widths { if widths.iter().map(|p| p.0).sum::<i64>() + gap * (count - 1) > area { return Err(Outcome::blocked("column widths and spacing exceed the section text area")); } }
+        if let Some(widths) = column_widths { if widths.iter().fold(0_i64, |total, p| total.saturating_add(p.0)).saturating_add(gap_total) > area { return Err(Outcome::blocked("column widths and spacing exceed the section text area")); } }
     }
     if tracked { snapshot_section_properties(xml, sect, author, ctx)?; }
     if page_size.is_some() || width.is_some() || orientation.is_some() {
@@ -374,6 +377,10 @@ pub fn set_section_layout(
         if column_widths.is_some() || columns.is_some() {
             for child in xml.doc.children(node).collect::<Vec<_>>() { if xml.is_w(child, "col") { xml.doc.remove_node(child); } }
             set_attr(xml, node, "w:equalWidth", if column_widths.is_some() { "0" } else { "1" });
+        }
+        if column_spacing.is_some() && column_widths.is_none() && columns.is_none() {
+            let children: Vec<_> = xml.doc.children(node).filter(|&n| xml.is_w(n, "col")).collect();
+            for (index, &col) in children.iter().enumerate() { set_twips_attr(xml, col, "space", if index + 1 == children.len() { 0 } else { gap }); }
         }
         if let Some(widths) = column_widths {
             for (index, width) in widths.iter().enumerate() {

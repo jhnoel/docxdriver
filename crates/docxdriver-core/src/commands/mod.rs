@@ -3,6 +3,7 @@ pub(crate) mod comments;
 pub(crate) mod equations;
 pub(crate) mod headers;
 pub(crate) mod layout;
+pub(crate) mod sections;
 pub(crate) mod lists;
 pub(crate) mod tables;
 pub(crate) mod table_structure;
@@ -32,6 +33,7 @@ pub(crate) struct WorkState {
     pub(crate) package: Package,
     pub(crate) xml: DocxXml,
     pub(crate) mutated: bool,
+    pub(crate) list_state: Option<lists::ListState>,
     pub(crate) table_handles: HashMap<String, xmloxide::tree::NodeId>,
     pub(crate) table_positions: HashMap<xmloxide::tree::NodeId, String>,
     /// sha256 of the exact input package bytes — the inspection `source`, the
@@ -42,6 +44,9 @@ pub(crate) struct WorkState {
 }
 
 impl WorkState {
+    pub(crate) fn flush_lists(&mut self) {
+        if let Some(lists)=&mut self.list_state {lists.flush(&mut self.package);}
+    }
     pub(crate) fn parse(bytes: &[u8]) -> Result<WorkState, Outcome> {
         let package =
             Package::from_bytes(bytes).map_err(|error| Outcome::error(error.to_string()))?;
@@ -60,6 +65,7 @@ impl WorkState {
         let table_positions = table_positions(&xml);
         let table_handles = table_positions.iter().map(|(node, address)| (address.clone(), *node)).collect();
         Ok(WorkState {
+            list_state: None,
             table_handles,
             table_positions,
             package,
@@ -71,7 +77,7 @@ impl WorkState {
 }
 
 /// Source handles bind to XML objects, rather than shifting ordinal positions.
-fn table_positions(xml: &DocxXml) -> HashMap<xmloxide::tree::NodeId, String> {
+pub(crate) fn table_positions(xml: &DocxXml) -> HashMap<xmloxide::tree::NodeId, String> {
     let mut map = HashMap::new();
     for (ti, table) in tables::tables(xml).into_iter().enumerate() {
         let at = format!("table:{}", ti + 1);
@@ -104,6 +110,7 @@ pub(crate) fn emit(mut state: WorkState, outcome: Outcome, ctx: &ExecCtx) -> Out
     if outcome.status != crate::outcome::Status::Ok || !state.mutated || ctx.dry_run {
         return outcome;
     }
+    state.flush_lists();
     let mut package = state.package;
     let document_part = package.document_part_name();
     let seed_hash = state.source_hash.unwrap_or_else(|| {
@@ -159,9 +166,9 @@ pub(crate) fn run_typed_edit(
         let Some(current) = state.table_positions.get(node) else { return Outcome::error(format!("table handle {at:?} targets a deleted object")); };
         *at = current.clone();
     }
-    let before: std::collections::HashSet<_> = state.xml.revision_elements().into_iter().collect();
+    let before = state.xml.revision_checkpoint();
     let outcome = run_typed_edit_inner(state, &resolved, author, mode, index, source, seed, ctx);
-    state.xml.renumber_new_revision_ids(&before);
+    state.xml.renumber_allocated_revision_ids(before);
     if matches!(op, EditOp::EditTable { .. } | EditOp::InsertTable { .. } | EditOp::DeleteParagraphs { .. } | EditOp::ReplaceParagraph { .. }) {
         state.table_positions = table_positions(&state.xml);
         if let EditOp::InsertTable { alias: Some(alias), .. } = op {
@@ -170,6 +177,22 @@ pub(crate) fn run_typed_edit(
                 for (node, current) in &state.table_positions {
                     if current == at { state.table_handles.insert(format!("${alias}"), *node); }
                     else if let Some(suffix) = current.strip_prefix(&prefix) { state.table_handles.insert(format!("${alias}/{suffix}"), *node); }
+                }
+            }
+        }
+        if let EditOp::EditTable { action, .. } = op {
+            let alias = match action {
+                crate::api::TableEdit::InsertRows { alias, .. } | crate::api::TableEdit::InsertColumns { alias, .. } => alias.as_ref(),
+                _ => None,
+            };
+            if let (Some(alias), Some(result)) = (alias, outcome.result.as_ref()) {
+                if let Some(paths) = result.get("alias_paths").and_then(Value::as_object) {
+                    let current_nodes: HashMap<_,_> = state.table_positions.iter().map(|(node, at)|(at.as_str(), *node)).collect();
+                    for (suffix, address) in paths {
+                        if let Some(address) = address.as_str() {
+                            if let Some(node) = current_nodes.get(address) { state.table_handles.insert(format!("${alias}/{suffix}"), *node); }
+                        }
+                    }
                 }
             }
         }
@@ -205,7 +228,7 @@ fn run_typed_edit_inner(
             }
         };
     }
-    let tracked = matches!(mode, crate::api::ChangeMode::Track);
+    let tracked = mode != crate::api::ChangeMode::Direct;
     let plan_seed = *plan_seed;
     match op {
         EditOp::ReplaceEquation {
@@ -365,9 +388,11 @@ fn run_typed_edit_inner(
         EditOp::SetList { at, num_id, format, level, start, remove, levels } => {
             let mut addresses = Vec::new();
             for address in at { addresses.push(para_id!(address)); }
-            mutate(state, |pkg, xml, source| {
-                lists::set_list(pkg, xml, source, &addresses, *num_id, format.as_deref(), *level, *start, *remove, levels.as_deref(), author, ctx)
-            })
+            let cache=state.list_state.get_or_insert_with(||lists::ListState::new(&state.xml));
+            match lists::set_list_cached(&mut state.package,&mut state.xml,state.source_hash,&addresses,*num_id,format.as_deref(),*level,*start,*remove,levels.as_deref(),author,ctx,cache) {
+                Ok((summary,result))=>{state.mutated=true;Outcome::ok(summary,result)},
+                Err(outcome)=>outcome,
+            }
         }
         EditOp::InsertParagraph {
             at,
@@ -431,9 +456,13 @@ fn run_typed_edit_inner(
                 gutter.map(|p| p.0),
             )
         }),
-        EditOp::SetSectionLayout { section, .. } => mutate(state, |_pkg, xml, _| {
-            layout::set_section_layout(xml, section.unwrap_or(1) as usize, op, tracked, author, ctx)
+        EditOp::SetSectionLayout { section, section_handle, .. } => mutate(state, |pkg, xml, source| {
+            if let Some(id)=section_handle.as_deref().and_then(|v|v.strip_prefix("section:")).filter(|v|*v!="final") { typed::resolve_paragraph_by_para_id(xml,pkg,source,id)?; }
+            sections::ensure_final(xml)?;
+            let selected=sections::select(xml,*section,section_handle.as_deref())?;
+            layout::set_section_layout(xml, selected, op, tracked, author, ctx)
         }),
+        EditOp::SetSectionBoundary {at,remove,break_type} => { let at=para_id!(at); mutate(state,|pkg,xml,source|sections::boundary(pkg,xml,source,&at,*remove,break_type.as_deref(),tracked)) },
         EditOp::SetFirstPageMode { section, enabled } => mutate(state, |_pkg, xml, _| {
             layout::set_first_page_mode(xml, section.unwrap_or(1) as usize, *enabled, tracked, author, ctx)
         }),

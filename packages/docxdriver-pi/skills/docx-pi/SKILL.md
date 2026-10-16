@@ -95,6 +95,8 @@ For explicit list membership use `set_list` with paragraph addresses in `at`. `f
 
 Use explicit direct plans for `insert_table` and `edit_table`; tracked structural edits are rejected. Read table handles before editing. Insert/delete rows or columns and merge operate on rectangular unmerged grids; split merged cells before other grid edits. Merge preserves content in row-major order; split keeps content in the first resulting cell. Tables with comments, bookmarks, fields, content controls or pending revisions require cleanup before structural edits.
 
+Assign `as` on row/column insert actions when later formatting needs the new objects. Inserted row groups use `$group/row:N` and `$group/row:N/cell:N`; inserted column groups use `$group/row:N/cell:N` where the cell number is within the new strip. These aliases bind objects rather than shifting positions.
+
 ### Word-level redlines
 
 Tracked plain-text replacements automatically compute word-level redlines in
