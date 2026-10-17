@@ -37,10 +37,20 @@ except ImportError:
 
 
 class Document:
-    """One .docx as bytes. Reads never write; commit returns a new Document."""
+    """One .docx as bytes: Document(Path("a.docx").read_bytes()).
+    Read: markup(view), comments(), revisions(), styles(), assets(),
+    find(query). Edit: review(Plan(ops=[...])) previews, then
+    commit(key) returns the edited Document; save its .data."""
 
     def __init__(self, data):
         self.data = data
+
+    def __repr__(self):
+        return (
+            "<Document " + str(len(self.data)) + " bytes. Read: markup(view='markup'|'final'|'original'), "
+            "comments(), revisions(), styles(), assets(), find(query). Edit: review(Plan(ops=[...])) "
+            "-> Review, then commit(key) -> Document; save with Path(p).write_bytes(doc.data).>"
+        )
 
     def markup(self, view="markup"):
         """The body as HTML-like markup with stable paragraph ids.
@@ -68,8 +78,10 @@ class Document:
         return json.loads(_docx_find(self.data, query, ignore_case))
 
     def review(self, plan):
-        """Preview a Plan (or its dict) without writing. Read .report; the
-        commit key is issued with it."""
+        """Preview a Plan (or its dict) without writing. Read .report.
+        In a sandbox, review.key is None: the tool result shows the commit
+        key between "DOCX COMMIT KEY" delimiters; type it into
+        doc.commit(key) in a later submission. Natively review.key is set."""
         plan = json.dumps(plan.to_dict() if hasattr(plan, "to_dict") else plan)
         reviewed = json.loads(_docx_review(self.data, plan))
         return Review(reviewed["report"], reviewed.get("key"))
@@ -81,11 +93,24 @@ class Document:
 
 
 class Review:
-    """A previewed plan: .report lists each op's outcome and affected markup."""
+    """A previewed plan: .report lists each op's outcome and affected markup.
+    Commit with doc.commit(key). In a sandbox .key is None: the tool result
+    shows the key between "DOCX COMMIT KEY" delimiters; type it back."""
 
     def __init__(self, report, key=None):
         self.report = report
         self.key = key
+
+    def __repr__(self):
+        report = self.report or {}
+        done = str(report.get("completed", 0)) + " of " + str(len(report.get("ops") or [])) + " ops applied"
+        if self.key is not None:
+            return "<Review: " + done + "; commit with doc.commit(" + repr(self.key) + ")>"
+        return (
+            "<Review: " + done + ". Read .report. The commit key is not available to code: "
+            "it appears in this tool result between DOCX COMMIT KEY delimiters. In a later "
+            "submission, type it into doc.commit(\"KEY\") on the Document you reviewed.>"
+        )
 
 
 def create(paragraphs=None, html=None):

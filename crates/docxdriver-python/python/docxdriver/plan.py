@@ -552,6 +552,12 @@ def RejectRevision(target: str) -> RevisionSettle:
 
 @dataclass
 class Plan:
+    """A typed edit plan, previewed with doc.review(plan):
+    Plan(ops=[...], author="docxdriver", change_mode="track" or "direct").
+    Ops are builders, e.g. ReplaceText(at=id, select="old", with_="new"),
+    Revise(within="sentence").replace("old", "new"), InsertParagraph,
+    DeleteParagraphs, FormatText, CommentAdd, AcceptRevision(id). Paragraph
+    ids come from doc.markup() or doc.find(text)."""
     author: str = "docxdriver"
     change_mode: str = "track"
     ops: list = None
