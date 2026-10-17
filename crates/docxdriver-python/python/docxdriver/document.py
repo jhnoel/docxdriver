@@ -9,8 +9,8 @@
 #   Path("a.docx").write_bytes(doc.data)
 #
 # Commit keys prove a review was read. The host keeps each reviewed plan
-# under its key. A sandbox host shows the key only to the model, beside the
-# report, so committing means typing the key back in a later submission;
+# under its key. A sandbox host shows the key only to the model, at the end
+# of the review report, so committing means typing it back in a later submission;
 # there review.key is None. Natively, with no model, review.key is set.
 #
 # Valid CPython and within Monty's subset (no inheritance or method
@@ -78,9 +78,9 @@ class Document:
         return json.loads(_docx_find(self.data, query, ignore_case))
 
     def review(self, plan):
-        """Preview a Plan (or its dict) without writing. Read .report.
-        In a sandbox, review.key is None: the tool result shows the commit
-        key between "DOCX COMMIT KEY" delimiters; type it into
+        """Preview a Plan (or its dict) without writing.
+        In a sandbox, review.key is None: the host shows the review report
+        in the tool result, ending with its commit key; type the key into
         doc.commit(key) in a later submission. Natively review.key is set."""
         plan = json.dumps(plan.to_dict() if hasattr(plan, "to_dict") else plan)
         reviewed = json.loads(_docx_review(self.data, plan))
@@ -94,8 +94,8 @@ class Document:
 
 class Review:
     """A previewed plan: .report lists each op's outcome and affected markup.
-    Commit with doc.commit(key). In a sandbox .key is None: the tool result
-    shows the key between "DOCX COMMIT KEY" delimiters; type it back."""
+    Commit with doc.commit(key). In a sandbox .key is None: the review
+    report in the tool result ends with the key; type it back."""
 
     def __init__(self, report, key=None):
         self.report = report
@@ -107,9 +107,9 @@ class Review:
         if self.key is not None:
             return "<Review: " + done + "; commit with doc.commit(" + repr(self.key) + ")>"
         return (
-            "<Review: " + done + ". Read .report. The commit key is not available to code: "
-            "it appears in this tool result between DOCX COMMIT KEY delimiters. In a later "
-            "submission, type it into doc.commit(\"KEY\") on the Document you reviewed.>"
+            "<Review: " + done + ". The commit key is not available to code: the review "
+            "report in this tool result (DOCX REVIEW) ends with it. In a later submission, "
+            "type it into doc.commit(\"KEY\") on the Document you reviewed.>"
         )
 
 

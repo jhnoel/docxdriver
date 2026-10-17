@@ -21,8 +21,8 @@
 //! Commit keys prove the model read a review. `_docx_review` must not
 //! return the key to Python: the host keeps the plan and core's preview key
 //! under a key it issues, unguessable and not derived from the plan, and
-//! shows it to the model only beside the report. `_docx_commit` looks the
-//! key up, commits through core, and forgets it.
+//! shows it to the model only at the end of the review report.
+//! `_docx_commit` looks the key up, commits through core, and forgets it.
 
 /// Plan vocabulary: op dataclasses, `Revise`, `AcceptRevision`/`RejectRevision`,
 /// `Plan`. Same text as the `docxdriver.plan` module of the PyPI package.
