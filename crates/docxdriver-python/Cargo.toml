@@ -13,4 +13,5 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 docxdriver-core = { path = "../docxdriver-core" }
 pyo3 = { version = "0.27.2", features = ["abi3-py310"] }
+serde = "1"
 serde_json = "1"

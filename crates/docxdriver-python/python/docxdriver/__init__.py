@@ -1,6 +1,7 @@
 """Python SDK for the docxdriver document engine."""
 import json
 from ._core import __version__, canonical_plan_json, execute_request
+from .document import Document, Review, create
 
 
 def run_request(data, request):

@@ -1,6 +1,6 @@
 [package]
 name = "docxdriver-monty-repl"
-description = "Python plan builders and host-wrapper sources for running docxdriver plans in a Monty sandbox"
+description = "The docxdriver Python API (Document, plan builders) as source for Monty sandbox hosts"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
