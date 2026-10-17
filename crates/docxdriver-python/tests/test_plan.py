@@ -1,20 +1,20 @@
 """docxdriver.plan builders against the native engine; run after installing the wheel."""
 import hashlib
 import json
-from pathlib import Path
 import unittest
 
 from docxdriver import canonical_plan_json, plan, run_command, run_plan
 
-SOURCE = Path(__file__).resolve().parents[2] / 'docxdriver-monty-repl/sandbox/plan.py'
-
 
 class PlanBuilderTests(unittest.TestCase):
-    def test_module_is_the_shared_source(self):
-        self.assertEqual(Path(plan.__file__).read_text(encoding='utf-8'), SOURCE.read_text(encoding='utf-8'))
+    def test_source_ships_as_text(self):
+        # Sandbox hosts preload this text into Monty.
+        from importlib.resources import files
+        source = files('docxdriver').joinpath('plan.py').read_text(encoding='utf-8')
+        self.assertIn('class Plan:', source)
 
     def test_builders_emit_canonical_plans(self):
-        built = plan.Plan(author='Builder', operations=[
+        built = plan.Plan(author='Builder', ops=[
             plan.ReplaceText(at='0F537164', select='Hello', with_='Goodbye'),
             plan.Revise(at='0F537164').replace('world', 'there'),
             plan.AcceptRevision('all'),
@@ -27,7 +27,7 @@ class PlanBuilderTests(unittest.TestCase):
     def test_builder_plan_previews_and_commits(self):
         data = run_command(None, 'create', html='<p>Hello world.</p>')['bytes']
         paragraph = run_command(data, 'read', read_kind='document_ui', view='final')['result']['paragraphs'][0]['id']
-        built = plan.Plan(author='Builder', operations=[
+        built = plan.Plan(author='Builder', ops=[
             plan.ReplaceText(at=paragraph, select='Hello', with_='Goodbye')]).to_dict()
         built['base'] = 'sha256:' + hashlib.sha256(data).hexdigest()
         preview = run_plan(data, built)

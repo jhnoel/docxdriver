@@ -50,12 +50,12 @@ fn exposes_exactly_the_five_docx_tools() {
         .unwrap();
     let schema = serde_json::to_value(edit.input_schema.as_ref()).unwrap();
     assert_eq!(
-        schema["properties"]["plan"]["anyOf"][0]["properties"]["operations"]["items"]["$defs"]
+        schema["properties"]["plan"]["anyOf"][0]["properties"]["ops"]["items"]["$defs"]
             ["ParagraphAddress"]["type"],
         "string"
     );
     assert_eq!(
-        schema["properties"]["plan"]["anyOf"][0]["properties"]["operations"]["items"]["$defs"]
+        schema["properties"]["plan"]["anyOf"][0]["properties"]["ops"]["items"]["$defs"]
             ["Points"]["type"],
         "number"
     );
@@ -113,7 +113,7 @@ fn edit_requires_preview_before_commit_and_writes_atomically() {
         .unwrap()
         .0;
     let plan = serde_json::json!({
-        "operations": [{"op": "replace_paragraph", "at": paragraph_id, "with": "changed"}]
+        "ops": [{"op": "replace_paragraph", "at": paragraph_id, "with": "changed"}]
     });
     let preview = server
         .call_named(
@@ -153,6 +153,7 @@ fn stale_preview_is_rejected_without_writing() {
         .split_once('"')
         .unwrap()
         .0;
+    // Legacy alias of "ops".
     let plan = serde_json::json!({
         "operations": [{"op": "replace_paragraph", "at": paragraph_id, "with": "changed"}]
     });

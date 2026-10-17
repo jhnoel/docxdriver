@@ -52,7 +52,7 @@ HTML text ambiguous:
         if "Payment is due within" in m.group(2):
             ops.append(ReplaceText(at=m.group(1), select=m.group(2),
                                    with_=re.sub(r'within \d+ days', 'within 45 days', m.group(2))))
-    plan = Plan(author="Pi", operations=ops)
+    plan = Plan(author="Pi", ops=ops)
     review = docx_review("contract.docx", plan)
     if review is not None:
         for edit in review.edits:
@@ -66,7 +66,7 @@ with pending tracked changes, grep the `view="final"` projection instead.
 ## Example
 
     original = docx_read("contract.docx").markup
-    plan = Plan(author="Pi", change_mode="track", operations=[
+    plan = Plan(author="Pi", change_mode="track", ops=[
         ReplaceText(at="2673269E", select="thirty days", with_="sixty days"),
         FormatText(at="2673269E", select="sixty days", bold=True),
     ])

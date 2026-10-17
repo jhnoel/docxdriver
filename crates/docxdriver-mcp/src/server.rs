@@ -18,6 +18,11 @@ use serde_json::{json, Map, Value};
 use std::path::Path;
 use std::sync::Arc;
 
+/// Inline plan operation list key, as in core's `Plan`.
+const PLAN_OPS: &str = "ops";
+/// Legacy inline plan key accepted for `ops`.
+const PLAN_OPS_ALIAS: &str = "operations";
+
 const TOOL_NAMES: [&str; 5] = [
     "docx_create",
     "docx_read",
@@ -276,7 +281,7 @@ impl DocxServer {
             "topic": input.topic.unwrap_or_else(|| "all".into()),
             "tools": TOOL_NAMES,
             "plan": {
-                "operations": edit_op_schema(),
+                "ops": edit_op_schema(),
                 "preview": "preview_key required for commit"
             },
             "read": {
@@ -367,12 +372,16 @@ fn parse_plan(
             Err(diagnostic) => Ok(ParsedPlan::Rejected(diagnostic)),
         };
     }
-    let operations = object
-        .get("operations")
-        .cloned()
-        .ok_or_else(|| ToolFailure::invalid("inline plan requires operations"))?;
+    // "ops" matches core's Plan; "operations" is the legacy alias.
+    let operations = match (object.get(PLAN_OPS), object.get(PLAN_OPS_ALIAS)) {
+        (Some(_), Some(_)) => {
+            return Err(ToolFailure::invalid("pass ops or operations, not both"));
+        }
+        (Some(ops), None) | (None, Some(ops)) => ops.clone(),
+        (None, None) => return Err(ToolFailure::invalid("inline plan requires ops")),
+    };
     let ops: Vec<EditOp> = serde_json::from_value(operations)
-        .map_err(|error| ToolFailure::invalid(format!("invalid plan operations: {error}")))?;
+        .map_err(|error| ToolFailure::invalid(format!("invalid plan ops: {error}")))?;
     let author = object
         .get("author")
         .and_then(Value::as_str)
@@ -618,21 +627,8 @@ fn rewrite_schema_refs(value: &mut Value) {
 }
 
 fn edit_schema() -> Map<String, Value> {
-    let operation_schema = edit_op_schema();
-    let inline = object_schema(
-        [
-            (
-                "operations",
-                json!({"type": "array", "minItems": 1, "items": operation_schema}),
-            ),
-            ("author", json!({"type": "string"})),
-            (
-                "change_mode",
-                json!({"type": "string", "enum": ["track", "direct"]}),
-            ),
-        ],
-        &["operations"],
-    );
+    let inline = inline_plan_schema(PLAN_OPS);
+    let legacy = inline_plan_schema(PLAN_OPS_ALIAS);
     let file = object_schema(
         [(
             "file",
@@ -643,10 +639,26 @@ fn edit_schema() -> Map<String, Value> {
     object_schema(
         [
             ("path", path_schema()),
-            ("plan", json!({"anyOf": [inline, file]})),
+            ("plan", json!({"anyOf": [inline, file, legacy]})),
             ("preview_key", json!({"type": "string"})),
         ],
         &["path", "plan"],
+    )
+}
+
+/// Inline plan whose operation list is keyed by `ops_key`.
+fn inline_plan_schema(ops_key: &'static str) -> Map<String, Value> {
+    let ops = json!({"type": "array", "minItems": 1, "items": edit_op_schema()});
+    object_schema(
+        [
+            (ops_key, ops),
+            ("author", json!({"type": "string"})),
+            (
+                "change_mode",
+                json!({"type": "string", "enum": ["track", "direct"]}),
+            ),
+        ],
+        &[ops_key],
     )
 }
 

@@ -22,7 +22,7 @@ from docxdriver.plan import Plan, ReplaceText
 
 data = open("contract.docx", "rb").read()
 
-plan = Plan(author="Reviewer", operations=[
+plan = Plan(author="Reviewer", ops=[
     ReplaceText(at="0F537164", select="thirty", with_="sixty"),
 ]).to_dict()                      # {"author", "change_mode", "ops"}
 plan["base"] = "sha256:" + hashlib.sha256(data).hexdigest()
@@ -37,9 +37,12 @@ from importlib.resources import files
 PLAN = files("docxdriver").joinpath("plan.py").read_text(encoding="utf-8")
 ```
 
-`docxdriver/plan.py` is generated from
-`crates/docxdriver-monty-repl/sandbox/plan.py`; regenerate from the repository
+Rust hosts get the same text as `docxdriver_monty_repl::PLAN`. The op
+dataclasses are generated from the core schema; regenerate from the repository
 root with `python scripts/generate-python-plan.py`.
+
+Version 0.4.0 removed the `docxdriver.repl` sandbox host from this package. Its
+source remains in `experimental/python-repl-host` for hosts to vendor.
 
 Build and install a wheel from the repository root:
 

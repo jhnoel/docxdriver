@@ -1,25 +1,25 @@
 # docxdriver-monty-repl
 
-Python sources for Rust hosts that run
-[docxdriver](https://github.com/jhnoel/docxdriver) plans in a
+The [docxdriver](https://github.com/jhnoel/docxdriver) plan vocabulary as
+Python source, for Rust hosts that run a
 [Monty](https://github.com/pydantic/monty) sandbox:
 
-- `PLAN`: plan vocabulary (`Plan`, op dataclasses, `Revise`, `Quote`, `Term`,
-  `Inline`, `AcceptRevision`/`RejectRevision`). Same text as
-  the `docxdriver.plan` module of the `docxdriver` PyPI package.
-- `HOST_WRAPPERS`: `docx_*`/`quote_*` functions calling private
-  `_docx_*`/`_quote_*`/`_term_*`/`_inline_*` callbacks the host implements,
-  and their result values (`ReadResult`, `ReviewResult`, `QuoteResult`, ...).
-- `PRELUDE`, `STUBS`, `REFERENCE`: combined source, Monty type stubs, and the
-  agent-facing reference.
+- `PLAN`: `Plan`, the typed op dataclasses (`ReplaceText`, `FormatText`, ...),
+  `Revise`, `AcceptRevision`/`RejectRevision`. Same text as the
+  `docxdriver.plan` module of the `docxdriver` PyPI package.
+- `PLAN_STUBS`: Monty type-checker stubs for `PLAN`.
+- `PLAN_REFERENCE`: agent-facing Markdown reference.
 
-`Plan(...).to_dict()` returns `{"author", "change_mode", "ops"}`. Add `base`
-(`sha256:<hex>` of the source document) before
-`docxdriver_core::parse_plan_json`.
+Preload `PLAN` into the sandbox. `Plan(author=..., ops=[...]).to_dict()`
+returns `{"author", "change_mode", "ops"}`; add `base` (`sha256:<hex>` of the
+source document) and pass the JSON to `docxdriver_core::parse_plan_json`.
+Host functions such as reading documents and committing plans are the host's
+own.
 
 ## Development
 
-`sandbox/` is the single source. After changing it, the core schema, or
+`sandbox/plan.py` links to `crates/docxdriver-python/python/docxdriver/plan.py`,
+the single file. After changing it, the core schema, or
 `sandbox/plan-capabilities.json`, regenerate from the repository root:
 
 ```sh

@@ -1,8 +1,7 @@
-//! PLAN runs in CPython, its builders emit plans core accepts, and every
-//! published copy carries the same text.
+//! PLAN runs in CPython and its builders emit plans core accepts.
 
 use docxdriver_core::parse_plan_json;
-use docxdriver_monty_repl::{HOST_WRAPPERS, PLAN, PRELUDE};
+use docxdriver_monty_repl::PLAN;
 use std::path::Path;
 use std::process::{Command, Output};
 
@@ -15,7 +14,7 @@ import json, sys
 namespace = {}
 exec(sys.stdin.read(), namespace)
 globals().update(namespace)
-plan = Plan(author="Tester", operations=[
+plan = Plan(author="Tester", ops=[
     AcceptRevision("all"),
     ReplaceText(at="0F537164", select="thirty", with_="sixty", occurrence=1),
     Revise("rent within thirty days").replace("thirty", "sixty").replace("rent", "the rent"),
@@ -60,17 +59,6 @@ fn builders_emit_core_plans() {
     let plan = parse_plan_json(&json).unwrap_or_else(|d| panic!("{d:?}\n{json}"));
     assert_eq!(plan.author, "Tester");
     assert_eq!(plan.ops.len(), 7);
-}
-
-#[test]
-fn prelude_runs_and_sdk_copy_matches() {
-    // PyPI docxdriver ships docxdriver/plan.py; it must be PLAN verbatim.
-    let sdk = include_str!("../../docxdriver-python/python/docxdriver/plan.py");
-    assert_eq!(sdk, PLAN);
-    assert_eq!(PRELUDE, format!("{PLAN}\n{HOST_WRAPPERS}"));
-
-    let output = python(&["-I", "-c", "exec(__import__('sys').stdin.read(), {})"], PRELUDE);
-    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
 }
 
 #[test]

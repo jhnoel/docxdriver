@@ -1,46 +1,12 @@
-# docxdriver plan builders: typed edit operations, structured quotation
-# values and the Plan container. Plan(...).to_dict() is the core plan JSON
-# without its source-bound "base".
+# docxdriver plan vocabulary: typed edit operations, Revise,
+# Accept/RejectRevision and the Plan container. Plan(...).to_dict() is the
+# docxdriver-core plan JSON without its source-bound "base".
 #
-# Valid CPython and within Monty's subset (dataclasses, no inheritance).
-# Source: crates/docxdriver-monty-repl/sandbox/plan.py. The GENERATED region
-# comes from the core schema; regenerate with
-# `python scripts/generate-python-plan.py`.
+# Valid CPython and within Monty's subset (dataclasses, no inheritance);
+# docxdriver-monty-repl embeds this file as PLAN. The GENERATED region comes
+# from the core schema; regenerate with `python scripts/generate-python-plan.py`.
 
 from dataclasses import dataclass
-
-class Term:
-    def __init__(self, text: str, style: str = "double"):
-        self.text = text
-        self.style = style
-    def to_dict(self):
-        return {"$kind": "term", "text": self.text, "style": self.style}
-
-class Inline:
-    def __init__(self, parts: list):
-        self.parts = parts
-    def to_dict(self):
-        return {"$kind": "inline", "parts": [part.to_dict() if hasattr(part, "to_dict") else part for part in self.parts]}
-
-class Quote:
-    def __init__(self, source: str, at: str, select: str, occurrence: int = 1, style: str = "double"):
-        self.source = source
-        self.at = at
-        self.select = select
-        self.occurrence = occurrence
-        self.style = style
-        self.changes = []
-
-    def omit(self, select: str, occurrence: int = 1, marker: str = "…"):
-        self.changes.append({"kind": "omit", "select": select, "occurrence": occurrence, "marker": marker})
-        return self
-
-    def bracket(self, select: str, replacement: str, occurrence: int = 1):
-        self.changes.append({"kind": "bracket", "select": select, "replacement": replacement, "occurrence": occurrence})
-        return self
-
-    def to_dict(self):
-        return {"$kind": "quote", "source": self.source, "at": self.at, "select": self.select, "occurrence": self.occurrence, "style": self.style, "changes": self.changes}
 
 # BEGIN GENERATED DATACLASSES
 @dataclass
@@ -274,7 +240,7 @@ class InsertParagraph:
     position: str
     as_: str | None = None
     style: str | None = None
-    with_: str | Inline | Quote | Term | None = None
+    with_: str | None = None
     def to_dict(self):
         value = {"op": "insert_paragraph"}
         if self.at is not None:
@@ -286,7 +252,7 @@ class InsertParagraph:
         if self.style is not None:
             value["style"] = self.style
         if self.with_ is not None:
-            value["with"] = self.with_.to_dict() if hasattr(self.with_, "to_dict") else self.with_
+            value["with"] = self.with_
         return value
 
 @dataclass
@@ -331,20 +297,20 @@ class ReplaceEquation:
 @dataclass
 class ReplaceParagraph:
     at: str
-    with_: str | Inline | Quote | Term
+    with_: str
     def to_dict(self):
         value = {"op": "replace_paragraph"}
         if self.at is not None:
             value["at"] = self.at
         if self.with_ is not None:
-            value["with"] = self.with_.to_dict() if hasattr(self.with_, "to_dict") else self.with_
+            value["with"] = self.with_
         return value
 
 @dataclass
 class ReplaceText:
     at: str
     select: str
-    with_: str | Inline | Quote | Term
+    with_: str
     occurrence: int | None = None
     def to_dict(self):
         value = {"op": "replace_text"}
@@ -353,7 +319,7 @@ class ReplaceText:
         if self.select is not None:
             value["select"] = self.select
         if self.with_ is not None:
-            value["with"] = self.with_.to_dict() if hasattr(self.with_, "to_dict") else self.with_
+            value["with"] = self.with_
         if self.occurrence is not None:
             value["occurrence"] = self.occurrence
         return value
@@ -411,13 +377,13 @@ class SetFirstPageMode:
 
 @dataclass
 class SetFooter:
-    with_: str | Inline | Quote | Term
+    with_: str
     kind: str | None = None
     section: int | None = None
     def to_dict(self):
         value = {"op": "set_footer"}
         if self.with_ is not None:
-            value["with"] = self.with_.to_dict() if hasattr(self.with_, "to_dict") else self.with_
+            value["with"] = self.with_
         if self.kind is not None:
             value["kind"] = self.kind
         if self.section is not None:
@@ -426,13 +392,13 @@ class SetFooter:
 
 @dataclass
 class SetHeader:
-    with_: str | Inline | Quote | Term
+    with_: str
     kind: str | None = None
     section: int | None = None
     def to_dict(self):
         value = {"op": "set_header"}
         if self.with_ is not None:
-            value["with"] = self.with_.to_dict() if hasattr(self.with_, "to_dict") else self.with_
+            value["with"] = self.with_
         if self.kind is not None:
             value["kind"] = self.kind
         if self.section is not None:
@@ -567,8 +533,8 @@ class Revise:
     at: str | None = None
     occurrence: int | None = None
     edits: list = None
-    def replace(self, select: str, with_, occurrence: int | None = None, all: bool = False):
-        edit = {"select": select, "with": with_.to_dict() if hasattr(with_, "to_dict") else with_}
+    def replace(self, select: str, with_: str, occurrence: int | None = None, all: bool = False):
+        edit = {"select": select, "with": with_}
         if occurrence is not None:
             edit["occurrence"] = occurrence
         if all:
@@ -588,9 +554,9 @@ def RejectRevision(target: str) -> RevisionSettle:
 class Plan:
     author: str = "docxdriver"
     change_mode: str = "track"
-    operations: list = None
+    ops: list = None
     def to_dict(self):
-        ops = self.operations if self.operations is not None else []
+        ops = self.ops if self.ops is not None else []
         return {
             "author": self.author,
             "change_mode": self.change_mode,

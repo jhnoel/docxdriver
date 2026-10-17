@@ -186,7 +186,7 @@ Apply character formatting to an exact occurrence of `select` in the paragraph a
 
 ### InsertParagraph
 
-`InsertParagraph(at: str, position: str, as_: str | None = None, style: str | None = None, with_: str | Inline | Quote | Term | None = None)`
+`InsertParagraph(at: str, position: str, as_: str | None = None, style: str | None = None, with_: str | None = None)`
 
 Insert a new paragraph before or after an anchor: paragraph id/alias (`at`) or body-level table number (`table:N` from markup); `with` is its text, `style` its style, and `as` names the new paragraph id (a `$name` alias).
 
@@ -196,7 +196,7 @@ Insert a new paragraph before or after an anchor: paragraph id/alias (`at`) or b
 | `position` | `str` | yes |
 | `as_` (schema key `as`) | `str | None` | no |
 | `style` | `str | None` | no |
-| `with_` (schema key `with`) | `str | Inline | Quote | Term | None` | no |
+| `with_` (schema key `with`) | `str | None` | no |
 
 ### InsertTable
 
@@ -227,18 +227,18 @@ Replace a current equation using presentation MathML. Read docx_read(path).equat
 
 ### ReplaceParagraph
 
-`ReplaceParagraph(at: str, with_: str | Inline | Quote | Term)`
+`ReplaceParagraph(at: str, with_: str)`
 
 Replace the entire paragraph at `at` with `with`.
 
 | Field | Type | Required |
 | --- | --- | --- |
 | `at` | `str` | yes |
-| `with_` (schema key `with`) | `str | Inline | Quote | Term` | yes |
+| `with_` (schema key `with`) | `str` | yes |
 
 ### ReplaceText
 
-`ReplaceText(at: str, select: str, with_: str | Inline | Quote | Term, occurrence: int | None = None)`
+`ReplaceText(at: str, select: str, with_: str, occurrence: int | None = None)`
 
 Replace an exact occurrence of `select` in the paragraph at `at` with `with`; `occurrence` picks the nth match (1-based).
 
@@ -246,7 +246,7 @@ Replace an exact occurrence of `select` in the paragraph at `at` with `with`; `o
 | --- | --- | --- |
 | `at` | `str` | yes |
 | `select` | `str` | yes |
-| `with_` (schema key `with`) | `str | Inline | Quote | Term` | yes |
+| `with_` (schema key `with`) | `str` | yes |
 | `occurrence` | `int | None` | no |
 
 ### ReviseText
@@ -296,25 +296,25 @@ Enable/disable first-page stories in a section (default 1) without removing stor
 
 ### SetFooter
 
-`SetFooter(with_: str | Inline | Quote | Term, kind: str | None = None, section: int | None = None)`
+`SetFooter(with_: str, kind: str | None = None, section: int | None = None)`
 
 Set section footer chrome from inner HTML (`with`); optional `section` (default 1) and `kind` (default/even/first).
 
 | Field | Type | Required |
 | --- | --- | --- |
-| `with_` (schema key `with`) | `str | Inline | Quote | Term` | yes |
+| `with_` (schema key `with`) | `str` | yes |
 | `kind` | `str | None` | no |
 | `section` | `int | None` | no |
 
 ### SetHeader
 
-`SetHeader(with_: str | Inline | Quote | Term, kind: str | None = None, section: int | None = None)`
+`SetHeader(with_: str, kind: str | None = None, section: int | None = None)`
 
 Set section header chrome from inner HTML (`with`); optional `section` (default 1) and `kind` (default/even/first).
 
 | Field | Type | Required |
 | --- | --- | --- |
-| `with_` (schema key `with`) | `str | Inline | Quote | Term` | yes |
+| `with_` (schema key `with`) | `str` | yes |
 | `kind` | `str | None` | no |
 | `section` | `int | None` | no |
 

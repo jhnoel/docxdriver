@@ -1,9 +1,43 @@
 # Sandbox wrappers over the private _docx_*/_quote_*/_term_*/_inline_*
-# callbacks a host provides, and the result values they return. Runs
-# after plan.py (uses Plan).
+# callbacks a host provides, the result values they return, and the
+# Quote/Term/Inline nodes the host resolves at review. Runs after
+# docxdriver's plan.py (uses Plan).
 
 import re
 from dataclasses import dataclass
+
+class Term:
+    def __init__(self, text: str, style: str = "double"):
+        self.text = text
+        self.style = style
+    def to_dict(self):
+        return {"$kind": "term", "text": self.text, "style": self.style}
+
+class Inline:
+    def __init__(self, parts: list):
+        self.parts = parts
+    def to_dict(self):
+        return {"$kind": "inline", "parts": [part.to_dict() if hasattr(part, "to_dict") else part for part in self.parts]}
+
+class Quote:
+    def __init__(self, source: str, at: str, select: str, occurrence: int = 1, style: str = "double"):
+        self.source = source
+        self.at = at
+        self.select = select
+        self.occurrence = occurrence
+        self.style = style
+        self.changes = []
+
+    def omit(self, select: str, occurrence: int = 1, marker: str = "…"):
+        self.changes.append({"kind": "omit", "select": select, "occurrence": occurrence, "marker": marker})
+        return self
+
+    def bracket(self, select: str, replacement: str, occurrence: int = 1):
+        self.changes.append({"kind": "bracket", "select": select, "replacement": replacement, "occurrence": occurrence})
+        return self
+
+    def to_dict(self):
+        return {"$kind": "quote", "source": self.source, "at": self.at, "select": self.select, "occurrence": self.occurrence, "style": self.style, "changes": self.changes}
 
 @dataclass
 class QuoteResult:
@@ -59,8 +93,18 @@ def docx_find(path: str, query: str, ignore_case: bool = False) -> list:
 def docx_help(topic: str | None = None) -> str:
     return _docx_help(topic)
 
+def _node(value):
+    return value.to_dict() if hasattr(value, "to_dict") else value
+
 def docx_review(path: str, plan: Plan) -> ReviewResult | None:
-    result = _docx_review(path, {"plan": plan.to_dict()})
+    # Quote/Term/Inline nodes in `with` become {"$kind": ...} dicts the host resolves.
+    state = plan.to_dict()
+    for op in state["ops"]:
+        if "with" in op:
+            op["with"] = _node(op["with"])
+        for edit in op.get("edits", []):
+            edit["with"] = _node(edit["with"])
+    result = _docx_review(path, {"plan": state})
     if result is None:
         return None
     return ReviewResult(commit_key=result["commit_key"], edits=result["edits"])

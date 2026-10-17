@@ -80,10 +80,11 @@ After changing `EditOp` or its fields in `crates/docxdriver-core/src/api.rs`:
    `crates/docxdriver-core/src/bin/generate_typed_schema.rs`).
 2. If the operation is exposed to Python, list it in
    `crates/docxdriver-monty-repl/sandbox/plan-capabilities.json`, then run
-   `python scripts/generate-python-plan.py`. It regenerates `plan.py`,
-   `plan.pyi` and `plan.md` in that directory (the single source for the
-   `docxdriver-monty-repl` crate and the `docxdriver.plan` module) and their
-   copies. Hand-written code lives outside the GENERATED regions.
+   `python scripts/generate-python-plan.py`. It regenerates
+   `crates/docxdriver-python/python/docxdriver/plan.py` (the one plan file;
+   `docxdriver-monty-repl/sandbox/plan.py` is a symlink to it) and
+   `plan.pyi`/`plan.md` beside the manifest. Hand-written code lives outside
+   the GENERATED regions.
 3. For the Pi REPL, also list it in
    `packages/docxdriver-pi/scripts/plan-capability-manifest.mjs`, then run
    `node packages/docxdriver-pi/scripts/generate-python-dataclasses.mjs`.
