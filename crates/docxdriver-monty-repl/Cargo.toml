@@ -1,0 +1,22 @@
+[package]
+name = "docxdriver-monty-repl"
+description = "Python plan builders and host-wrapper sources for running docxdriver plans in a Monty sandbox"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+readme = "README.md"
+keywords = ["docx", "python", "monty", "sandbox", "llm"]
+categories = ["text-processing"]
+# Sandbox sources only; the generator manifest stays in the repository.
+include = [
+    "/src/**/*.rs",
+    "/sandbox/*.py",
+    "/sandbox/*.pyi",
+    "/sandbox/*.md",
+    "/README.md",
+    "/LICENSE",
+]
+
+[dev-dependencies]
+docxdriver-core = { path = "../docxdriver-core", version = "0.3.3" }

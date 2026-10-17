@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/docxdriver-core", "crates/docxdriver-wasm", "crates/docxdriver-cli", "crates/docxdriver-mcp", "crates/docxdriver-python"]
+members = ["crates/docxdriver-core", "crates/docxdriver-wasm", "crates/docxdriver-cli", "crates/docxdriver-mcp", "crates/docxdriver-python", "crates/docxdriver-monty-repl"]
 
 [workspace.package]
 version = "0.3.3"

@@ -1,0 +1,421 @@
+# docxdriver Python REPL API — Version 1 (Python-authored plan)
+
+# BEGIN GENERATED OPERATION DOCS
+## Operations
+
+Selected from the core schema (`$defs.editOp.oneOf`) through the
+capability manifest; field shapes, types, and enums are exactly the
+checked-in schema’s. Every op dataclass has `to_dict()`, omitting
+optional fields whose value is `None`; constructors use `with_`/`as_`
+for Python keyword collisions and `to_dict()` maps back to the schema
+field names. Operations are addressed by the paragraph `id` attribute
+from `docx_read` (uppercase eight-digit hex) or a `$name` alias.
+
+### ClearFooter
+
+`ClearFooter(kind: str | None = None, section: int | None = None)`
+
+Remove the explicit footer reference for a section/kind (defaults: section 1, kind default).
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `kind` | `str | None` | no |
+| `section` | `int | None` | no |
+
+### ClearHeader
+
+`ClearHeader(kind: str | None = None, section: int | None = None)`
+
+Remove the explicit header reference for a section/kind (defaults: section 1, kind default).
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `kind` | `str | None` | no |
+| `section` | `int | None` | no |
+
+### CommentAdd
+
+`CommentAdd(at: str, text: str, occurrence: int | None = None, select: str | None = None)`
+
+Anchor a comment with `text` to the paragraph at `at`; omit `select` to comment the whole paragraph, or pass `select`/`occurrence` (1-based) to pin one exact span.
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `at` | `str` | yes |
+| `text` | `str` | yes |
+| `occurrence` | `int | None` | no |
+| `select` | `str | None` | no |
+
+### CommentDelete
+
+`CommentDelete(comment_id: str)`
+
+Delete a comment by decimal `comment_id`.
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `comment_id` | `str` | yes |
+
+### CommentReply
+
+`CommentReply(comment_id: str, text: str)`
+
+Reply to an existing comment; `comment_id` is the decimal id from a prior `comment_add` or a comments-kind read.
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `comment_id` | `str` | yes |
+| `text` | `str` | yes |
+
+### CommentSetStatus
+
+`CommentSetStatus(comment_id: str, status: str)`
+
+Set a comment's status to `open` or `resolved` by decimal `comment_id`.
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `comment_id` | `str` | yes |
+| `status` | `str` | yes |
+
+### DeleteEquation
+
+`DeleteEquation(at: str, equation: int | None = None)`
+
+Delete a current equation while preserving the paragraph. Read docx_read(path).equations for at and equation (1-based). Omit equation only when the paragraph has one. Tracked mode keeps the equation recoverable until the deletion is accepted.
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `at` | `str` | yes |
+| `equation` | `int | None` | no |
+
+### DeleteParagraphs
+
+`DeleteParagraphs(at: list)`
+
+Delete the paragraphs listed in `at` (tracked deletion by default).
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `at` | `list` | yes |
+
+### EditTable
+
+`EditTable(action: dict, at: str)`
+
+Direct structural table edits using a source-bound table handle. action.kind is insert_rows/delete_rows/insert_columns/delete_columns/merge_cells/split_cell/delete; coordinates and counts are one-based. Insert/delete grid operations and merge require an unmerged rectangular grid. Split keeps content in the first resulting cell; merge concatenates content in row-major order. Insert actions optionally accept as for a group alias: inserted rows use $name/row:N[/cell:N]; inserted columns use $name/row:N/cell:N within the inserted strip. Rejects tracked mode and tables containing unresolved revisions, bookmarks, comments, fields or content controls. Delete the table instead of its final row or column.
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `action` | `dict` | yes |
+| `at` | `str` | yes |
+
+### FormatCell
+
+`FormatCell(at: str, format: dict)`
+
+Format a source-bound table:N/row:N/cell:N handle using width, borders, fill (#RRGGBB), padding, vertical_alignment (top/center/bottom), and clear. Cell indices are physical; a vertically merged logical cell is addressed through its restart cell and applies to all backing continuation cells. Continuation targets and legacy hMerge targets are rejected. Tracked plans preserve prior cell property bags. Text, merge structure and nested content remain unchanged.
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `at` | `str` | yes |
+| `format` | `dict` | yes |
+
+### FormatParagraph
+
+`FormatParagraph(at: str, alignment: str | None = None, clear: list | None = None, first_line_indent: float | None = None, indent_left: float | None = None, indent_right: float | None = None, line_spacing: dict | None = None, space_after: float | None = None, space_before: float | None = None, style: str | None = None)`
+
+Apply paragraph formatting to the paragraph at `at`: `style`, `alignment` (left/center/right/justify), signed `indent_left`/`indent_right`, signed `first_line_indent` (negative for hanging, zero for an explicit zero offset), `space_before`/`space_after`, `line_spacing` (dict with `mode` multiple/exact/at_least and `value`), or `clear`. Omitted properties are untouched; clear removes direct settings and inherits styles/defaults, winning over set. Formatting changes are always tracked.
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `at` | `str` | yes |
+| `alignment` | `str | None` | no |
+| `clear` | `list | None` | no |
+| `first_line_indent` | `float | None` | no |
+| `indent_left` | `float | None` | no |
+| `indent_right` | `float | None` | no |
+| `line_spacing` | `dict | None` | no |
+| `space_after` | `float | None` | no |
+| `space_before` | `float | None` | no |
+| `style` | `str | None` | no |
+
+### FormatRow
+
+`FormatRow(at: str, format: dict)`
+
+Format a source-bound table:N/row:N handle. format accepts height in points, height_rule (auto/at_least/exact), repeating_header, allow_split and clear. False explicitly disables header repetition or splitting; clear inherits. Tracked plans preserve the complete prior row property bag for rejection.
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `at` | `str` | yes |
+| `format` | `dict` | yes |
+
+### FormatTable
+
+`FormatTable(at: str, format: dict)`
+
+Format the table at a source-bound table:N handle or inserted $alias. format accepts width (unit auto, points/value, percent/value), column_widths (positive points, exactly matching the grid), layout (fixed/autofit), alignment, borders, cell_spacing, padding and an existing table style ID. Omitted values preserve source properties; clear removes supported direct settings and wins over set. Grid dimensions cannot be cleared. Tracked plans snapshot table and grid properties; settle a pending property change before editing that bag again.
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `at` | `str` | yes |
+| `format` | `dict` | yes |
+
+### FormatText
+
+`FormatText(at: str, select: str, bold: bool | None = None, clear: list | None = None, color: str | None = None, font_size: float | None = None, highlight: str | None = None, italic: bool | None = None, occurrence: int | None = None, strike: bool | None = None, subscript: bool | None = None, superscript: bool | None = None, underline: bool | None = None)`
+
+Apply character formatting to an exact occurrence of `select` in the paragraph at `at`: boolean attributes (`bold`, `italic`, `underline`, `strike`, `superscript`, `subscript`), `color` (#RRGGBB), `highlight` (Word palette including none), `font_size` (points), `occurrence`, or `clear`. Omitted properties preserve source OOXML; false explicitly overrides inherited formatting (baseline for superscript/subscript). Clear removes the direct property and inherits styles/defaults, winning over set; superscript/subscript share one property. Formatting changes are always tracked.
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `at` | `str` | yes |
+| `select` | `str` | yes |
+| `bold` | `bool | None` | no |
+| `clear` | `list | None` | no |
+| `color` | `str | None` | no |
+| `font_size` | `float | None` | no |
+| `highlight` | `str | None` | no |
+| `italic` | `bool | None` | no |
+| `occurrence` | `int | None` | no |
+| `strike` | `bool | None` | no |
+| `subscript` | `bool | None` | no |
+| `superscript` | `bool | None` | no |
+| `underline` | `bool | None` | no |
+
+### InsertParagraph
+
+`InsertParagraph(at: str, position: str, as_: str | None = None, style: str | None = None, with_: str | Inline | Quote | Term | None = None)`
+
+Insert a new paragraph before or after an anchor: paragraph id/alias (`at`) or body-level table number (`table:N` from markup); `with` is its text, `style` its style, and `as` names the new paragraph id (a `$name` alias).
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `at` | `str` | yes |
+| `position` | `str` | yes |
+| `as_` (schema key `as`) | `str | None` | no |
+| `style` | `str | None` | no |
+| `with_` (schema key `with`) | `str | Inline | Quote | Term | None` | no |
+
+### InsertTable
+
+`InsertTable(at: str, columns: int, position: str, rows: int, as_: str | None = None)`
+
+Insert a rectangular table before/after paragraph at, with rows and columns in 1..100. Direct mode only. Optional as creates a plan-local table alias for later formatting and structural edits.
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `at` | `str` | yes |
+| `columns` | `int` | yes |
+| `position` | `str` | yes |
+| `rows` | `int` | yes |
+| `as_` (schema key `as`) | `str | None` | no |
+
+### ReplaceEquation
+
+`ReplaceEquation(at: str, mathml: str, display: bool | None = None, equation: int | None = None)`
+
+Replace a current equation using presentation MathML. Read docx_read(path).equations for at and equation (1-based). Omit equation only when the paragraph has one. Display mode is preserved by default. Settle existing revisions before editing their equations.
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `at` | `str` | yes |
+| `mathml` | `str` | yes |
+| `display` | `bool | None` | no |
+| `equation` | `int | None` | no |
+
+### ReplaceParagraph
+
+`ReplaceParagraph(at: str, with_: str | Inline | Quote | Term)`
+
+Replace the entire paragraph at `at` with `with`.
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `at` | `str` | yes |
+| `with_` (schema key `with`) | `str | Inline | Quote | Term` | yes |
+
+### ReplaceText
+
+`ReplaceText(at: str, select: str, with_: str | Inline | Quote | Term, occurrence: int | None = None)`
+
+Replace an exact occurrence of `select` in the paragraph at `at` with `with`; `occurrence` picks the nth match (1-based).
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `at` | `str` | yes |
+| `select` | `str` | yes |
+| `with_` (schema key `with`) | `str | Inline | Quote | Term` | yes |
+| `occurrence` | `int | None` | no |
+
+### ReviseText
+
+`ReviseText(edits: list, at: str | None = None, occurrence: int | None = None, within: str | None = None)`
+
+Several exact replacements inside one bounded scope; prefer the chainable `Revise(within, at=None, occurrence=None).replace(select, with_, occurrence=None, all=False)` builder. Scope: `within` (a phrase unique in paragraph `at`, or in the whole document when `at` is omitted; `occurrence` picks a repeated one), else the paragraph `at`, else the whole document. Each edit must match exactly once in the scope unless it sets `occurrence` or `all`. All edits resolve against the scope as it stands when the operation starts, must not overlap, and become separate minimal tracked changes.
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `edits` | `list` | yes |
+| `at` | `str | None` | no |
+| `occurrence` | `int | None` | no |
+| `within` | `str | None` | no |
+
+### RevisionSettle
+
+`RevisionSettle(action: str, target: str)`
+
+Accept or reject tracked changes: `target` is a decimal revision id from `docx_read(path, kind="revisions")` or `all`; `action` is `accept` or `reject`. Prefer the `AcceptRevision(target)` / `RejectRevision(target)` shorthands. Settling `all` also settles tracked changes made by earlier operations in the same plan, and later selectors address the settled text.
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `action` | `str` | yes |
+| `target` | `str` | yes |
+
+### SetEvenAndOddHeaders
+
+`SetEvenAndOddHeaders(even_and_odd: bool)`
+
+Enable or disable distinct even-page headers/footers (`even_and_odd`); when true, `kind="even"` chrome applies to even pages.
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `even_and_odd` | `bool` | yes |
+
+### SetFirstPageMode
+
+`SetFirstPageMode(enabled: bool, section: int | None = None)`
+
+Enable/disable first-page stories in a section (default 1) without removing stored stories. Tracked mode records a section-property snapshot; settle pending section changes before editing again.
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `enabled` | `bool` | yes |
+| `section` | `int | None` | no |
+
+### SetFooter
+
+`SetFooter(with_: str | Inline | Quote | Term, kind: str | None = None, section: int | None = None)`
+
+Set section footer chrome from inner HTML (`with`); optional `section` (default 1) and `kind` (default/even/first).
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `with_` (schema key `with`) | `str | Inline | Quote | Term` | yes |
+| `kind` | `str | None` | no |
+| `section` | `int | None` | no |
+
+### SetHeader
+
+`SetHeader(with_: str | Inline | Quote | Term, kind: str | None = None, section: int | None = None)`
+
+Set section header chrome from inner HTML (`with`); optional `section` (default 1) and `kind` (default/even/first).
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `with_` (schema key `with`) | `str | Inline | Quote | Term` | yes |
+| `kind` | `str | None` | no |
+| `section` | `int | None` | no |
+
+### SetList
+
+`SetList(at: list, format: str | None = None, level: int | None = None, levels: list | None = None, num_id: int | None = None, remove: bool | None = None, start: int | None = None)`
+
+Assign explicitly selected paragraphs to a new list (format defaults to decimal), continue an existing num_id, or remove membership with remove=True. level is 0..8; IDs/starts are 1..2147483647. start creates an isolated restarted instance, and on new lists applies only to the selected level (explicit per-level start wins). Optional levels defines 1..9 per-level format/label/start/restart_after, signed indent_left/indent_right/first_line_indent and marker_bold/marker_italic/marker_font/marker_color for a new list. Label placeholders reference this or ancestor levels (%1..%9). Existing definitions are never restyled. Membership changes are tracked; settle pending paragraph changes first. Definitions remain after rejection for safe reference restoration. Typed membership changes on lists containing explicit continuation paragraphs are rejected, including numbered parents; HTML multi-paragraph creation and reconstruction are supported.
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `at` | `list` | yes |
+| `format` | `str | None` | no |
+| `level` | `int | None` | no |
+| `levels` | `list | None` | no |
+| `num_id` | `int | None` | no |
+| `remove` | `bool | None` | no |
+| `start` | `int | None` | no |
+
+### SetPageMargins
+
+`SetPageMargins(bottom: float | None = None, footer: float | None = None, gutter: float | None = None, header: float | None = None, left: float | None = None, right: float | None = None, section: int | None = None, top: float | None = None)`
+
+Set selected nonnegative page margins in points for a section (default 1): top/right/bottom/left/header/footer/gutter. Omitted values are preserved. Like existing header/footer setters, margin changes are direct even in tracked plans.
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `bottom` | `float | None` | no |
+| `footer` | `float | None` | no |
+| `gutter` | `float | None` | no |
+| `header` | `float | None` | no |
+| `left` | `float | None` | no |
+| `right` | `float | None` | no |
+| `section` | `int | None` | no |
+| `top` | `float | None` | no |
+
+### SetSectionBoundary
+
+`SetSectionBoundary(at: str, break_type: str | None = None, remove: bool | None = None)`
+
+Insert a section boundary after body paragraph at; remove=True merges its section into the following section using the following layout while preserving effective following story chains. break_type selects nextPage/continuous/oddPage/evenPage/nextColumn. Direct mode only; tracked structural boundaries and pending property revisions are rejected. The final body section is preserved. Inventory handles section:<paragraph ID> remain stable; section:$alias references an inserted paragraph boundary.
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `at` | `str` | yes |
+| `break_type` | `str | None` | no |
+| `remove` | `bool | None` | no |
+
+### SetSectionLayout
+
+`SetSectionLayout(break_type: str | None = None, column_separator: bool | None = None, column_spacing: float | None = None, column_widths: list | None = None, columns: int | None = None, height: float | None = None, orientation: str | None = None, page_number_continue: bool | None = None, page_number_format: str | None = None, page_number_start: int | None = None, page_size: str | None = None, section: int | None = None, section_handle: str | None = None, width: float | None = None)`
+
+Selectively set section layout (section defaults to 1): page_size letter/legal/a4/a3/a5 or paired width/height in points; orientation portrait/landscape normalizes dimensions. Columns 1..45 with column_spacing, column_widths and column_separator; break_type nextPage/continuous/oddPage/evenPage/nextColumn; page_number_format, page_number_start or page_number_continue=true. Omission preserves properties; tracking snapshots section properties while preserving story relationships. Pending property changes must be settled first.
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `break_type` | `str | None` | no |
+| `column_separator` | `bool | None` | no |
+| `column_spacing` | `float | None` | no |
+| `column_widths` | `list | None` | no |
+| `columns` | `int | None` | no |
+| `height` | `float | None` | no |
+| `orientation` | `str | None` | no |
+| `page_number_continue` | `bool | None` | no |
+| `page_number_format` | `str | None` | no |
+| `page_number_start` | `int | None` | no |
+| `page_size` | `str | None` | no |
+| `section` | `int | None` | no |
+| `section_handle` | `str | None` | no |
+| `width` | `float | None` | no |
+
+# END GENERATED OPERATION DOCS
+
+## Scoped revisions
+
+`Revise(within=None, at=None, occurrence=None)` builds one `ReviseText`
+operation; chain `.replace(select, with_, occurrence=None, all=False)` for each
+change. The scope bounds every `select`, so short selectors stay unambiguous
+in long documents and each change becomes a minimal tracked change:
+
+    # unique phrase, no paragraph id needed:
+    Revise("the tenant shall pay rent within thirty days").replace("thirty", "sixty").replace("rent", "the rent")
+    Revise(at="2673269E").replace("Tenant", "Lessee", all=True)  # whole paragraph
+    Revise("Section 4(b)", at="2673269E", occurrence=2).replace("4(b)", "4(c)")
+    Revise().replace("Acme Corp.", "Acme, Inc.", all=True)       # whole document
+
+`within` must occur exactly once in its paragraph (`at`) or document unless
+`occurrence` picks one. Each `select` must occur exactly once in the scope
+unless it passes `occurrence` or `all=True`. All selectors resolve against the
+scope as it stands when the operation starts, so later replacements never see
+earlier ones; overlapping selections are rejected.
+
+`AcceptRevision(target)` and `RejectRevision(target)` build `RevisionSettle`
+operations; `target` is a revision id from `docx_read(path, kind="revisions")`
+or `"all"`. Put settle operations first: `"all"` also settles tracked changes
+made earlier in the same plan.
+
+Every operation dataclass has `to_dict()`, omitting optional fields whose
+value is `None`; `Plan.to_dict()` returns `{"author": ..., "change_mode": ..., "ops": [...]}`.
+
+Tracked plain-text replacements automatically compute word-level redlines in
+ReplaceText, ReviseText, and ReplaceParagraph. Unchanged words retain their
+formatting; adjacent changed words form one deletion followed by one insertion.
+Rich replacements retain whole-selection tracking to apply their formatting.

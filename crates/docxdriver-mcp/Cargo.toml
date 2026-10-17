@@ -5,6 +5,8 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+# Consumers embed docxdriver-core directly; the server ships from source.
+publish = false
 readme = "README.md"
 keywords = ["mcp", "docx", "ooxml", "word", "llm"]
 categories = ["text-processing", "command-line-utilities"]

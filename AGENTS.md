@@ -78,13 +78,16 @@ After changing `EditOp` or its fields in `crates/docxdriver-core/src/api.rs`:
    `sh packages/docxdriver/scripts/generate-schema.sh`
    (also update the type template in
    `crates/docxdriver-core/src/bin/generate_typed_schema.rs`).
-2. If the operation is exposed in the Python REPL, list it in
+2. If the operation is exposed to Python, list it in
+   `crates/docxdriver-monty-repl/sandbox/plan-capabilities.json`, then run
+   `python scripts/generate-python-plan.py`. It regenerates `plan.py`,
+   `plan.pyi` and `plan.md` in that directory (the single source for the
+   `docxdriver-monty-repl` crate and the `docxdriver.plan` module) and their
+   copies. Hand-written code lives outside the GENERATED regions.
+3. For the Pi REPL, also list it in
    `packages/docxdriver-pi/scripts/plan-capability-manifest.mjs`, then run
    `node packages/docxdriver-pi/scripts/generate-python-dataclasses.mjs`.
-   Hand-written helpers and reference prose live outside the generated
-   regions of `packages/docxdriver-pi/src/python-plan-prelude.ts`.
-3. Regenerate the Python SDK prelude:
-   `python scripts/generate-docxdriver-repl-prelude.py`.
+   Pi keeps its own templates in `packages/docxdriver-pi/src/python-plan-prelude.ts`.
 4. Rebuild the vendored WASM runtime before running npm tests:
    `npm run build` in `packages/docxdriver-pi`.
 
@@ -101,6 +104,7 @@ python scripts/ooxml-conformance.py           # needs lxml + .NET SDK 10+; also 
 (cd packages/docxdriver && npm ci && npm test)
 (cd packages/docxdriver-pi && npm ci && npm test)
 python -m unittest discover -s crates/docxdriver-python/tests   # after installing the wheel; see its README
+PYTHONPATH=experimental/python-repl-host python -m unittest discover -s experimental/python-repl-host/tests
 python scripts/audit-public-content.py
 ```
 

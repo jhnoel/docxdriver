@@ -461,6 +461,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "docxdriver-monty-repl"
+version = "0.3.3"
+dependencies = [
+ "docxdriver-core",
+]
+
+[[package]]
 name = "docxdriver-python"
 version = "0.3.3"
 dependencies = [

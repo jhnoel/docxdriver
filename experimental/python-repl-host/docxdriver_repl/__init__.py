@@ -1,4 +1,4 @@
-"""Optional sandbox REPL harness for the docxdriver Python SDK."""
+"""Monty sandbox host for docxdriver plans, backed by the docxdriver SDK."""
 
 from .prelude import PRELUDE, REFERENCE
 from . import host, quotes

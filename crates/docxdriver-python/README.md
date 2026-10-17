@@ -13,34 +13,33 @@ The core API exposes `execute_request`, `canonical_plan_json`, and the convenien
 functions `run_command`, `run_plan`, and `run_request`. Results preserve document
 contents as Python `bytes`.
 
-The optional sandbox REPL harness is available as a subpackage in the same
-distribution:
+Typed plan builders live in `docxdriver.plan`:
 
 ```python
-from docxdriver.repl import NativeBridge, PRELUDE, REFERENCE
+import hashlib
+from docxdriver import run_plan
+from docxdriver.plan import Plan, ReplaceText
+
+data = open("contract.docx", "rb").read()
+
+plan = Plan(author="Reviewer", operations=[
+    ReplaceText(at="0F537164", select="thirty", with_="sixty"),
+]).to_dict()                      # {"author", "change_mode", "ops"}
+plan["base"] = "sha256:" + hashlib.sha256(data).hexdigest()
+preview = run_plan(data, plan)
 ```
 
-`NativeBridge` provides async `init`, `call`, and `reset` requests for a host
-running a Python sandbox. The sandbox receives authoring classes and async
-wrappers from `PRELUDE`; `REFERENCE` provides their API documentation. The
-sandbox itself does not import the native extension. Native work runs through
-host callbacks outside the server event loop.
+`plan.py` stays within Monty's Python subset. Sandbox hosts can preload its
+text:
 
-The host confines reads and writes to the provided workspace, verifies source
-hashes and candidate output before commit, and performs atomic file replacement
-with read-back verification. Commit keys are bounded and single-use. Cancellation
-is drained before another host call so a write callback cannot be abandoned.
-
-Set `DOCXDRIVER_QUOTE_AUDIT_COMMENTS=1` to enable structured Quote/Term/Inline plan
-values and protected quotation audit comments. The provenance policy defaults to
-`permissive`; `controlled` and `authoritative` fail closed.
-
-The prelude and API reference are generated from shared Pi templates. After
-changing those templates, regenerate them from the repository root:
-
-```sh
-python scripts/generate-docxdriver-repl-prelude.py
+```python
+from importlib.resources import files
+PLAN = files("docxdriver").joinpath("plan.py").read_text(encoding="utf-8")
 ```
+
+`docxdriver/plan.py` is generated from
+`crates/docxdriver-monty-repl/sandbox/plan.py`; regenerate from the repository
+root with `python scripts/generate-python-plan.py`.
 
 Build and install a wheel from the repository root:
 

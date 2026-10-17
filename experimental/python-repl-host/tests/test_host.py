@@ -1,4 +1,4 @@
-"""Python SDK and REPL host regression tests; run after installing the Maturin wheel."""
+"""REPL host regression tests; run with docxdriver installed and this directory's parent on PYTHONPATH."""
 import asyncio
 from dataclasses import replace
 import hashlib
@@ -11,8 +11,9 @@ import threading
 import unittest
 from unittest.mock import patch
 
-from docxdriver import canonical_plan_json, execute_request, run_command, run_plan
-from docxdriver.repl import PRELUDE, REFERENCE, host, quotes
+from docxdriver import canonical_plan_json, execute_request, plan, run_command, run_plan
+from docxdriver_repl import PRELUDE, REFERENCE, host, quotes
+from docxdriver_repl.prelude import HOST_WRAPPERS, PLAN
 
 
 class NativeHostTests(unittest.TestCase):
@@ -101,15 +102,18 @@ class NativeHostTests(unittest.TestCase):
         self.assertTrue(result['sections'][0]['first_page'])
         self.assertEqual(run_plan(committed['bytes'], plan)['outcome'], 'rejected')
 
-    def test_shared_authoring_templates_stay_synchronized(self):
+    def test_generated_python_surfaces_stay_synchronized(self):
         root = Path(__file__).resolve().parents[3]
-        spec = importlib.util.spec_from_file_location('repl_prelude_generator', root / 'scripts/generate-docxdriver-repl-prelude.py')
+        spec = importlib.util.spec_from_file_location('python_plan_generator', root / 'scripts/generate-python-plan.py')
         generator = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(generator)
+        outputs = generator.generate()
         namespace = {}
-        exec(generator.generate(), namespace)
-        self.assertEqual(namespace['PRELUDE'], PRELUDE)
+        exec(outputs[generator.REPL_PRELUDE], namespace)
+        self.assertEqual(namespace['HOST_WRAPPERS'], HOST_WRAPPERS)
         self.assertEqual(namespace['REFERENCE'], REFERENCE)
+        self.assertEqual(PLAN, outputs[generator.PLAN_PY])
+        self.assertEqual(PRELUDE, PLAN + '\n' + HOST_WRAPPERS)
 
     def test_immutable_review_later_call_atomic_commit_and_replay(self):
         key, plan = self.review()
