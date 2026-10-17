@@ -2,7 +2,7 @@
 #
 #   doc = Document(Path("a.docx").read_bytes())
 #   doc.markup()                       body with the ids plans address
-#   doc.comments() / revisions() / styles() / assets()
+#   doc.equations() / comments() / revisions() / styles() / assets()
 #   doc.find("thirty")
 #   review = doc.review(Plan(ops=[...]))
 #   doc = doc.commit("K7QM-3XRP-...")  a new Document
@@ -26,6 +26,7 @@ try:
         _docx_comments,
         _docx_commit,
         _docx_create,
+        _docx_equations,
         _docx_find,
         _docx_markup,
         _docx_review,
@@ -38,7 +39,7 @@ except ImportError:
 
 class Document:
     """One .docx as bytes: Document(Path("a.docx").read_bytes()).
-    Read: markup(view), comments(), revisions(), styles(), assets(),
+    Read: markup(view), equations(), comments(), revisions(), styles(), assets(),
     find(query). Edit: review(Plan(ops=[...])) previews, then
     commit(key) returns the edited Document; save its .data."""
 
@@ -48,7 +49,7 @@ class Document:
     def __repr__(self):
         return (
             "<Document " + str(len(self.data)) + " bytes. Read: markup(view='markup'|'final'|'original'), "
-            "comments(), revisions(), styles(), assets(), find(query). Edit: review(Plan(ops=[...])) "
+            "equations(), comments(), revisions(), styles(), assets(), find(query). Edit: review(Plan(ops=[...])) "
             "-> Review, then commit(key) -> Document; save with Path(p).write_bytes(doc.data).>"
         )
 
@@ -56,6 +57,11 @@ class Document:
         """The body as HTML-like markup with stable paragraph ids.
         view: "markup" (tracked changes as <ins>/<del>), "final", "original"."""
         return _docx_markup(self.data, view)
+
+    def equations(self):
+        """Equations: at (paragraph id) and equation (1-based), the address
+        ReplaceEquation and DeleteEquation take."""
+        return json.loads(_docx_equations(self.data))
 
     def comments(self):
         """Comment threads: id, status, anchor, root, replies."""

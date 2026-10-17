@@ -188,7 +188,7 @@ def docs_source(selected, capabilities):
         'optional fields whose value is `None`; constructors use `with_`/`as_`',
         'for Python keyword collisions and `to_dict()` maps back to the schema',
         'field names. Operations are addressed by the paragraph `id` attribute',
-        'from `docx_read` (uppercase eight-digit hex) or a `$name` alias.',
+        'from `doc.markup()` or `doc.find()` (uppercase eight-digit hex) or a `$name` alias.',
         '',
     ]
     for op, variant in selected:

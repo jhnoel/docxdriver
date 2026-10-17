@@ -50,6 +50,17 @@ fn reviews_then_commits() {
 }
 
 #[test]
+fn lists_equations_by_paragraph() {
+    let html = "<p>Area <math display=\"inline\"><mi>x</mi><mo>+</mo><mn>1</mn></math> here.</p>";
+    let bytes = create(Source::Html(html.into())).unwrap();
+    let equations = Document::open(&bytes).equations().unwrap();
+    assert_eq!(equations.len(), 1, "{equations:?}");
+    assert!(equations[0]["at"].is_string(), "{equations:?}");
+    let plain = create(Source::Paragraphs(vec!["None".into()])).unwrap();
+    assert!(Document::open(&plain).equations().unwrap().is_empty());
+}
+
+#[test]
 fn refuses_stale_and_invalid_plans() {
     let bytes = create(Source::Html(HTML.into())).unwrap();
     let doc = Document::open(&bytes);

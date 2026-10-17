@@ -17,6 +17,7 @@ class DocumentTests(unittest.TestCase):
         self.assertIsInstance(doc.data, bytes)
         self.assertIn('Beta', doc.markup())
         self.assertEqual(doc.comments(), [])
+        self.assertEqual(doc.equations(), [])
         self.assertEqual(doc.revisions(), [])
         self.assertTrue(doc.styles())
         self.assertEqual(doc.assets(), [])

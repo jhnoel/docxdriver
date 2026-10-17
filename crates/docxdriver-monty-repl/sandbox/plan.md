@@ -9,7 +9,7 @@ checked-in schema’s. Every op dataclass has `to_dict()`, omitting
 optional fields whose value is `None`; constructors use `with_`/`as_`
 for Python keyword collisions and `to_dict()` maps back to the schema
 field names. Operations are addressed by the paragraph `id` attribute
-from `docx_read` (uppercase eight-digit hex) or a `$name` alias.
+from `doc.markup()` or `doc.find()` (uppercase eight-digit hex) or a `$name` alias.
 
 ### ClearFooter
 
@@ -82,7 +82,7 @@ Set a comment's status to `open` or `resolved` by decimal `comment_id`.
 
 `DeleteEquation(at: str, equation: int | None = None)`
 
-Delete a current equation while preserving the paragraph. Read docx_read(path).equations for at and equation (1-based). Omit equation only when the paragraph has one. Tracked mode keeps the equation recoverable until the deletion is accepted.
+Delete a current equation while preserving the paragraph. Read doc.equations() for at and equation (1-based). Omit equation only when the paragraph has one. Tracked mode keeps the equation recoverable until the deletion is accepted.
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -216,7 +216,7 @@ Insert a rectangular table before/after paragraph at, with rows and columns in 1
 
 `ReplaceEquation(at: str, mathml: str, display: bool | None = None, equation: int | None = None)`
 
-Replace a current equation using presentation MathML. Read docx_read(path).equations for at and equation (1-based). Omit equation only when the paragraph has one. Display mode is preserved by default. Settle existing revisions before editing their equations.
+Replace a current equation using presentation MathML. Read doc.equations() for at and equation (1-based). Omit equation only when the paragraph has one. Display mode is preserved by default. Settle existing revisions before editing their equations.
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -266,7 +266,7 @@ Several exact replacements inside one bounded scope; prefer the chainable `Revis
 
 `RevisionSettle(action: str, target: str)`
 
-Accept or reject tracked changes: `target` is a decimal revision id from `docx_read(path, kind="revisions")` or `all`; `action` is `accept` or `reject`. Prefer the `AcceptRevision(target)` / `RejectRevision(target)` shorthands. Settling `all` also settles tracked changes made by earlier operations in the same plan, and later selectors address the settled text.
+Accept or reject tracked changes: `target` is a decimal revision id from `doc.revisions()` or `all`; `action` is `accept` or `reject`. Prefer the `AcceptRevision(target)` / `RejectRevision(target)` shorthands. Settling `all` also settles tracked changes made by earlier operations in the same plan, and later selectors address the settled text.
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -408,8 +408,8 @@ scope as it stands when the operation starts, so later replacements never see
 earlier ones; overlapping selections are rejected.
 
 `AcceptRevision(target)` and `RejectRevision(target)` build `RevisionSettle`
-operations; `target` is a revision id from `docx_read(path, kind="revisions")`
-or `"all"`. Put settle operations first: `"all"` also settles tracked changes
+operations; `target` is a revision id from `doc.revisions()` or
+`"all"`. Put settle operations first: `"all"` also settles tracked changes
 made earlier in the same plan.
 
 Every operation dataclass has `to_dict()`, omitting optional fields whose

@@ -82,6 +82,11 @@ fn _docx_markup(py: Python<'_>, data: &[u8], view: &str) -> PyResult<String> {
 }
 
 #[pyfunction]
+fn _docx_equations(py: Python<'_>, data: &[u8]) -> PyResult<String> {
+    json(py.detach(|| Document::open(data).equations()))
+}
+
+#[pyfunction]
 fn _docx_comments(py: Python<'_>, data: &[u8]) -> PyResult<String> {
     json(py.detach(|| Document::open(data).comments()))
 }
@@ -179,6 +184,7 @@ fn _core(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(canonical_plan_json, module)?)?;
     module.add_function(wrap_pyfunction!(_docx_create, module)?)?;
     module.add_function(wrap_pyfunction!(_docx_markup, module)?)?;
+    module.add_function(wrap_pyfunction!(_docx_equations, module)?)?;
     module.add_function(wrap_pyfunction!(_docx_comments, module)?)?;
     module.add_function(wrap_pyfunction!(_docx_revisions, module)?)?;
     module.add_function(wrap_pyfunction!(_docx_styles, module)?)?;

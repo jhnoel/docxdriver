@@ -92,6 +92,12 @@ impl<'a> Document<'a> {
         }
     }
 
+    /// Equations by paragraph, e.g. `{"at": "0F537164", "equation": 1, ...}`,
+    /// the addresses `replace_equation`/`delete_equation` take.
+    pub fn equations(&self) -> Result<Vec<Value>, Diagnostic> {
+        Ok(array(self.read("document", None)?, "equations"))
+    }
+
     /// Comment threads with anchors and replies.
     pub fn comments(&self) -> Result<Vec<Value>, Diagnostic> {
         self.list("comments")
