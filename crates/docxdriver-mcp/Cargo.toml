@@ -5,6 +5,10 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+readme = "README.md"
+keywords = ["mcp", "docx", "ooxml", "word", "llm"]
+categories = ["text-processing", "command-line-utilities"]
+include = ["/src/**/*.rs", "/README.md", "/LICENSE"]
 
 [lib]
 path = "src/lib.rs"
@@ -12,18 +16,29 @@ path = "src/lib.rs"
 [[bin]]
 name = "docxdriver-mcp"
 path = "src/main.rs"
+required-features = ["server"]
+
+[[test]]
+name = "mcp_contract"
+required-features = ["server"]
+
+[features]
+# Transports and the binary. Library users calling DocxServer directly can
+# opt out with default-features = false.
+default = ["server"]
+server = ["dep:axum", "dep:clap", "dep:tokio", "dep:tokio-util", "rmcp/transport-io", "rmcp/transport-streamable-http-server"]
 
 [dependencies]
 cap-std = "4.0.2"
 docxdriver-core = { path = "../docxdriver-core", version = "0.3.3" }
-axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
-clap = { version = "4", features = ["derive", "env"] }
-rmcp = { version = "3.1.2", default-features = false, features = ["server", "macros", "transport-io", "transport-streamable-http-server"] }
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio"], optional = true }
+clap = { version = "4", features = ["derive", "env"], optional = true }
+rmcp = { version = "3.1.2", default-features = false, features = ["server", "macros"] }
 schemars = "0.8"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tokio = { version = "1", features = ["io-std", "macros", "net", "rt-multi-thread", "signal"] }
-tokio-util = { version = "0.7", features = ["rt"] }
+tokio = { version = "1", features = ["io-std", "macros", "net", "rt-multi-thread", "signal"], optional = true }
+tokio-util = { version = "0.7", features = ["rt"], optional = true }
 
 [dev-dependencies]
 reqwest = { version = "0.13", default-features = false, features = ["json"] }

@@ -4,6 +4,7 @@ description = "wasm-bindgen serialization adapter for docxdriver-core typed requ
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish = false
 
 [lib]
 crate-type = ["cdylib", "rlib"]

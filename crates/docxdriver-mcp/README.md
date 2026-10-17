@@ -27,11 +27,28 @@ from this workspace:
 cargo install --locked --path crates/docxdriver-mcp
 ```
 
+Or from crates.io:
+
+```sh
+cargo install --locked docxdriver-mcp
+```
+
 Or installed from the Git repository:
 
 ```sh
 cargo install --locked --git https://github.com/jhnoel/docxdriver --bin docxdriver-mcp
 ```
+
+## Library
+
+Hosts with their own transport can call the tools in process. Disable the
+default `server` feature to drop the binary, axum, clap and rmcp transports:
+
+```toml
+docxdriver-mcp = { version = "0.3.3", default-features = false }
+```
+
+`DocxServer::new(root)`, `tools()` and `call_named(name, args)` work without it.
 
 ## stdio
 

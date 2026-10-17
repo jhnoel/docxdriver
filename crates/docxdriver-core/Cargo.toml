@@ -4,6 +4,13 @@ description = "Artifact-first DOCX engine: (bytes, DocxCommand JSON) -> (bytes, 
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
+readme = "README.md"
+keywords = ["docx", "ooxml", "word", "document", "track-changes"]
+categories = ["text-processing", "parser-implementations"]
+# Library sources and the runtime template only; tests, examples and the
+# schema generator stay in the repository.
+include = ["/src/**/*.rs", "!/src/bin/**", "/assets/blank.docx", "/README.md", "/LICENSE"]
 
 [dependencies]
 xmloxide = { version = "0.4.3", default-features = false }
