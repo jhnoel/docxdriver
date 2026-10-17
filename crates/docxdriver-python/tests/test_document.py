@@ -1,4 +1,5 @@
 """docxdriver.Document against the native engine; run after installing the wheel."""
+import json
 import re
 import unittest
 
@@ -31,7 +32,7 @@ class DocumentTests(unittest.TestCase):
         ]))
         self.assertEqual(review.report['completed'], 2)
 
-        edited = review.commit()
+        edited = doc.commit(review.key)
         self.assertIsInstance(edited, Document)
         self.assertIn('sixty days', edited.markup('final'))
         self.assertIn('thirty days', edited.markup('original'))
@@ -39,6 +40,25 @@ class DocumentTests(unittest.TestCase):
         self.assertEqual(len(edited.comments()), 1)
         # The reviewed document is unchanged.
         self.assertEqual(doc.revisions(), [])
+
+        # Keys are single-use.
+        with self.assertRaises(ValueError):
+            doc.commit(review.key)
+
+    def test_commit_needs_a_reviewed_key(self):
+        doc = create(paragraphs=['Alpha'])
+        with self.assertRaises(ValueError):
+            doc.commit('p1:sha256:' + '0' * 64)
+
+    def test_host_primitives_are_stateless(self):
+        # What a sandbox host builds on: it keeps plan and key, issues its own.
+        from docxdriver import commit_plan, review_plan
+        doc = create(html='<p>Rent is due in thirty days.</p>')
+        at = first_paragraph(doc.markup())
+        plan = json.dumps(Plan(change_mode='direct', ops=[ReplaceText(at=at, select='thirty', with_='sixty')]).to_dict())
+        reviewed = json.loads(review_plan(doc.data, plan))
+        edited = Document(commit_plan(doc.data, plan, reviewed['key']))
+        self.assertIn('sixty days', edited.markup())
 
     def test_engine_errors_raise(self):
         doc = create(paragraphs=['Alpha'])

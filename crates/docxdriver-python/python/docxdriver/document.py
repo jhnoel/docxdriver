@@ -5,8 +5,13 @@
 #   doc.comments() / revisions() / styles() / assets()
 #   doc.find("thirty")
 #   review = doc.review(Plan(ops=[...]))
-#   doc = review.commit()              a new Document
+#   doc = doc.commit("K7QM-3XRP-...")  a new Document
 #   Path("a.docx").write_bytes(doc.data)
+#
+# Commit keys prove a review was read. The host keeps each reviewed plan
+# under its key. A sandbox host shows the key only to the model, beside the
+# report, so committing means typing the key back in a later submission;
+# there review.key is None. Natively, with no model, review.key is set.
 #
 # Valid CPython and within Monty's subset (no inheritance or method
 # decorators); docxdriver-monty-repl embeds this file as DOCUMENT. The
@@ -32,7 +37,7 @@ except ImportError:
 
 
 class Document:
-    """One .docx as bytes. Every method reads these bytes; none writes."""
+    """One .docx as bytes. Reads never write; commit returns a new Document."""
 
     def __init__(self, data):
         self.data = data
@@ -63,25 +68,24 @@ class Document:
         return json.loads(_docx_find(self.data, query, ignore_case))
 
     def review(self, plan):
-        """Preview a Plan (or its dict) without writing. Inspect .report,
-        then .commit()."""
+        """Preview a Plan (or its dict) without writing. Read .report; the
+        commit key is issued with it."""
         plan = json.dumps(plan.to_dict() if hasattr(plan, "to_dict") else plan)
         reviewed = json.loads(_docx_review(self.data, plan))
-        return Review(self, plan, reviewed["key"], reviewed["report"])
+        return Review(reviewed["report"], reviewed.get("key"))
+
+    def commit(self, key):
+        """Apply the plan reviewed under key to these bytes; returns the
+        edited Document. Keys are single-use."""
+        return Document(_docx_commit(self.data, key))
 
 
 class Review:
-    """A previewed plan. .report lists each op's outcome and affected markup."""
+    """A previewed plan: .report lists each op's outcome and affected markup."""
 
-    def __init__(self, document, plan, key, report):
-        self.document = document
-        self.plan = plan
-        self.key = key
+    def __init__(self, report, key=None):
         self.report = report
-
-    def commit(self):
-        """Apply the reviewed plan; returns the edited Document."""
-        return Document(_docx_commit(self.document.data, self.plan, self.key))
+        self.key = key
 
 
 def create(paragraphs=None, html=None):

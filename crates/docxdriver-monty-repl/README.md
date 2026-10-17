@@ -8,8 +8,13 @@ native code are interchangeable:
 ```python
 doc = Document(Path("a.docx").read_bytes())
 review = doc.review(Plan(ops=[ReplaceText(at=..., select="thirty", with_="sixty")]))
-Path("a.docx").write_bytes(review.commit().data)
+# submission ends; the model reads review.report and the commit key
+Path("a.docx").write_bytes(doc.commit("K7QM-3XRP-...").data)
 ```
+
+Commit keys prove the model read the review: the host keeps each reviewed
+plan under a key it issues and shows the key only to the model, never to
+Python. See `ENGINE` for the host's duties.
 
 - `PLAN`: `Plan`, the typed op dataclasses (`ReplaceText`, `FormatText`, ...),
   `Revise`, `AcceptRevision`/`RejectRevision` (`docxdriver.plan`).

@@ -25,10 +25,16 @@ review = doc.review(Plan(author="Reviewer", ops=[
     ReplaceText(at="0F537164", select="thirty", with_="sixty"),
 ]))
 review.report                     # preview: each op's outcome
-Path("contract.docx").write_bytes(review.commit().data)
+Path("contract.docx").write_bytes(doc.commit(review.key).data)
 
 new = create(paragraphs=["Hello"])  # or create(html="<p>Hello</p>")
 ```
+
+Commit keys are single-use. Natively `review.key` carries the key; in a
+sandbox it is `None` and the host shows the key only to the model, so a
+commit proves the review was read. Sandbox hosts written in Python build on
+the stateless `review_plan(data, plan_json)` and
+`commit_plan(data, plan_json, key)`, keeping each plan under a key they issue.
 
 Engine diagnostics raise `ValueError`. The lower-level `execute_request`,
 `canonical_plan_json`, `run_command`, `run_plan` and `run_request` remain.

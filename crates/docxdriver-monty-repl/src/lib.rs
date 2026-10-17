@@ -8,13 +8,21 @@
 //!   | PLAN, DOCUMENT preloaded      |      |                              |
 //!   | doc = Document(data)          |      |                              |
 //!   | doc.review(Plan(ops=[...]))   | ---> | _docx_review(data, plan)     |
-//!   |                               |      |   Document::open(data)       |
-//!   |                               | <--- |   .review(&doc.plan(plan)?)  |
-//!   +-------------------------------+ JSON +------------------------------+
+//!   |                               |      |   core review; keep plan     |
+//!   | Review(report), no key        | <--- |   under a random key K       |
+//!   +-------------------------------+      +------------------------------+
+//!          submission ends: the model sees the report and K
+//!   | doc.commit("K")  (typed)      | ---> | _docx_commit(data, "K")      |
 //! ```
 //!
 //! The host defines each name in [`ENGINE`] as an external function that
 //! calls `docxdriver_core::Document`; see [`DOCUMENT`] for each signature.
+//!
+//! Commit keys prove the model read a review. `_docx_review` must not
+//! return the key to Python: the host keeps the plan and core's preview key
+//! under a key it issues, unguessable and not derived from the plan, and
+//! shows it to the model only beside the report. `_docx_commit` looks the
+//! key up, commits through core, and forgets it.
 
 /// Plan vocabulary: op dataclasses, `Revise`, `AcceptRevision`/`RejectRevision`,
 /// `Plan`. Same text as the `docxdriver.plan` module of the PyPI package.
@@ -42,8 +50,8 @@ pub const DOCUMENT: &str = include_str!("../sandbox/document.py");
 /// | `_docx_styles`     | data                     | JSON list                 |
 /// | `_docx_assets`     | data                     | JSON list                 |
 /// | `_docx_find`       | data, query, ignore_case | JSON list                 |
-/// | `_docx_review`     | data, plan JSON          | JSON `{"key", "report"}`  |
-/// | `_docx_commit`     | data, plan JSON, key     | bytes                     |
+/// | `_docx_review`     | data, plan JSON          | JSON `{"report"}`         |
+/// | `_docx_commit`     | data, commit key         | bytes                     |
 pub const ENGINE: [&str; 9] = [
     "_docx_create",
     "_docx_markup",

@@ -1,6 +1,6 @@
 """Python SDK for the docxdriver document engine."""
 import json
-from ._core import __version__, canonical_plan_json, execute_request
+from ._core import __version__, canonical_plan_json, commit_plan, execute_request, review_plan
 from .document import Document, Review, create
 
 
