@@ -747,27 +747,6 @@ impl DocxXml {
         self.revision_ids = Some(seen);
     }
 
-    /// Compatibility entry point for callers that capture attached revision
-    /// nodes themselves. Plan execution uses allocation watermarks instead.
-    pub fn renumber_new_revision_ids(&mut self, before: &HashSet<NodeId>) {
-        let elements=self.revision_elements();
-        let mut seen=elements.iter().filter(|node|before.contains(node))
-            .filter_map(|&node|self.attr(node,"id").map(str::to_owned)).collect::<HashSet<_>>();
-        for node in elements.into_iter().filter(|node|!before.contains(node)) {
-            if seen.insert(self.attr(node,"id").unwrap_or("").to_string()) {continue;}
-            loop {
-                let fresh=self.next_revision_id().to_string();
-                if seen.insert(fresh.clone()) {
-                    self.doc.remove_attribute(node,"w:id");self.doc.remove_attribute(node,"id");
-                    self.doc.set_attribute(node,"w:id",&fresh);break;
-                }
-            }
-        }
-        // A compatibility caller may change IDs after an earlier checkpoint.
-        // Rebuild lazily before a later incremental operation.
-        self.revision_ids=None;
-    }
-
     /// Highest revision id present in this part, if any.
     pub fn max_revision_id(&self) -> Option<u64> {
         let root = self.body().or_else(|| self.doc.root_element())?;
