@@ -36,6 +36,8 @@ HOST_PY = HOST_SANDBOX / 'host_wrappers.py'
 HOST_MD = HOST_SANDBOX / 'host_reference.md'
 REPL_PRELUDE = ROOT / 'experimental/python-repl-host/docxdriver_repl/prelude.py'
 CHECK_FLAG = '--check'
+# Sources are UTF-8 (e.g. `’`); the platform default differs on Windows.
+ENCODING = 'utf-8'
 
 # Python keywords: a schema field colliding with one gets a trailing `_`.
 PYTHON_KEYWORDS = {
@@ -203,6 +205,11 @@ def docs_source(selected, capabilities):
     return '\n'.join(lines)
 
 
+def read(path):
+    """UTF-8 text with LF newlines on every platform."""
+    return path.read_text(encoding=ENCODING)
+
+
 def splice(text, region, block):
     """Replace the body between `# BEGIN <region>` and `# END <region>`."""
     start, end = f'# BEGIN {region}', f'# END {region}'
@@ -249,29 +256,29 @@ def repl_prelude(host, reference):
 
 def generate():
     """Map every output path to its expected content."""
-    schema = json.loads(SCHEMA.read_text())
-    capabilities = json.loads(CAPABILITIES.read_text())
+    schema = json.loads(read(SCHEMA))
+    capabilities = json.loads(read(CAPABILITIES))
     selected = selected_variants(schema, capabilities)
 
     # Splice the schema-derived regions into plan.py and its stubs/reference.
-    plan_py = splice(PLAN_PY.read_text(), 'GENERATED DATACLASSES',
+    plan_py = splice(read(PLAN_PY), 'GENERATED DATACLASSES',
                      '\n\n'.join(dataclass_source(*entry) for entry in selected) + '\n')
-    plan_pyi = splice(PLAN_PYI.read_text(), 'GENERATED TYPE STUBS',
+    plan_pyi = splice(read(PLAN_PYI), 'GENERATED TYPE STUBS',
                       '\n\n'.join(stub_source(*entry) for entry in selected) + '\n')
-    plan_md = splice(PLAN_MD.read_text(), 'GENERATED OPERATION DOCS', docs_source(selected, capabilities))
+    plan_md = splice(read(PLAN_MD), 'GENERATED OPERATION DOCS', docs_source(selected, capabilities))
 
-    reference = plan_md + '\n' + HOST_MD.read_text()
+    reference = plan_md + '\n' + read(HOST_MD)
     return {
         PLAN_PY: plan_py,
         PLAN_PYI: plan_pyi,
         PLAN_MD: plan_md,
-        REPL_PRELUDE: repl_prelude(HOST_PY.read_text(), reference),
+        REPL_PRELUDE: repl_prelude(read(HOST_PY), reference),
     }
 
 
 def main(argv):
     outputs = generate()
-    stale = [path for path, text in outputs.items() if not path.exists() or path.read_text() != text]
+    stale = [path for path, text in outputs.items() if not path.exists() or read(path) != text]
 
     if CHECK_FLAG in argv:
         for path in stale:
@@ -279,7 +286,7 @@ def main(argv):
         return 1 if stale else 0
 
     for path in stale:
-        path.write_text(outputs[path])
+        path.write_text(outputs[path], encoding=ENCODING, newline='\n')
     return 0
 
 
