@@ -8,7 +8,7 @@ use xmloxide::tree::NodeId;
 use crate::document::DocxXml;
 use crate::outcome::Outcome;
 use crate::package::Package;
-use crate::segments::{all_text, build_segments, rename_for};
+use crate::segments::{all_text, build_segments, mark_deleted_leaves, remove_content};
 
 use super::readonly::plural;
 
@@ -381,24 +381,15 @@ fn resolve_entry(xml: &mut DocxXml, entry: &RevisionEntry, accept: bool) -> Resu
                 xml.doc.detach(child);
                 xml.doc.insert_before(entry.node, child);
                 if !accept {
-                    // Rejected delete: its w:delText leaves become live w:t again.
-                    let leaves: Vec<NodeId> = xml
-                        .doc
-                        .descendants(child)
-                        .filter(|&n| xml.is_w(n, "delText"))
-                        .collect();
-                    for leaf in leaves {
-                        let name = rename_for(xml, leaf, false);
-                        xml.doc.rename_element(leaf, name);
-                    }
+                    // Rejected delete: its w:delText leaves become live w:t
+                    // again, and w:delInstrText field codes w:instrText.
+                    mark_deleted_leaves(xml, child, false);
                 }
             }
             xml.doc.remove_node(entry.node);
         }
         // Rejected insert / accepted delete: the content goes.
-        (true, false) | (false, true) => {
-            xml.doc.remove_node(entry.node);
-        }
+        (true, false) | (false, true) => remove_content(xml, entry.node),
     }
     Ok(())
 }
@@ -519,6 +510,27 @@ fn accept_reject_all_in_xml(xml: &mut DocxXml, accept: bool) -> Result<usize, Ou
         resolve_entry(xml, &entry, accept)?;
         count += 1;
     }
+    // Tracked cell insertions and deletions: the marker sits in the cell's
+    // tcPr, and the cell goes on a rejected insert or an accepted delete.
+    let mut shortened: Vec<NodeId> = Vec::new();
+    loop {
+        let marker = scope(xml).and_then(|root| {
+            xml.doc.descendants(root).find(|&n| {
+                (xml.is_w(n, "cellIns") || xml.is_w(n, "cellDel"))
+                    && xml.doc.parent(n).is_some_and(|p| xml.is_w(p, "tcPr"))
+            })
+        });
+        let Some(marker) = marker else { break };
+        count += 1;
+        let cell = xml.doc.parent(marker).and_then(|p| xml.doc.parent(p));
+        if accept != xml.is_w(marker, "cellDel") {
+            xml.doc.remove_node(marker);
+            continue;
+        }
+        if let Some(row) = cell.and_then(|cell| remove_cell(xml, cell)) {
+            shortened.push(row);
+        }
+    }
     // One record at a time, re-scanning between resolutions: rejecting a
     // record swaps subtrees around, which can relocate or remove records
     // collected earlier (e.g. an rPrChange nested in a pPrChange snapshot).
@@ -534,10 +546,117 @@ fn accept_reject_all_in_xml(xml: &mut DocxXml, accept: bool) -> Result<usize, Ou
         resolve_property_change(xml, node, accept);
         count += 1;
     }
+    // Rows that lost a cell are padded with gridAfter against the settled
+    // grid, the way Word writes a short row.
+    for row in shortened {
+        pad_short_row(xml, row);
+    }
     if let Some(root) = scope(xml) {
         strip_move_range_markers_in(xml, root, None);
     }
     Ok(count)
+}
+
+/// The cells of `row`, through any content-control wrappers, but not those
+/// of tables nested in its cells.
+fn row_cells(xml: &DocxXml, row: NodeId) -> Vec<NodeId> {
+    xml.doc
+        .descendants(row)
+        .filter(|&n| {
+            xml.is_w(n, "tc")
+                && xml.doc.ancestors(n).skip(1).find(|&a| xml.is_w(a, "tr")) == Some(row)
+        })
+        .collect()
+}
+
+/// Remove a table cell. A row left without cells goes too, and a table
+/// left without rows becomes an empty paragraph. Returns the row when it
+/// remains, now short of its grid.
+fn remove_cell(xml: &mut DocxXml, cell: NodeId) -> Option<NodeId> {
+    let row = xml.doc.ancestors(cell).skip(1).find(|&a| xml.is_w(a, "tr"))?;
+    // A content control holding only this cell goes with it.
+    let mut target = cell;
+    while let Some(parent) = xml.doc.parent(target) {
+        let wrapper = xml.is_w(parent, "sdtContent")
+            && xml.doc.children(parent).filter(|&c| xml.doc.is_element(c)).count() == 1;
+        if !wrapper {
+            break;
+        }
+        target = xml.doc.parent(parent).unwrap_or(parent);
+    }
+    xml.doc.remove_node(target);
+    if !row_cells(xml, row).is_empty() {
+        return Some(row);
+    }
+    let table = xml.doc.ancestors(row).skip(1).find(|&a| xml.is_w(a, "tbl"));
+    xml.doc.remove_node(row);
+    if let Some(table) = table {
+        let rows = xml
+            .doc
+            .descendants(table)
+            .any(|n| xml.is_w(n, "tr") && xml.doc.ancestors(n).skip(1).find(|&a| xml.is_w(a, "tbl")) == Some(table));
+        if !rows {
+            let paragraph = xml.doc.create_element("w:p");
+            xml.doc.insert_before(table, paragraph);
+            xml.doc.remove_node(table);
+        }
+    }
+    None
+}
+
+/// Raise a row's gridAfter so its cells and padding cover the table grid.
+fn pad_short_row(xml: &mut DocxXml, row: NodeId) {
+    let attached = xml.doc.root_element().is_some_and(|root| xml.doc.ancestors(row).any(|a| a == root));
+    let Some(table) = xml.doc.ancestors(row).skip(1).find(|&a| xml.is_w(a, "tbl")) else {
+        return;
+    };
+    if !attached {
+        return;
+    }
+    let columns = xml
+        .child_w(table, "tblGrid")
+        .map(|grid| xml.doc.children(grid).filter(|&c| xml.is_w(c, "gridCol")).count())
+        .unwrap_or(0) as i64;
+    let value = |xml: &DocxXml, parent: Option<NodeId>, name: &str, default: i64| {
+        parent
+            .and_then(|p| xml.child_w(p, name))
+            .and_then(|n| xml.attr(n, "val"))
+            .and_then(|v| v.trim().parse::<i64>().ok())
+            .unwrap_or(default)
+    };
+    let trpr = xml.child_w(row, "trPr");
+    let after = value(xml, trpr, "gridAfter", 0);
+    let mut position = value(xml, trpr, "gridBefore", 0) + after;
+    for cell in row_cells(xml, row) {
+        position += value(xml, xml.child_w(cell, "tcPr"), "gridSpan", 1);
+    }
+    if columns == 0 || position >= columns {
+        return;
+    }
+    let trpr = match trpr {
+        Some(trpr) => trpr,
+        None => {
+            let trpr = xml.doc.create_element("w:trPr");
+            match xml.child_w(row, "tblPrEx") {
+                Some(ex) => xml.doc.insert_after(ex, trpr),
+                None => match xml.doc.first_child(row) {
+                    Some(first) => xml.doc.insert_before(first, trpr),
+                    None => xml.doc.append_child(row, trpr),
+                },
+            }
+            trpr
+        }
+    };
+    if let Some(old) = xml.child_w(trpr, "gridAfter") {
+        xml.doc.remove_node(old);
+    }
+    let grid_after = xml.doc.create_element("w:gridAfter");
+    xml.doc.set_attribute(grid_after, "w:val", &(after + columns - position).to_string());
+    // CT_TrPrBase is an unordered choice; the revision records close CT_TrPr.
+    match xml.doc.first_child(trpr) {
+        Some(first) => xml.doc.insert_before(first, grid_after),
+        None => xml.doc.append_child(trpr, grid_after),
+    }
 }
 
 /*    split_boundary(xml, paragraph, offset);

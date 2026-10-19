@@ -188,16 +188,26 @@ fn ensure_property_child(
         .iter()
         .position(|name| *name == local)
         .map_or(&[][..], |index| &sequence[index + 1..]);
-    let successor = xml
-        .doc
-        .children(parent)
-        .find(|&child| successors.iter().any(|name| xml.is_w(child, name)));
+    // Office extension elements (w14 text effects and the like) close the
+    // base sequence, before only the trailing revision record.
+    let trailing = sequence.last() == Some(&local);
+    let successor = xml.doc.children(parent).find(|&child| {
+        successors.iter().any(|name| xml.is_w(child, name))
+            || (!trailing && xml.doc.is_element(child) && is_extension(xml, child))
+    });
     if let Some(next) = successor {
         xml.doc.insert_before(next, node);
     } else {
         xml.doc.append_child(parent, node);
     }
     node
+}
+
+/// An element outside WordprocessingML: an Office extension, or the markup
+/// compatibility wrapper that carries one.
+fn is_extension(xml: &DocxXml, node: NodeId) -> bool {
+    let ns = xml.doc.node_namespace(node);
+    ns.is_some() && ns != Some(crate::document::W_NS)
 }
 
 pub(crate) fn set_child_val(xml: &mut DocxXml, parent: NodeId, local: &str, val: &str) {

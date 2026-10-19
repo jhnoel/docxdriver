@@ -13,7 +13,6 @@ use crate::package::Package;
 use super::layout::ensure_sect_pr;
 
 const CONTENT_TYPES_PART: &str = "[Content_Types].xml";
-const DOCUMENT_RELS_PART: &str = "word/_rels/document.xml.rels";
 const SETTINGS_CT: &str =
     "application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml";
 const SETTINGS_REL: &str =
@@ -73,13 +72,18 @@ fn ensure_document_rel(
         "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>",
         "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"/>",
     );
-    let mut rels = parse_part(package, DOCUMENT_RELS_PART, default)?;
+    let rels_part = super::document_rels_part(package);
+    let mut rels = parse_part(package, &rels_part, default)?;
     let root = rels
         .doc
         .root_element()
         .ok_or_else(|| Outcome::error("malformed document.xml.rels"))?;
+    // Reuse only a relationship of the same type: a header id that names a
+    // footer relationship makes Word refuse the document.
     if let Some(existing) = rels.doc.children(root).find(|&child| {
-        rels.is_local(child, "Relationship") && rels.doc.attribute(child, "Target") == Some(target)
+        rels.is_local(child, "Relationship")
+            && rels.doc.attribute(child, "Target") == Some(target)
+            && rels.doc.attribute(child, "Type") == Some(rel_type)
     }) {
         return Ok(rels
             .doc
@@ -104,7 +108,7 @@ fn ensure_document_rel(
     rels.doc.set_attribute(node, "Type", rel_type);
     rels.doc.set_attribute(node, "Target", target);
     rels.doc.append_child(root, node);
-    package.set(DOCUMENT_RELS_PART, rels.serialize());
+    package.set(&rels_part, rels.serialize());
     Ok(id)
 }
 

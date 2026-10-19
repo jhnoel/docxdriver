@@ -81,6 +81,16 @@ Expected invalid plans, stale sources, stale keys, unknown fields, and rejected
 operations are normal structured results. Inspect their `diagnostic.code`,
 `diagnostic.path`, and optional TOML span, repair the plan, and preview again.
 
+`integrity_regression` means the engine refused to write output that would be
+damaged: the plan would introduce a fault the source did not have (its message
+names each one), or rewrite a part it cannot reproduce exactly. Nothing was
+written and the source is unchanged. Faults already in the source never cause
+it. Do not retry the same plan; drop or rephrase the operation that names the
+affected part, or report that the edit cannot be made safely.
+
+A document saved as Strict Open XML is rejected on read and edit; ask the user
+to save it as a standard Word Document (.docx) in Word and try again.
+
 ## Pagination
 
 Pages are positive integers. Pagination packs complete top-level rendered blocks

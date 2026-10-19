@@ -363,13 +363,23 @@ pub fn validate_row(at: &str, f: &RowFormat) -> Result<(), String> {
     }
     Ok(())
 }
+/// The properties element of a table, row or cell. It precedes all content —
+/// including cells wrapped in w:sdt or w:customXml, which `ensure` would not
+/// recognize — and follows only w:tblPrEx in a row.
 fn bag(x: &mut DocxXml, n: NodeId, tag: &str) -> NodeId {
-    let seq = match tag {
-        "tblPr" => &["tblPr", "tblGrid", "tr"][..],
-        "trPr" => &["tblPrEx", "trPr", "tc"][..],
-        _ => &["tcPr", "p", "tbl"][..],
-    };
-    ensure(x, n, tag, seq)
+    if let Some(existing) = x.child_w(n, tag) {
+        return existing;
+    }
+    let props = x.doc.create_element(&format!("w:{tag}"));
+    let next = x
+        .doc
+        .children(n)
+        .find(|&c| x.doc.is_element(c) && !(tag == "trPr" && x.is_w(c, "tblPrEx")));
+    match next {
+        Some(next) => x.doc.insert_before(next, props),
+        None => x.doc.append_child(n, props),
+    }
+    props
 }
 fn snapshot(
     x: &mut DocxXml,

@@ -11,6 +11,7 @@ mod commands;
 mod document;
 mod facade;
 mod html;
+pub mod integrity;
 mod media;
 mod outcome;
 mod package;

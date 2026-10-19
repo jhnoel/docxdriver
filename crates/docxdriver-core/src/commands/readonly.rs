@@ -219,7 +219,10 @@ pub fn create(command: &Value, ctx: &ExecCtx) -> Outcome {
         return Outcome::ok(summary, result);
     }
     match package.to_bytes() {
-        Ok(bytes) => Outcome::ok_bytes(summary, result, bytes),
+        Ok(bytes) => match crate::integrity::gate_created(&bytes) {
+            Ok(()) => Outcome::ok_bytes(summary, result, bytes),
+            Err(failure) => Outcome::error(failure.summary()),
+        },
         Err(error) => Outcome::error(error.to_string()),
     }
 }

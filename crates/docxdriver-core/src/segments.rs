@@ -127,11 +127,29 @@ fn char_slice(text: &str, start: usize, end: usize) -> String {
 /// Ensure a run boundary exists at all-view char `offset` inside the paragraph:
 /// if `offset` falls strictly inside a segment, split that segment's run in two
 /// (deep-cloning w:rPr so formatting survives). Idempotent at existing boundaries.
+///
+/// A run may hold several leaves (`<w:t/><w:br/><w:t/>`), and callers wrap or
+/// format whole runs, so the boundary is a run boundary even where it falls
+/// between two leaves of one run: content on either side goes to its own run.
 pub fn split_boundary(xml: &mut DocxXml, paragraph: NodeId, offset: usize) {
     let segments = build_segments(xml, paragraph);
     let Some(segment) = segments.iter().find(|s| s.start < offset && offset < s.end) else {
+        for segment in &segments {
+            if segment.end == offset {
+                if let Some(next) = next_run_content(xml, segment.text_element) {
+                    split_run_before(xml, next);
+                }
+            }
+            if segment.start == offset && previous_run_content(xml, segment.text_element) {
+                split_run_before(xml, segment.text_element);
+            }
+        }
         return;
     };
+    // Content after the split leaf keeps its place after the tail.
+    if let Some(next) = next_run_content(xml, segment.text_element) {
+        split_run_before(xml, next);
+    }
     let head = char_slice(&segment.text, 0, offset - segment.start);
     let tail = char_slice(
         &segment.text,
@@ -152,6 +170,46 @@ pub fn split_boundary(xml: &mut DocxXml, paragraph: NodeId, offset: usize) {
     xml.doc.insert_after(segment.run, new_run);
 }
 
+/// The element after `leaf` in its run, when `leaf` is a direct run child.
+fn next_run_content(xml: &DocxXml, leaf: NodeId) -> Option<NodeId> {
+    let parent = xml.doc.parent(leaf)?;
+    if !xml.is_w(parent, "r") {
+        return None;
+    }
+    std::iter::successors(xml.doc.next_sibling(leaf), |&n| xml.doc.next_sibling(n))
+        .find(|&n| xml.doc.is_element(n))
+}
+
+/// Whether run content other than w:rPr precedes `leaf` in its run.
+fn previous_run_content(xml: &DocxXml, leaf: NodeId) -> bool {
+    let Some(parent) = xml.doc.parent(leaf) else {
+        return false;
+    };
+    xml.is_w(parent, "r")
+        && std::iter::successors(xml.doc.prev_sibling(leaf), |&n| xml.doc.prev_sibling(n))
+            .any(|n| xml.doc.is_element(n) && !xml.is_w(n, "rPr"))
+}
+
+/// Move `child` and everything after it in its run into a new run, with a
+/// deep copy of the run's w:rPr, placed right after the original run.
+fn split_run_before(xml: &mut DocxXml, child: NodeId) {
+    let Some(run) = xml.doc.parent(child) else {
+        return;
+    };
+    let new_run = xml.doc.create_element("w:r");
+    if let Some(rpr) = xml.run_rpr(run) {
+        let clone = xml.doc.clone_node(rpr, true);
+        xml.doc.append_child(new_run, clone);
+    }
+    let moved: Vec<NodeId> =
+        std::iter::successors(Some(child), |&n| xml.doc.next_sibling(n)).collect();
+    for node in moved {
+        xml.doc.detach(node);
+        xml.doc.append_child(new_run, node);
+    }
+    xml.doc.insert_after(run, new_run);
+}
+
 /// The correct new tag for renaming THIS leaf, respecting its own storage form:
 /// a parsed leaf keeps its "w" prefix (local name only), a created leaf carries
 /// the qualified name. Renaming a prefixed node to "w:delText" would serialize
@@ -164,6 +222,186 @@ pub fn rename_for(xml: &DocxXml, leaf: NodeId, del: bool) -> &'static str {
         (false, true) => "t",
         (false, false) => "w:t",
     }
+}
+
+/// Rename the run leaves under `root` for a tracked deletion (`del`) or its
+/// rejection: `w:t` and `w:delText`, `w:instrText` and `w:delInstrText`.
+/// A text box (`w:txbxContent`) is its own story with its own revision
+/// marks, so leaves inside one are left alone.
+pub fn mark_deleted_leaves(xml: &mut DocxXml, root: NodeId, del: bool) {
+    let (from, to): (&[&str], [&str; 2]) = if del {
+        (&["t", "instrText"], ["delText", "delInstrText"])
+    } else {
+        (&["delText", "delInstrText"], ["t", "instrText"])
+    };
+    let leaves: Vec<(NodeId, usize)> = xml
+        .doc
+        .descendants(root)
+        .filter_map(|n| from.iter().position(|name| xml.is_w(n, name)).map(|i| (n, i)))
+        .filter(|&(n, _)| {
+            !xml.doc
+                .ancestors(n)
+                .take_while(|&a| a != root)
+                .any(|a| xml.is_w(a, "txbxContent"))
+        })
+        .collect();
+    for (leaf, index) in leaves {
+        // A parsed leaf keeps its prefix (local name only); a created leaf
+        // carries the qualified name.
+        let name = if xml.doc.node_prefix(leaf).is_some() {
+            to[index].to_string()
+        } else {
+            format!("w:{}", to[index])
+        };
+        xml.doc.rename_element(leaf, &name);
+    }
+}
+
+/// Range markers that keep their place, collapsed, when the content around
+/// them goes: their counterpart may sit outside the removed content.
+const RANGE_MARKERS: &[&str] = &[
+    "bookmarkStart",
+    "bookmarkEnd",
+    "commentRangeStart",
+    "commentRangeEnd",
+    "moveFromRangeStart",
+    "moveFromRangeEnd",
+    "moveToRangeStart",
+    "moveToRangeEnd",
+    "permStart",
+    "permEnd",
+];
+
+/// Remove an element and its content without breaking what pairs
+/// with it from outside: range markers stay as zero-width markers, comment
+/// references stay in a bare run (their comment would be left unanchored),
+/// and a field cut in two loses its remaining field characters and code so
+/// its surviving result reads as plain text.
+pub fn remove_content(xml: &mut DocxXml, node: NodeId) {
+    let in_own_story = |xml: &DocxXml, n: NodeId| {
+        !xml.doc
+            .ancestors(n)
+            .take_while(|&a| a != node)
+            .any(|a| xml.is_w(a, "txbxContent") || xml.is_local(a, "Fallback"))
+    };
+    let markers: Vec<NodeId> = xml
+        .doc
+        .descendants(node)
+        .filter(|&n| RANGE_MARKERS.iter().any(|m| xml.is_w(n, m)))
+        .filter(|&n| {
+            in_own_story(xml, n)
+                && !xml.doc.ancestors(n).take_while(|&a| a != node).any(|a| xml.is_w(a, "r"))
+        })
+        .collect();
+    let references: Vec<NodeId> = xml
+        .doc
+        .descendants(node)
+        .filter(|&n| xml.is_w(n, "commentReference") && in_own_story(xml, n))
+        .collect();
+    let orphans = broken_field_parts(xml, node);
+    for marker in markers {
+        xml.doc.detach(marker);
+        xml.doc.insert_before(node, marker);
+    }
+    for reference in references {
+        let run = xml.doc.create_element("w:r");
+        xml.doc.detach(reference);
+        xml.doc.append_child(run, reference);
+        xml.doc.insert_before(node, run);
+    }
+    xml.doc.remove_node(node);
+    for part in orphans {
+        let run = xml.doc.parent(part).filter(|&r| xml.is_w(r, "r"));
+        xml.doc.remove_node(part);
+        if let Some(run) = run {
+            let empty = xml.doc.children(run).all(|c| !xml.doc.is_element(c) || xml.is_w(c, "rPr"));
+            if empty {
+                xml.doc.remove_node(run);
+            }
+        }
+    }
+}
+
+/// Field characters and code outside `node` that belong to a field `node`
+/// cuts in two: one with some, but not all, of its begin/separate/end inside.
+fn broken_field_parts(xml: &DocxXml, node: NodeId) -> Vec<NodeId> {
+    // The story holding `node`: its text box, or the whole part.
+    let story = xml
+        .doc
+        .ancestors(node)
+        .find(|&a| xml.is_w(a, "txbxContent"))
+        .or_else(|| xml.doc.root_element());
+    let Some(story) = story else {
+        return Vec::new();
+    };
+    let inside = |n: NodeId| xml.doc.ancestors(n).any(|a| a == node);
+    struct Field {
+        own: Vec<NodeId>,
+        code: Vec<NodeId>,
+        separated: bool,
+    }
+    let mut fields: Vec<Field> = Vec::new();
+    let mut open: Vec<usize> = Vec::new();
+    for n in xml.doc.descendants(story) {
+        let field_char = xml.is_w(n, "fldChar");
+        let code = xml.is_w(n, "instrText") || xml.is_w(n, "delInstrText");
+        if !(field_char || code) {
+            continue;
+        }
+        let nested = xml
+            .doc
+            .ancestors(n)
+            .take_while(|&a| a != story)
+            .any(|a| xml.is_w(a, "txbxContent") || xml.is_local(a, "Fallback"));
+        if nested {
+            continue;
+        }
+        // Everything met while a field is still in its code belongs to that
+        // code, nested fields included.
+        for &f in &open {
+            if !fields[f].separated {
+                fields[f].code.push(n);
+            }
+        }
+        if !field_char {
+            continue;
+        }
+        match xml.attr(n, "fldCharType") {
+            Some("begin") => {
+                open.push(fields.len());
+                fields.push(Field { own: vec![n], code: Vec::new(), separated: false });
+            }
+            Some("separate") => {
+                if let Some(&f) = open.last() {
+                    fields[f].code.pop();
+                    fields[f].own.push(n);
+                    fields[f].separated = true;
+                }
+            }
+            Some("end") => {
+                if let Some(f) = open.pop() {
+                    if !fields[f].separated {
+                        fields[f].code.pop();
+                    }
+                    fields[f].own.push(n);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut parts: Vec<NodeId> = Vec::new();
+    for field in fields {
+        let cut = field.own.iter().any(|&n| inside(n)) && field.own.iter().any(|&n| !inside(n));
+        if !cut {
+            continue;
+        }
+        for n in field.own.into_iter().chain(field.code) {
+            if !inside(n) && !parts.contains(&n) {
+                parts.push(n);
+            }
+        }
+    }
+    parts
 }
 
 /// Placement anchor for a segment: its revision wrapper when present, otherwise

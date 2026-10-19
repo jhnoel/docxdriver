@@ -101,6 +101,7 @@ pub(super) fn replace(
         xml.doc.insert_before(target, holder);
         xml.doc.detach(target);
         xml.doc.append_child(deletion, target);
+        crate::segments::mark_deleted_leaves(xml, target, true);
         let ins_id = xml.next_revision_id();
         xml.doc.set_attribute(holder, "w:id", &ins_id.to_string());
         xml.doc.set_attribute(holder, "w:author", author);
@@ -110,7 +111,7 @@ pub(super) fn replace(
             xml.doc.detach(child);
             xml.doc.insert_before(target, child);
         }
-        xml.doc.remove_node(target);
+        crate::segments::remove_content(xml, target);
         xml.doc.remove_node(holder);
     }
     Ok((
@@ -156,8 +157,9 @@ pub(super) fn delete(
         xml.doc.insert_before(target, deletion);
         xml.doc.detach(target);
         xml.doc.append_child(deletion, target);
+        crate::segments::mark_deleted_leaves(xml, target, true);
     } else {
-        xml.doc.remove_node(target);
+        crate::segments::remove_content(xml, target);
     }
     Ok((
         format!("deleted equation {} in paragraph {at}", index + 1),

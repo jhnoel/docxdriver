@@ -124,3 +124,68 @@ fn main_part_resolves_via_package_rels_for_typed_read_and_plan_write() {
         .unwrap()
         .contains("real text"));
 }
+
+/// Raw compressed bytes and method of every entry, by name.
+fn raw_entries(bytes: &[u8]) -> Vec<(String, zip::CompressionMethod, Vec<u8>)> {
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
+    (0..archive.len())
+        .map(|index| {
+            let mut file = archive.by_index_raw(index).unwrap();
+            let mut raw = Vec::new();
+            file.read_to_end(&mut raw).unwrap();
+            (file.name().to_string(), file.compression(), raw)
+        })
+        .collect()
+}
+
+#[test]
+fn untouched_parts_are_copied_through_byte_for_byte() {
+    // Re-zip the fixture with stored entries: a part the edit re-deflated
+    // would change method and bytes even though its content is the same.
+    let deflated = renamed_main_part();
+    let mut source = zip::ZipArchive::new(std::io::Cursor::new(&deflated)).unwrap();
+    let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let stored = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Stored);
+    for index in 0..source.len() {
+        let mut file = source.by_index(index).unwrap();
+        let mut content = Vec::new();
+        file.read_to_end(&mut content).unwrap();
+        writer.start_file(file.name(), stored).unwrap();
+        writer.write_all(&content).unwrap();
+    }
+    let bytes = writer.finish().unwrap().into_inner();
+
+    let p = Plan {
+        base: SourceHash::from_bytes(&bytes),
+        author: "typed-test".into(),
+        change_mode: ChangeMode::Direct,
+        ops: vec![EditOp::ReplaceParagraph {
+            at: ParagraphAddress::id("11111111"),
+            with: "real text".into(),
+        }],
+    };
+    let key = match execute_plan(&bytes, &PlanRequest { plan: p.clone(), preview_key: None }) {
+        PlanResult::Previewed { preview_key, .. } => preview_key,
+        other => panic!("preview failed: {other:?}"),
+    };
+    let out = match execute_plan(&bytes, &PlanRequest { plan: p, preview_key: Some(key) }) {
+        PlanResult::Committed { bytes, .. } => bytes,
+        other => panic!("commit failed: {other:?}"),
+    };
+
+    let before = raw_entries(&bytes);
+    let after = raw_entries(&out);
+    assert_eq!(
+        before.iter().map(|e| &e.0).collect::<Vec<_>>(),
+        after.iter().map(|e| &e.0).collect::<Vec<_>>(),
+        "part order changed"
+    );
+    for (old, new) in before.iter().zip(&after) {
+        if old.0 == "word/trial.xml" {
+            assert_ne!(old.2, new.2, "the edited part was not rewritten");
+        } else {
+            assert_eq!(old, new, "untouched part {} was rewritten", old.0);
+        }
+    }
+}

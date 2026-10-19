@@ -142,6 +142,13 @@ HTML5 entities and attribute syntax are supported. Use `<br>` for explicit line
 breaks. Unsupported CSS, unsafe URLs and scripts return diagnostics.
 
 Blocked reviews, stale keys, unknown fields, and rejected ops are normal.
+A review blocked with `integrity_regression` means the plan would have damaged
+the document (its message names each fault); nothing was written. Faults
+already in the source never cause it. Do not retry the same plan; drop or
+rephrase the operation, or report that the edit cannot be made safely.
+
+A document saved as Strict Open XML is rejected on read and edit; ask the user
+to save it as a standard Word Document (.docx) in Word and try again.
 
 ## Quotation audit (feature flag)
 

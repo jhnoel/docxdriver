@@ -28,7 +28,6 @@ const EXTENDED_PART: &str = "word/commentsExtended.xml";
 const IDS_PART: &str = "word/commentsIds.xml";
 const EXTENSIBLE_PART: &str = "word/commentsExtensible.xml";
 const CONTENT_TYPES_PART: &str = "[Content_Types].xml";
-const DOCUMENT_RELS_PART: &str = "word/_rels/document.xml.rels";
 
 const W15_NS: &str = "http://schemas.microsoft.com/office/word/2012/wordml";
 const W14_NS: &str = "http://schemas.microsoft.com/office/word/2010/wordml";
@@ -104,15 +103,18 @@ fn register_part(
         }
     }
 
-    // word/_rels/document.xml.rels relationship
-    let mut rels = parse_part(package, DOCUMENT_RELS_PART, "")?;
+    // The main document part's relationship.
+    let rels_part = super::document_rels_part(package);
+    let mut rels = parse_part(package, &rels_part, "")?;
     let root = rels
         .doc
         .root_element()
         .ok_or_else(|| Outcome::error("malformed document.xml.rels"))?;
     let target = part.strip_prefix("word/").unwrap_or(part);
     let exists = rels.doc.children(root).any(|child| {
-        rels.is_local(child, "Relationship") && rels.doc.attribute(child, "Target") == Some(target)
+        rels.is_local(child, "Relationship")
+            && rels.doc.attribute(child, "Target") == Some(target)
+            && rels.doc.attribute(child, "Type") == Some(rel_type)
     });
     if !exists {
         let mut max_rid = 0u64;
@@ -132,7 +134,7 @@ fn register_part(
         rels.doc.set_attribute(node, "Type", rel_type);
         rels.doc.set_attribute(node, "Target", target);
         rels.doc.append_child(root, node);
-        package.set(DOCUMENT_RELS_PART, rels.serialize());
+        package.set(&rels_part, rels.serialize());
     }
     Ok(())
 }
@@ -279,14 +281,35 @@ fn next_para_id(records: &[CommentRecord], extra_occupied: &HashSet<u64>) -> u64
     }
 }
 
-fn document_para_ids(xml: &DocxXml) -> HashSet<u64> {
-    xml.all_paragraphs()
+/// Paragraph ids in use: the in-memory document's (it may carry repaired or
+/// new ids not yet written) and every `paraId` attribute in any XML part —
+/// other comment paragraphs, headers, footers and notes. A paragraph id
+/// names one paragraph across the whole document.
+fn occupied_para_ids(package: &Package, xml: &DocxXml) -> HashSet<u64> {
+    static PARA_ID: std::sync::OnceLock<regex_lite::Regex> = std::sync::OnceLock::new();
+    let pattern = PARA_ID.get_or_init(|| {
+        regex_lite::Regex::new(r#"paraId(?:Parent)?\s*=\s*["']([0-9A-Fa-f]{8})["']"#).unwrap()
+    });
+    let mut occupied: HashSet<u64> = xml
+        .all_paragraphs()
         .into_iter()
         .filter_map(|node| {
             xml.para_id(node)
                 .and_then(|value| u64::from_str_radix(value, 16).ok())
         })
-        .collect()
+        .collect();
+    for (name, bytes) in package.parts() {
+        if !name.to_ascii_lowercase().ends_with(".xml") {
+            continue;
+        }
+        let text = String::from_utf8_lossy(bytes);
+        occupied.extend(
+            pattern
+                .captures_iter(&text)
+                .filter_map(|c| u64::from_str_radix(&c[1], 16).ok()),
+        );
+    }
+    occupied
 }
 
 /// Deterministic 8-hex durable id (FNV-1a over identifying fields), clamped
@@ -447,7 +470,7 @@ pub(crate) fn anchor_comment_at(
     let comments = parse_part(package, COMMENTS_PART, EMPTY_COMMENTS)?;
     let records = comment_records(&comments);
     let id = next_comment_id(&records);
-    let para_id = format!("{:08X}", next_para_id(&records, &document_para_ids(xml)));
+    let para_id = format!("{:08X}", next_para_id(&records, &occupied_para_ids(package, xml)));
 
     insert_anchor_markers(xml, paragraph, start, end, id)?;
     append_comment_record(package, id, &para_id, None, author, date, text)?;
@@ -736,7 +759,7 @@ pub fn reply_comment_typed(
     let parent_para_id = parent.para_id.clone();
     let parent_id = parent.id.clone();
     let id = next_comment_id(&records);
-    let para_id = format!("{:08X}", next_para_id(&records, &document_para_ids(xml)));
+    let para_id = format!("{:08X}", next_para_id(&records, &occupied_para_ids(package, xml)));
     append_comment_record(
         package,
         id,

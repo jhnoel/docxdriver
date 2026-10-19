@@ -1957,7 +1957,22 @@ fn fold_typed(
         crate::outcome::Outcome::ok("plan applied", serde_json::json!({})),
         &ctx,
     );
-    (report, out.bytes, None)
+    if out.status != crate::outcome::Status::Ok {
+        return (
+            report.clone(),
+            None,
+            Some((diag("package_write", out.summary, None), report)),
+        );
+    }
+    // Review and commit apply the same gate to the same bytes, so a plan
+    // that reviews clean commits clean.
+    if let Some(bytes) = &out.bytes {
+        if let Err(failure) = crate::integrity::gate(input, bytes) {
+            let diagnostic = diag("integrity_regression", failure.summary(), None);
+            return (report.clone(), None, Some((diagnostic, report)));
+        }
+    }
+    (report, if commit { out.bytes } else { None }, None)
 }
 /// When a selector matched nothing but matches the same paragraph as it was
 /// before the plan, name the earlier operations that changed that text:

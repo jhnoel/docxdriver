@@ -431,6 +431,7 @@ version = "0.4.0"
 dependencies = [
  "hex",
  "latex2mathml",
+ "quick-xml",
  "regex-lite",
  "schemars 0.8.22",
  "serde",
@@ -1186,6 +1187,15 @@ dependencies = [
  "pyo3-build-config",
  "quote",
  "syn 2.0.118",
+]
+
+[[package]]
+name = "quick-xml"
+version = "0.42.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "41b1177fdf999d2321d3fb46ff47159d9c1fb9ad66a4879f8c50a0b504615e9b"
+dependencies = [
+ "memchr",
 ]
 
 [[package]]

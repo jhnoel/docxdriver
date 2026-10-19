@@ -186,9 +186,40 @@ const REVISION_ID_TAGS: &[&str] = &[
 ];
 const REVISION_RANGE_MARKERS: usize = 16;
 
+/// XML end-of-line handling (XML 1.0 §2.11), done before xmloxide sees the
+/// bytes: it normalizes attribute whitespace before line ends, so a literal
+/// CRLF in an attribute value became two spaces and every rewrite altered it.
+/// A conforming parser reads the normalized bytes identically. UTF-16 parts
+/// are left to xmloxide (0x0D bytes there are not line ends).
+fn normalize_line_ends(bytes: &[u8]) -> std::borrow::Cow<'_, [u8]> {
+    let utf16 = bytes.starts_with(&[0xFF, 0xFE]) || bytes.starts_with(&[0xFE, 0xFF]);
+    if utf16 || !bytes.contains(&b'\r') {
+        return std::borrow::Cow::Borrowed(bytes);
+    }
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut iter = bytes.iter().peekable();
+    while let Some(&byte) = iter.next() {
+        if byte == b'\r' {
+            if iter.peek() == Some(&&b'\n') {
+                iter.next();
+            }
+            out.push(b'\n');
+        } else {
+            out.push(byte);
+        }
+    }
+    std::borrow::Cow::Owned(out)
+}
+
+/// What committing would write for an unchanged part: the engine's own read
+/// and write, for the integrity gate's fidelity check.
+pub(crate) fn engine_round_trip(bytes: &[u8]) -> Result<Vec<u8>, String> {
+    DocxXml::parse(bytes).map(|xml| xml.serialize())
+}
+
 impl DocxXml {
     pub fn parse(bytes: &[u8]) -> Result<Self, String> {
-        let doc = Document::parse_bytes(bytes)
+        let doc = Document::parse_bytes(&normalize_line_ends(bytes))
             .map_err(|error| format!("document.xml parse failed: {error}"))?;
         Ok(DocxXml {
             doc,

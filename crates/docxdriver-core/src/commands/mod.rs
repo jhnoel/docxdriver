@@ -27,6 +27,8 @@ pub struct ExecCtx {
     pub now: String,
 }
 
+const STRICT_W_NS: &str = "http://purl.oclc.org/ooxml/wordprocessingml/main";
+
 /// The parsed working set the operation fold runs over: one unzip + one
 /// document.xml parse per typed plan, however many operations follow.
 pub(crate) struct WorkState {
@@ -62,6 +64,14 @@ impl WorkState {
                 .map_err(|error| Outcome::error(error.to_string()))?;
             DocxXml::parse(bytes).map_err(Outcome::error)?
         };
+        // ISO Strict markup lives in other namespaces: the engine would read
+        // it as empty and write Transitional markup into it.
+        if xml.doc.root_element().and_then(|root| xml.doc.node_namespace(root)) == Some(STRICT_W_NS) {
+            return Err(Outcome::error(
+                "this document is saved as Strict Open XML, which docxdriver does not support; \
+                 save it as a standard Word Document (.docx) and try again",
+            ));
+        }
         let table_positions = table_positions(&xml);
         let table_handles = table_positions.iter().map(|(node, address)| (address.clone(), *node)).collect();
         Ok(WorkState {
@@ -93,6 +103,16 @@ pub(crate) fn table_positions(xml: &DocxXml) -> HashMap<xmloxide::tree::NodeId, 
     map
 }
 
+/// The relationships part of the main document part (`word/_rels/document.xml.rels`
+/// for the conventional name; a renamed main part has its own).
+pub(crate) fn document_rels_part(package: &crate::package::Package) -> String {
+    let main = package.document_part_name();
+    match main.rsplit_once('/') {
+        Some((dir, file)) => format!("{dir}/_rels/{file}.rels"),
+        None => format!("_rels/{main}.rels"),
+    }
+}
+
 /// sha256 of the exact input package bytes.
 pub(crate) fn package_sha256(bytes: &[u8]) -> [u8; 32] {
     use sha2::{Digest, Sha256};
@@ -100,14 +120,16 @@ pub(crate) fn package_sha256(bytes: &[u8]) -> [u8; 32] {
 }
 
 /// Attach the serialized package to a successful outcome when something
-/// actually mutated (and dryRun doesn't withhold it). The one zip write.
+/// actually mutated. The one zip write. A dry run builds the bytes too, so
+/// review runs the same integrity gate as commit; callers withhold them.
 ///
 /// Every engine write persists paragraph identity first: existing valid
 /// `w14:paraId` values are untouched, while missing/invalid/duplicate and
 /// engine-created paragraphs receive the same deterministic values inspection
 /// showed — one atomic write of repairs plus content operations.
 pub(crate) fn emit(mut state: WorkState, outcome: Outcome, ctx: &ExecCtx) -> Outcome {
-    if outcome.status != crate::outcome::Status::Ok || !state.mutated || ctx.dry_run {
+    let _ = ctx;
+    if outcome.status != crate::outcome::Status::Ok || !state.mutated {
         return outcome;
     }
     state.flush_lists();

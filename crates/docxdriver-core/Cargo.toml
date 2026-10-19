@@ -24,5 +24,6 @@ sha2 = "0.10"
 hex = "0.4"
 toml = "0.8"
 schemars = "0.8"
+quick-xml = "0.42.0"
 
 [dev-dependencies]

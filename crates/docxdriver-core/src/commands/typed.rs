@@ -1278,7 +1278,8 @@ fn content_insert_point(xml: &DocxXml, paragraph: NodeId, content: &[NodeId]) ->
 }
 
 /// Tracked whole-paragraph deletion: one `<w:del>` wrapping every content run
-/// (and hyperlink/smartTag wrapper), text leaves renamed to `w:delText`.
+/// (and hyperlink/smartTag wrapper), text leaves renamed to `w:delText` and
+/// field codes to `w:delInstrText`.
 fn wrap_all_content_in_del(
     xml: &mut DocxXml,
     paragraph: NodeId,
@@ -1321,15 +1322,7 @@ fn wrap_all_content_in_del(
         };
         xml.doc.detach(node);
         xml.doc.append_child(wrapper, node);
-        let leaves: Vec<NodeId> = xml
-            .doc
-            .descendants(node)
-            .filter(|&leaf| xml.is_w(leaf, "t"))
-            .collect();
-        for leaf in leaves {
-            let name = crate::segments::rename_for(xml, leaf, true);
-            xml.doc.rename_element(leaf, name);
-        }
+        crate::segments::mark_deleted_leaves(xml, node, true);
     }
     Ok(())
 }
@@ -2139,7 +2132,8 @@ fn para_format_target(current: &PPrState, fmt: &ParaFormat) -> PPrState {
         target.style = Some(s.clone());
     }
     if let Some(a) = &fmt.alignment {
-        target.jc = Some(a.clone());
+        // The API says `justify`; ST_Jc spells justified text `both`.
+        target.jc = Some(if a == "justify" { "both".into() } else { a.clone() });
     }
     if let Some(v) = fmt.indent_left {
         target.ind_left = Some(v);
@@ -2713,7 +2707,8 @@ fn next_block_is_mergeable_paragraph(xml: &DocxXml, paragraph: NodeId) -> bool {
 }
 
 /// Move one content unit (run, hyperlink, or smartTag) under `parent` into a
-/// fresh paragraph-local `<w:del>`, renaming its `w:t` leaves to `w:delText`.
+/// fresh paragraph-local `<w:del>`, renaming its `w:t` leaves to `w:delText`
+/// and `w:instrText` to `w:delInstrText`.
 fn move_content_into_del(
     xml: &mut DocxXml,
     node: NodeId,
@@ -2742,15 +2737,7 @@ fn move_content_into_del(
     xml.doc.insert_before(node, del);
     xml.doc.detach(node);
     xml.doc.append_child(del, node);
-    let leaves: Vec<NodeId> = xml
-        .doc
-        .descendants(del)
-        .filter(|&n| xml.is_w(n, "t"))
-        .collect();
-    for leaf in leaves {
-        let name = crate::segments::rename_for(xml, leaf, true);
-        xml.doc.rename_element(leaf, name);
-    }
+    crate::segments::mark_deleted_leaves(xml, del, true);
     Ok(())
 }
 
