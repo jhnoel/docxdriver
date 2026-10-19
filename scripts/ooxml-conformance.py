@@ -144,6 +144,10 @@ class SdkValidator:
         found = collections.Counter()
         if 'fatal' in result:
             message = re.sub(r'\s+', ' ', result['fatal'])
+            # The SDK stops at the first missing part. Rewriting relationships
+            # can change which existing dangling target it encounters first;
+            # integrity_errors separately checks every relationship target.
+            message = re.sub(r"Part: /\S+ doesn't exist in the package", "Part: <missing> doesn't exist in the package", message)
             found[('package', 'sdk: cannot open: ' + re.sub(r'\d+', 'N', message))] += 1
         for error in result.get('errors', []):
             message = re.sub(r' List of possible elements expected:.*', '', error['description'])
@@ -420,16 +424,24 @@ def comment_chain(cli, name):
 def unmasked(introduced, removed):
     """Drop schema content-model errors an edit merely uncovered.
 
-    lxml reports one content-model error per element and skips the rest of
+    Validators report a content-model error and skip the rest of
     it, so repairing an invalid source element (format_table adding the
     missing tblPr of an invalid table) exposes pre-existing errors further
     down the same part. A new "not expected" schema error counts only when
     the edit did not also remove one from that part.
     """
     def content_model(message):
-        return not message.startswith(('integrity:', 'sdk')) and 'This element is not expected' in message
-    repaired = {part for part, message in removed if content_model(message)}
-    return {(part, message) for part, message in introduced if not (part in repaired and content_model(message))}
+        if message.startswith('sdk Sch_UnexpectedElementContentExpectingComplex:'):
+            return 'sdk'
+        if not message.startswith(('integrity:', 'sdk')) and 'This element is not expected' in message:
+            return 'schema'
+        return None
+    repaired = {(part, content_model(message)) for part, message in removed if content_model(message)}
+    # A tracked edit keeps the old invalid properties in pPrChange. The SDK
+    # still counts that snapshot's error, even when XSD reports the repair in
+    # the live properties; its newly exposed ordering error has the same cause.
+    repaired.update((part, 'sdk') for part, kind in list(repaired) if kind == 'schema')
+    return {(part, message) for part, message in introduced if (part, content_model(message)) not in repaired}
 
 
 _process_validator = None
@@ -454,7 +466,7 @@ def check_document(job):
         read = cli.read(name)
         if read is None:
             return failures, applied, rejected
-        before = set(validator.errors((work / name).read_bytes()))
+        before = validator.errors((work / name).read_bytes())
         cases = scenarios(read) + [(label, 'track', ops) for label, ops in comment_chain(cli, name)]
         for label, mode, ops in cases:
             source = 'commented.docx' if label in ('comment_reply', 'comment_set_status', 'comment_delete') else name
@@ -463,9 +475,11 @@ def check_document(job):
                 rejected[label] += 1
                 continue
             applied[label] += 1
-            baseline = before if source == name else set(validator.errors((work / source).read_bytes()))
-            after = set(validator.errors((work / 'out.docx').read_bytes()))
-            for kind, message in sorted(unmasked(after - baseline, baseline - after)):
+            baseline = before if source == name else validator.errors((work / source).read_bytes())
+            after = validator.errors((work / 'out.docx').read_bytes())
+            # Compare introduced kinds, but retain counts when detecting a
+            # repair: another occurrence of the old error may still remain.
+            for kind, message in sorted(unmasked(after.keys() - baseline.keys(), baseline - after)):
                 failures.append(f'{document.name}: {label} ({mode}) introduced {kind}: {message[:240]}')
         return failures, applied, rejected
     finally:
