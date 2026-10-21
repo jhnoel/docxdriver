@@ -387,6 +387,23 @@ def scenarios(read):
             ('delete_paragraphs', mode, [{'op': 'delete_paragraphs', 'at': [other]}]),
             ('comment_add', mode, [{'op': 'comment_add', 'at': at, 'select': second, 'occurrence': 1, 'text': 'Check this'}]),
         ]
+    # Rewriting, removing and settling the plan author's own pending changes.
+    out += [
+        ('revise_text', 'track', [
+            {'op': 'replace_text', 'at': at, 'select': first, 'with': first + ' Zqx', 'occurrence': 1},
+            {'op': 'revise_text', 'at': at, 'edits': [{'select': 'Zqx', 'with': 'Zqx Zqy'}]},
+            {'op': 'revise_text', 'at': at, 'edits': [{'select': 'x Zq', 'with': 'xZ'}]},
+            {'op': 'revise_text', 'at': at, 'edits': [{'select': ' ZqxZy', 'with': ''}]}]),
+        ('delete_paragraphs', 'track', [
+            {'op': 'insert_paragraph', 'at': at, 'position': 'after', 'with': 'Own pending paragraph', 'as': 'mine'},
+            {'op': 'delete_paragraphs', 'at': ['$mine']}]),
+        ('revision_settle', 'track', [
+            {'op': 'insert_paragraph', 'at': at, 'position': 'after', 'with': 'Rejected paragraph'},
+            {'op': 'revision_settle', 'target': 'all', 'action': 'reject'}]),
+        ('revision_settle', 'track', [
+            {'op': 'delete_paragraphs', 'at': [at]},
+            {'op': 'revision_settle', 'target': 'all', 'action': 'accept'}]),
+    ]
     out.append(('revision_settle', 'track', [
         {'op': 'replace_text', 'at': at, 'select': first, 'with': 'Tracked', 'occurrence': 1},
         {'op': 'revision_settle', 'target': 'all', 'action': 'reject'}]))

@@ -809,6 +809,106 @@ pub fn delete_tracked_range(
     Ok(())
 }
 
+/// Whether `segment` lies in `author`'s own pending `w:ins`: text they may
+/// still rewrite without a deletion.
+pub fn is_own_insertion(xml: &DocxXml, segment: &Segment, author: &str) -> bool {
+    segment.wrap == RevWrap::Ins
+        && segment
+            .wrapper
+            .is_some_and(|ins| xml.is_w(ins, "ins") && xml.attr(ins, "author") == Some(author))
+}
+
+/// Split `author`'s own `w:ins` at all-view `offset` when the offset falls
+/// strictly inside it, so a new insertion lands there as a sibling instead
+/// of after the whole wrapper. The second half takes a fresh revision id.
+///
+///   <ins 1>" v|ery"</ins>  ->  <ins 1>" v"</ins>|<ins 2>"ery"</ins>
+pub fn split_own_ins(xml: &mut DocxXml, paragraph: NodeId, offset: usize, author: &str) {
+    split_boundary(xml, paragraph, offset);
+    let segments = build_segments(xml, paragraph);
+
+    // The text just left of the offset must sit directly in an own w:ins
+    // that continues right of the offset.
+    let Some(before) = segments.iter().rev().find(|s| s.end <= offset && s.start < s.end) else {
+        return;
+    };
+    if !is_own_insertion(xml, before, author) {
+        return;
+    }
+    let ins = before.wrapper.expect("own insertion has a wrapper");
+    if xml.doc.parent(before.run) != Some(ins) {
+        return;
+    }
+    let continues = segments
+        .iter()
+        .any(|s| s.start >= offset && s.wrapper == Some(ins));
+    if !continues {
+        return;
+    }
+
+    // Move everything after the left run into a twin wrapper.
+    let twin = xml.doc.create_element("w:ins");
+    xml.doc
+        .set_attribute(twin, "w:id", &xml.next_revision_id().to_string());
+    for name in ["author", "date"] {
+        if let Some(value) = xml.attr(ins, name).map(str::to_string) {
+            xml.doc.set_attribute(twin, &format!("w:{name}"), &value);
+        }
+    }
+    xml.doc.insert_after(ins, twin);
+    while let Some(next) = xml.doc.next_sibling(before.run) {
+        xml.doc.detach(next);
+        xml.doc.append_child(twin, next);
+    }
+}
+
+/// Fold the `w:ins` with revision `id` into `author`'s adjacent own
+/// insertions, as Word extends your pending text rather than stacking
+/// revisions: `<ins 1>" v"</ins><ins 3>"X"</ins><ins 2>"ery"</ins>` becomes
+/// `<ins 1>" vXery"</ins>`.
+pub fn merge_own_ins(xml: &mut DocxXml, paragraph: NodeId, id: u64, author: &str) {
+    let Some(mut ins) = xml.doc.descendants(paragraph).find(|&node| {
+        xml.is_w(node, "ins") && xml.attr(node, "id").and_then(|v| v.parse::<u64>().ok()) == Some(id)
+    }) else {
+        return;
+    };
+    let own = |xml: &DocxXml, node: Option<NodeId>| {
+        node.filter(|&n| xml.is_w(n, "ins") && xml.attr(n, "author") == Some(author))
+    };
+
+    // Left neighbor absorbs this insertion.
+    if let Some(left) = own(xml, prev_element_sibling(xml, ins)) {
+        move_children(xml, ins, left);
+        xml.doc.remove_node(ins);
+        ins = left;
+    }
+
+    // This insertion absorbs its right neighbor.
+    if let Some(right) = own(xml, next_element_sibling(xml, ins)) {
+        move_children(xml, right, ins);
+        xml.doc.remove_node(right);
+    }
+}
+
+fn move_children(xml: &mut DocxXml, from: NodeId, to: NodeId) {
+    let children: Vec<NodeId> = xml.doc.children(from).collect();
+    for child in children {
+        xml.doc.detach(child);
+        xml.doc.append_child(to, child);
+    }
+}
+
+fn next_element_sibling(xml: &DocxXml, node: NodeId) -> Option<NodeId> {
+    let mut cursor = xml.doc.next_sibling(node);
+    while let Some(candidate) = cursor {
+        if xml.doc.is_element(candidate) {
+            return Some(candidate);
+        }
+        cursor = xml.doc.next_sibling(candidate);
+    }
+    None
+}
+
 /* Wrap [start, end) in a `<w:del>`, also carrying non-text nodes sitting
 /// between the covered runs (w:br/w:tab runs, comment markers) into the
 /// delete so deleting "a\tb" deletes the tab with it. The covered text

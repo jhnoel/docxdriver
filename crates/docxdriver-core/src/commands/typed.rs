@@ -18,7 +18,8 @@ use crate::html::{Atom, Fmt, Item};
 use crate::outcome::{Outcome, Status};
 use crate::package::Package;
 use crate::segments::{
-    build_segments, delete_tracked_range, insert_ins_pieces_at, split_boundary, InsPiece, RevWrap,
+    build_segments, delete_tracked_range, insert_ins_pieces_at, is_own_insertion, merge_own_ins,
+    split_boundary, split_own_ins, InsPiece, RevWrap, Segment,
 };
 
 use super::layout::{
@@ -565,6 +566,30 @@ fn diff_eligible(pieces: &[InsPiece], link: Option<&str>) -> bool {
     link.is_none() && pieces.iter().all(|piece| matches!(piece, InsPiece::Text(_, fmt) if *fmt == Fmt::default()))
 }
 
+// Any tracked change but the author's own pending insertion keeps a range
+// off the diff path; own insertions are rewritten in place.
+fn blocks_diff(xml: &DocxXml, segment: &Segment, author: &str) -> bool {
+    segment.wrap != RevWrap::None && !is_own_insertion(xml, segment, author)
+}
+
+/// Tracked insertion of `pieces` at `offset` that joins `author`'s own
+/// pending insertion it touches, never nesting `w:ins` in `w:ins`.
+fn insert_own(
+    xml: &mut DocxXml,
+    paragraph: NodeId,
+    offset: usize,
+    pieces: &[InsPiece],
+    author: &str,
+    ctx: &ExecCtx,
+) -> Result<(), Outcome> {
+    split_own_ins(xml, paragraph, offset, author);
+    let id = xml.next_revision_id();
+    insert_ins_pieces_at(xml, paragraph, offset, pieces, id, author, &ctx.now, false)
+        .map_err(Outcome::error)?;
+    merge_own_ins(xml, paragraph, id, author);
+    Ok(())
+}
+
 #[allow(clippy::too_many_arguments)]
 fn replace_range_diff(
     package: &mut Package,
@@ -587,7 +612,7 @@ fn replace_range_diff(
         .iter()
         .filter(|s| s.start < end && s.end > start)
         .collect();
-    if covered.iter().any(|s| s.wrap != RevWrap::None) {
+    if covered.iter().any(|s| blocks_diff(xml, s, author)) {
         return Err(blocked_at(
             address,
             "word-level diff selection overlaps existing tracked changes; accept or reject them first",
@@ -623,20 +648,13 @@ fn replace_range_diff(
         } else {
             vec![InsPiece::Text(replacement, Fmt::default())]
         };
+
+        // Retyped text wears the formatting of what it replaces or follows,
+        // as in Word: "<b>bold text</b>", text -> words, gives "<b>words</b>".
+        let like = typing_rpr(xml, paragraph, start + a, a < b);
+        let mark = xml.doc.node_count();
         if a == b {
-            split_boundary(xml, paragraph, start + a);
-            let id = xml.next_revision_id();
-            insert_ins_pieces_at(
-                xml,
-                paragraph,
-                start + a,
-                &pieces,
-                id,
-                author,
-                &ctx.now,
-                false,
-            )
-            .map_err(Outcome::error)?;
+            insert_own(xml, paragraph, start + a, &pieces, author, ctx)?;
         } else {
             replace_range(
                 package,
@@ -651,8 +669,51 @@ fn replace_range_diff(
                 ctx,
             )?;
         }
+        if let Some(rpr) = like {
+            dress_new_runs(xml, mark, rpr, author);
+        }
     }
     Ok(())
+}
+
+/// A detached copy of the run properties typing at `offset` inherits: the
+/// replaced text's when `replacing`, else the text just left of the
+/// offset, else just right. No tracked format change comes along.
+fn typing_rpr(xml: &mut DocxXml, paragraph: NodeId, offset: usize, replacing: bool) -> Option<NodeId> {
+    let segments = build_segments(xml, paragraph);
+    let source = match replacing {
+        true => segments.iter().find(|s| s.start <= offset && offset < s.end),
+        false => segments
+            .iter()
+            .rev()
+            .find(|s| s.start < offset && offset <= s.end && s.wrap != RevWrap::Del)
+            .or_else(|| segments.iter().find(|s| s.start == offset && s.start < s.end && s.wrap != RevWrap::Del)),
+    }?;
+    let rpr = xml.run_rpr(source.run)?;
+    let clone = xml.doc.clone_node(rpr, true);
+    let changes: Vec<NodeId> = xml.doc.children(clone).filter(|&n| xml.is_w(n, "rPrChange")).collect();
+    for change in changes {
+        xml.doc.remove_node(change);
+    }
+    Some(clone)
+}
+
+/// Gives `rpr` to every run allocated after `mark` that sits bare in one of
+/// `author`'s insertions: the text just typed.
+fn dress_new_runs(xml: &mut DocxXml, mark: usize, rpr: NodeId, author: &str) {
+    let fresh: Vec<NodeId> = (mark + 1..=xml.doc.node_count())
+        .filter_map(|raw| u32::try_from(raw).ok().and_then(NodeId::from_raw))
+        .filter(|&run| xml.is_w(run, "r") && xml.run_rpr(run).is_none())
+        .filter(|&run| {
+            xml.doc
+                .parent(run)
+                .is_some_and(|ins| xml.is_w(ins, "ins") && xml.attr(ins, "author") == Some(author))
+        })
+        .collect();
+    for run in fresh {
+        let clone = xml.doc.clone_node(rpr, true);
+        xml.doc.prepend_child(run, clone);
+    }
 }
 
 /// Replace the `[start, end)` range of `paragraph` (all-text offsets, as
@@ -674,7 +735,7 @@ fn replace_range(
     ctx: &ExecCtx,
 ) -> Result<(), Outcome> {
     if tracked && auto_diff && diff_eligible(pieces, link_href.as_deref())
-        && !build_segments(xml, paragraph).iter().any(|s| s.start < end && s.end > start && s.wrap != RevWrap::None)
+        && !build_segments(xml, paragraph).iter().any(|s| s.start < end && s.end > start && blocks_diff(xml, s, author))
     {
         return replace_range_diff(
             package,
@@ -738,21 +799,16 @@ fn replace_range(
         let del_id = xml.next_revision_id();
         delete_tracked_range(xml, paragraph, start, end, del_id, author, &ctx.now)
             .map_err(Outcome::error)?;
-        let del_node = xml
-            .doc
-            .descendants(paragraph)
-            .find(|&node| {
-                xml.is_rev_del(node)
-                    && xml.attr(node, "id").and_then(|v| v.parse::<u64>().ok()) == Some(del_id)
-            })
-            .ok_or_else(|| Outcome::error("internal: tracked deletion was not recorded"))?;
-        let ins_offset = build_segments(xml, paragraph)
-            .iter()
-            .filter(|s| s.wrapper == Some(del_node))
-            .map(|s| s.end)
-            .max()
-            .ok_or_else(|| Outcome::error("internal: deleted range lost its offsets"))?;
+
+        // A range of only the author's own pending insertion was removed
+        // outright, leaving no deletion: the replacement joins that
+        // insertion at the range start, as when retyping it in Word.
+        let deleted = deleted_end(xml, paragraph, del_id);
+        let ins_offset = deleted.unwrap_or(start);
         if !pieces.is_empty() {
+            if deleted.is_none() {
+                split_own_ins(xml, paragraph, start, author);
+            }
             let ins_id = xml.next_revision_id();
             insert_ins_pieces_at(
                 xml,
@@ -770,6 +826,8 @@ fn replace_range(
                     .map_err(Outcome::error)?;
                 crate::html::chrome::wrap_revision_in_hyperlink(xml, paragraph, ins_id, &rid)
                     .map_err(Outcome::error)?;
+            } else if deleted.is_none() {
+                merge_own_ins(xml, paragraph, ins_id, author);
             }
         }
     } else {
@@ -786,6 +844,19 @@ fn replace_range(
     }
 
     Ok(())
+}
+
+/// All-view end offset of the tracked deletion `id` in `paragraph`, or
+/// `None` when no deletion with text was recorded.
+fn deleted_end(xml: &DocxXml, paragraph: NodeId, id: u64) -> Option<usize> {
+    let del = xml.doc.descendants(paragraph).find(|&node| {
+        xml.is_rev_del(node) && xml.attr(node, "id").and_then(|v| v.parse::<u64>().ok()) == Some(id)
+    })?;
+    build_segments(xml, paragraph)
+        .iter()
+        .filter(|s| s.wrapper == Some(del))
+        .map(|s| s.end)
+        .max()
 }
 
 #[derive(Debug, Clone)]
@@ -1111,20 +1182,8 @@ pub fn replace_paragraph_typed(
         wrap_all_content_in_del(xml, paragraph, del_id, &input.author, &ctx.now)
             .map_err(Outcome::error)?;
         if !pieces.is_empty() {
-            let del_node = xml
-                .doc
-                .descendants(paragraph)
-                .find(|&node| {
-                    xml.is_rev_del(node)
-                        && xml.attr(node, "id").and_then(|v| v.parse::<u64>().ok()) == Some(del_id)
-                })
-                .ok_or_else(|| Outcome::error("internal: tracked deletion was not recorded"))?;
-            let ins_offset = build_segments(xml, paragraph)
-                .iter()
-                .filter(|s| s.wrapper == Some(del_node))
-                .map(|s| s.end)
-                .max()
-                .ok_or_else(|| Outcome::error("internal: deleted paragraph lost its offsets"))?;
+            // An empty paragraph has nothing to delete: insert at its end.
+            let ins_offset = deleted_end(xml, paragraph, del_id).unwrap_or(count);
             let ins_id = xml.next_revision_id();
             insert_ins_pieces_at(
                 xml,
@@ -2706,6 +2765,48 @@ fn next_block_is_mergeable_paragraph(xml: &DocxXml, paragraph: NodeId) -> bool {
     false
 }
 
+/// Whether `paragraph` is wholly `author`'s pending insertion (its mark and
+/// all its text) with nothing else to preserve: no section break, no
+/// milestones, and another paragraph beside it.
+fn is_own_inserted_paragraph(xml: &DocxXml, paragraph: NodeId, author: &str) -> bool {
+    const PLAIN_RUN_CHILDREN: [&str; 4] = ["rPr", "t", "tab", "br"];
+    let own = |node: NodeId| xml.is_w(node, "ins") && xml.attr(node, "author") == Some(author);
+
+    let Some(mark) = xml.paragraph_mark_ins(paragraph) else {
+        return false;
+    };
+    if !own(mark) {
+        return false;
+    }
+    let ppr = xml.child_w(paragraph, "pPr");
+    if ppr.is_some_and(|ppr| xml.child_w(ppr, "sectPr").is_some()) {
+        return false;
+    }
+    let parent = xml.doc.parent(paragraph);
+    let has_sibling = parent.is_some_and(|parent| {
+        xml.doc.children(parent).any(|n| n != paragraph && xml.is_w(n, "p"))
+    });
+    if !has_sibling {
+        return false;
+    }
+
+    // Content: own w:ins wrappers of plain runs only.
+    xml.doc.children(paragraph).filter(|&n| xml.doc.is_element(n)).all(|child| {
+        if Some(child) == ppr {
+            return true;
+        }
+        own(child)
+            && xml.doc.children(child).filter(|&n| xml.doc.is_element(n)).all(|run| {
+                xml.is_w(run, "r")
+                    && xml
+                        .doc
+                        .children(run)
+                        .filter(|&n| xml.doc.is_element(n))
+                        .all(|leaf| PLAIN_RUN_CHILDREN.iter().any(|name| xml.is_w(leaf, name)))
+            })
+    })
+}
+
 /// Move one content unit (run, hyperlink, or smartTag) under `parent` into a
 /// fresh paragraph-local `<w:del>`, renaming its `w:t` leaves to `w:delText`
 /// and `w:instrText` to `w:delInstrText`.
@@ -2841,7 +2942,15 @@ pub fn delete_paragraphs_typed(
     targets.dedup_by(|a, b| a.0 == b.0);
 
     let mut break_marks = 0usize;
+    let mut removed = 0usize;
     for (node, address) in &targets {
+        // The author's own pending paragraph goes outright, as in Word.
+        if is_own_inserted_paragraph(xml, *node, author) {
+            xml.doc.remove_node(*node);
+            removed += 1;
+            continue;
+        }
+
         let rev_id = xml.next_revision_id();
         wrap_live_content_in_del(xml, *node, rev_id, &author, &ctx.now)
             .map_err(|e| blocked_at(address, e))?;
@@ -2853,17 +2962,24 @@ pub fn delete_paragraphs_typed(
     }
 
     let ids: Vec<String> = targets.iter().map(|(_, id)| id.clone()).collect();
-    let summary = format!(
+    let marked = ids.len() - removed;
+    let mut summary = format!(
         "marked {} paragraph{} for tracked deletion ({} break{})",
-        ids.len(),
-        if ids.len() == 1 { "" } else { "s" },
+        marked,
+        if marked == 1 { "" } else { "s" },
         break_marks,
         if break_marks == 1 { "" } else { "s" }
     );
+    if removed > 0 {
+        summary.push_str(&format!(
+            "; removed {removed} own pending paragraph{}",
+            if removed == 1 { "" } else { "s" }
+        ));
+    }
     let result = json!({
         "paragraphs": ids,
         "breaks": break_marks,
-        "revisions": ids.len(),
+        "revisions": marked,
         "tracked": true,
     });
     Ok((summary, result))

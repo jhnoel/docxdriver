@@ -357,16 +357,25 @@ fn resolve_entry(xml: &mut DocxXml, entry: &RevisionEntry, accept: bool) -> Resu
                 }
                 sibling
             };
+            // The joined paragraph ends at the next paragraph's mark, so that
+            // mark's pPr and identity win, as in Word: this paragraph's
+            // content moves to the front of the next one and this one goes.
+            //   <p A>Mine.¶(ins)</p><p B, list>item one¶</p>
+            //   -> <p B, list>Mine.item one¶</p>
             if let Some(next) = next {
-                let children: Vec<NodeId> = xml.doc.children(next).collect();
+                let anchor = xml.doc.children(next).find(|&c| !xml.is_w(c, "pPr"));
+                let children: Vec<NodeId> = xml.doc.children(entry.paragraph).collect();
                 for child in children {
                     if xml.is_w(child, "pPr") {
                         continue;
                     }
                     xml.doc.detach(child);
-                    xml.doc.append_child(entry.paragraph, child);
+                    match anchor {
+                        Some(anchor) => xml.doc.insert_before(anchor, child),
+                        None => xml.doc.append_child(next, child),
+                    }
                 }
-                xml.doc.remove_node(next);
+                xml.doc.remove_node(entry.paragraph);
             }
         }
         return Ok(());
