@@ -668,6 +668,43 @@ pub fn dispatch(cli: Cli) -> Result<ExitCode, String> {
                 comment_id: a.comment_id,
             },
         ),
+        Commands::BookmarkAdd(a) => dispatch_parsed(
+            &ctx,
+            &a.common,
+            (|| {
+                Ok(EditOp::BookmarkAdd {
+                    at: address(a.at)?,
+                    name: a.name,
+                    select: a.select,
+                    occurrence: a.occurrence,
+                })
+            })(),
+        ),
+        Commands::BookmarkRename(a) => dispatch_command(
+            &ctx,
+            &a.common,
+            EditOp::BookmarkRename {
+                name: a.name,
+                new_name: a.new_name,
+            },
+        ),
+        Commands::BookmarkMove(a) => dispatch_parsed(
+            &ctx,
+            &a.common,
+            (|| {
+                Ok(EditOp::BookmarkMove {
+                    name: a.name,
+                    at: address(a.at)?,
+                    select: a.select,
+                    occurrence: a.occurrence,
+                })
+            })(),
+        ),
+        Commands::BookmarkDelete(a) => dispatch_command(
+            &ctx,
+            &a.common,
+            EditOp::BookmarkDelete { name: a.name },
+        ),
         Commands::RevisionSettle(a) => dispatch_command(
             &ctx,
             &a.common,

@@ -2,8 +2,8 @@
 
 - `docx_create(path: str, html: str)`
 - `docx_read(path: str, view: str = "markup", kind: str = "document") -> ReadResult | dict` — complete HTML
-  markup and a current equations-address listing (at, equation, display, editable) by default (`kind="document"`); `kind="comments"`, `"styles"`, `"revisions"`, or `"assets"` returns the
-  core listing object (and a second positional of `comments`/`styles`/`revisions` is treated as `kind`).
+  markup and a current equations-address listing (at, equation, display, editable) by default (`kind="document"`); `kind="comments"`, `"styles"`, `"revisions"`, `"bookmarks"`, or `"assets"` returns the
+  core listing object (and a second positional of `comments`/`styles`/`revisions`/`bookmarks` is treated as `kind`).
 - `docx_find(path: str, query: str, ignore_case: bool = False) -> list` — core find match
   records verbatim (`{index, id?, text, style?, number?}` per matching paragraph; `id` is
   the canonical uppercase paragraph address)

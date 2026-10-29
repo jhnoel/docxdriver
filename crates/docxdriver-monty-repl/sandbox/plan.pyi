@@ -1,4 +1,31 @@
 # BEGIN GENERATED TYPE STUBS
+class BookmarkAdd:
+    def __init__(self, at: str, name: str, occurrence: int | None = None, select: str | None = None): ...
+    at: str
+    name: str
+    occurrence: int | None
+    select: str | None
+    def to_dict(self) -> dict: ...
+
+class BookmarkDelete:
+    def __init__(self, name: str): ...
+    name: str
+    def to_dict(self) -> dict: ...
+
+class BookmarkMove:
+    def __init__(self, at: str, name: str, occurrence: int | None = None, select: str | None = None): ...
+    at: str
+    name: str
+    occurrence: int | None
+    select: str | None
+    def to_dict(self) -> dict: ...
+
+class BookmarkRename:
+    def __init__(self, name: str, new_name: str): ...
+    name: str
+    new_name: str
+    def to_dict(self) -> dict: ...
+
 class ClearFooter:
     def __init__(self, kind: str | None = None, section: int | None = None): ...
     kind: str | None

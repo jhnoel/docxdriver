@@ -77,13 +77,13 @@ def docx_create(path: str, html: str):
     return _docx_create(path, html)
 
 def docx_read(path: str, view: str = "markup", kind: str = "document"):
-    _listing_kinds = ("comments", "styles", "revisions", "assets")
+    _listing_kinds = ("comments", "styles", "revisions", "bookmarks", "assets")
     if kind == "document" and view in _listing_kinds:
         kind = view
     if kind in _listing_kinds:
         return _docx_read(path, view, kind)
     if kind != "document":
-        raise ValueError('kind must be one of document, comments, styles, revisions, assets')
+        raise ValueError('kind must be one of document, comments, styles, revisions, bookmarks, assets')
     result = _docx_read(path, view)
     return ReadResult(markup=result["markup"], styles=result.get("styles", {}), css=result.get("css", {}), equations=result.get("equations", []), selection_space=result.get("selection_space"), selections=result.get("selections"), comments=result.get("comments", []), assets=result.get("assets", []), comments_error=result.get("comments_error"))
 

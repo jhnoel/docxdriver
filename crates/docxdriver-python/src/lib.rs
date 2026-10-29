@@ -97,6 +97,11 @@ fn _docx_revisions(py: Python<'_>, data: &[u8]) -> PyResult<String> {
 }
 
 #[pyfunction]
+fn _docx_bookmarks(py: Python<'_>, data: &[u8]) -> PyResult<String> {
+    json(py.detach(|| Document::open(data).bookmarks()))
+}
+
+#[pyfunction]
 fn _docx_styles(py: Python<'_>, data: &[u8]) -> PyResult<String> {
     json(py.detach(|| Document::open(data).styles()))
 }
@@ -187,6 +192,7 @@ fn _core(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(_docx_equations, module)?)?;
     module.add_function(wrap_pyfunction!(_docx_comments, module)?)?;
     module.add_function(wrap_pyfunction!(_docx_revisions, module)?)?;
+    module.add_function(wrap_pyfunction!(_docx_bookmarks, module)?)?;
     module.add_function(wrap_pyfunction!(_docx_styles, module)?)?;
     module.add_function(wrap_pyfunction!(_docx_assets, module)?)?;
     module.add_function(wrap_pyfunction!(_docx_find, module)?)?;

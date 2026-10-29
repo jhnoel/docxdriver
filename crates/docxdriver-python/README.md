@@ -20,6 +20,7 @@ from docxdriver.plan import Plan, ReplaceText
 doc = Document(Path("contract.docx").read_bytes())
 doc.markup()                      # body with the ids plans address
 doc.comments(); doc.revisions(); doc.styles(); doc.assets()
+doc.bookmarks()                   # same as doc.read(kind="bookmarks")
 doc.find("thirty")
 review = doc.review(Plan(author="Reviewer", ops=[
     ReplaceText(at="0F537164", select="thirty", with_="sixty"),

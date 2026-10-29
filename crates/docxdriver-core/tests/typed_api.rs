@@ -637,6 +637,25 @@ fn every_edit_op_and_command_variant_has_strict_stable_json_and_toml() {
         EditOp::CommentDelete {
             comment_id: "0".into(),
         },
+        EditOp::BookmarkAdd {
+            at: id.clone(),
+            name: "Clause".into(),
+            select: Some("text".into()),
+            occurrence: Some(1),
+        },
+        EditOp::BookmarkRename {
+            name: "Clause".into(),
+            new_name: "Clause_2".into(),
+        },
+        EditOp::BookmarkMove {
+            name: "Clause_2".into(),
+            at: id.clone(),
+            select: None,
+            occurrence: None,
+        },
+        EditOp::BookmarkDelete {
+            name: "Clause_2".into(),
+        },
         EditOp::RevisionSettle {
             target: RevisionTarget::All,
             action: RevisionAction::Accept,
@@ -1073,6 +1092,44 @@ fn every_edit_op_executes_through_an_individual_typed_command() {
             comment_id: "0".into(),
         },
     );
+    for mode in [ChangeMode::Direct, ChangeMode::Track] {
+        let added = run_mode(
+            &fresh(),
+            EditOp::BookmarkAdd {
+                at: id.clone(),
+                name: "Mark".into(),
+                select: Some("ex".into()),
+                occurrence: None,
+            },
+            mode,
+        );
+        let renamed = run_mode(
+            &added,
+            EditOp::BookmarkRename {
+                name: "Mark".into(),
+                new_name: "Mark_2".into(),
+            },
+            mode,
+        );
+        let moved = run_mode(
+            &renamed,
+            EditOp::BookmarkMove {
+                name: "Mark_2".into(),
+                at: id.clone(),
+                select: None,
+                occurrence: None,
+            },
+            mode,
+        );
+        let deleted = run_mode(
+            &moved,
+            EditOp::BookmarkDelete {
+                name: "mark_2".into(),
+            },
+            mode,
+        );
+        assert!(!document_xml(&deleted).contains("bookmark"), "{}", document_xml(&deleted));
+    }
 
     let tracked = run_mode(
         &fresh(),
@@ -1105,6 +1162,18 @@ fn every_edit_op_executes_through_an_individual_typed_command() {
 #[test]
 fn every_edit_op_also_executes_as_a_single_plan_entry() {
     let fresh = || document(&[(SOURCE_ID, "text")]);
+    let run_plan_mode = |bytes: &[u8], op: EditOp, change_mode: ChangeMode| {
+        let mut p = plan(bytes, vec![op]);
+        p.change_mode = change_mode;
+        let key = match execute_plan(bytes, &PlanRequest { plan: p.clone(), preview_key: None }) {
+            PlanResult::Previewed { preview_key, .. } => preview_key,
+            other => panic!("plan preview rejected: {other:?}"),
+        };
+        match execute_plan(bytes, &PlanRequest { plan: p, preview_key: Some(key) }) {
+            PlanResult::Committed { bytes, .. } => bytes,
+            other => panic!("plan commit rejected: {other:?}"),
+        }
+    };
     let run_plan = |bytes: &[u8], op: EditOp| {
         let p = plan(bytes, vec![op]);
         let preview = execute_plan(
@@ -1287,6 +1356,44 @@ fn every_edit_op_also_executes_as_a_single_plan_entry() {
             comment_id: "0".into(),
         },
     );
+    for mode in [ChangeMode::Direct, ChangeMode::Track] {
+        let added = run_plan_mode(
+            &fresh(),
+            EditOp::BookmarkAdd {
+                at: id.clone(),
+                name: "Mark".into(),
+                select: Some("ex".into()),
+                occurrence: None,
+            },
+            mode,
+        );
+        let renamed = run_plan_mode(
+            &added,
+            EditOp::BookmarkRename {
+                name: "Mark".into(),
+                new_name: "Mark_2".into(),
+            },
+            mode,
+        );
+        let moved = run_plan_mode(
+            &renamed,
+            EditOp::BookmarkMove {
+                name: "Mark_2".into(),
+                at: id.clone(),
+                select: None,
+                occurrence: None,
+            },
+            mode,
+        );
+        let deleted = run_plan_mode(
+            &moved,
+            EditOp::BookmarkDelete {
+                name: "mark_2".into(),
+            },
+            mode,
+        );
+        assert!(!document_xml(&deleted).contains("bookmark"), "{}", document_xml(&deleted));
+    }
     let tracked = {
         let request = CommandRequest {
             command: Command::Edit(EditCommand {
@@ -2549,5 +2656,319 @@ fn auto_diff_groups_rewritten_phrases_but_keeps_unchanged_words() {
         // Each contiguous changed phrase has at most one revision of each type.
         assert_eq!(xml.matches("<w:del ").count(), groups, "{xml}");
         assert_eq!(xml.matches("<w:ins ").count(), groups, "{xml}");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Bookmarks
+// ---------------------------------------------------------------------------
+
+const W_DOC_OPEN: &str = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:w14=\"http://schemas.microsoft.com/office/word/2010/wordml\"><w:body>";
+
+fn body_document(body: &str) -> Vec<u8> {
+    package_with_body(&format!("{W_DOC_OPEN}{body}</w:body></w:document>"))
+}
+
+/// A document whose default header holds bookmark `InHeader` (w:id 7).
+fn document_with_header_bookmark(body: &str) -> Vec<u8> {
+    let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let options = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+    let document = format!(
+        "{W_DOC_OPEN}{body}<w:sectPr><w:headerReference xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" w:type=\"default\" r:id=\"rId1\"/></w:sectPr></w:body></w:document>"
+    );
+    let parts = [
+        ("[Content_Types].xml", concat!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+            "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">",
+            "<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>",
+            "<Default Extension=\"xml\" ContentType=\"application/xml\"/>",
+            "<Override PartName=\"/word/document.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/>",
+            "<Override PartName=\"/word/header1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml\"/>",
+            "</Types>").to_string()),
+        ("_rels/.rels", concat!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+            "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">",
+            "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"word/document.xml\"/>",
+            "</Relationships>").to_string()),
+        ("word/document.xml", document),
+        ("word/_rels/document.xml.rels", concat!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+            "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">",
+            "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/header\" Target=\"header1.xml\"/>",
+            "</Relationships>").to_string()),
+        ("word/header1.xml", concat!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+            "<w:hdr xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:w14=\"http://schemas.microsoft.com/office/word/2010/wordml\">",
+            "<w:p w14:paraId=\"55555555\"><w:bookmarkStart w:id=\"7\" w:name=\"InHeader\"/><w:r><w:t>Running head</w:t></w:r><w:bookmarkEnd w:id=\"7\"/></w:p>",
+            "</w:hdr>").to_string()),
+    ];
+    for (name, contents) in parts {
+        writer.start_file(name, options).unwrap();
+        writer.write_all(contents.as_bytes()).unwrap();
+    }
+    writer.finish().unwrap().into_inner()
+}
+
+fn commit_mode(bytes: &[u8], ops: Vec<EditOp>, mode: ChangeMode) -> Vec<u8> {
+    let mut p = plan(bytes, ops);
+    p.change_mode = mode;
+    let key = match execute_plan(bytes, &PlanRequest { plan: p.clone(), preview_key: None }) {
+        PlanResult::Previewed { preview_key, .. } => preview_key,
+        other => panic!("preview rejected: {other:?}"),
+    };
+    match execute_plan(bytes, &PlanRequest { plan: p, preview_key: Some(key) }) {
+        PlanResult::Committed { bytes, .. } => bytes,
+        other => panic!("commit rejected: {other:?}"),
+    }
+}
+
+fn rejection(bytes: &[u8], ops: Vec<EditOp>) -> docxdriver_core::Diagnostic {
+    match execute_plan(bytes, &PlanRequest { plan: plan(bytes, ops), preview_key: None }) {
+        PlanResult::Rejected { diagnostic, .. } => diagnostic,
+        other => panic!("plan was not rejected: {other:?}"),
+    }
+}
+
+fn bookmark_list(bytes: &[u8]) -> Vec<serde_json::Value> {
+    let listing = read_listing(bytes, "bookmarks", None);
+    assert_eq!(listing["kind"], "bookmarks");
+    listing["bookmarks"].as_array().expect("bookmarks array").clone()
+}
+
+fn bookmark<'a>(list: &'a [serde_json::Value], name: &str) -> &'a serde_json::Value {
+    list.iter()
+        .find(|b| b["name"] == name)
+        .unwrap_or_else(|| panic!("no bookmark {name} in {list:?}"))
+}
+
+/// Every bookmark start has exactly one end with its id, and ids are unique.
+fn assert_paired(bytes: &[u8]) {
+    let xml = document_xml(bytes);
+    let starts = ids_of(&xml, "bookmarkStart");
+    let ends = ids_of(&xml, "bookmarkEnd");
+    let mut sorted_starts = starts.clone();
+    sorted_starts.sort();
+    sorted_starts.dedup();
+    assert_eq!(sorted_starts.len(), starts.len(), "duplicate bookmark ids: {xml}");
+    let mut sorted_ends = ends.clone();
+    sorted_ends.sort();
+    assert_eq!(sorted_starts, sorted_ends, "unpaired bookmarks: {xml}");
+}
+
+#[test]
+fn bookmark_add_wraps_selection_or_whole_paragraph_and_reads_back() {
+    let source = document(&[(SOURCE_ID, "alpha beta gamma"), (SECOND_ID, "second")]);
+    let out = commit_plan(
+        &source,
+        ops(serde_json::json!([
+            {"op": "bookmark_add", "at": SOURCE_ID, "name": "Beta", "select": "beta"},
+            {"op": "bookmark_add", "at": SECOND_ID, "name": "Whole"},
+        ])),
+    );
+    let xml = document_xml(&out);
+    assert!(
+        xml.contains("<w:bookmarkStart w:id=\"0\" w:name=\"Beta\"/><w:r><w:t>beta</w:t></w:r><w:bookmarkEnd w:id=\"0\"/>"),
+        "{xml}"
+    );
+    assert!(xml.contains("<w:bookmarkStart w:id=\"1\" w:name=\"Whole\"/><w:r><w:t>second</w:t></w:r><w:bookmarkEnd w:id=\"1\"/>"), "{xml}");
+    assert_paired(&out);
+    let list = bookmark_list(&out);
+    assert_eq!(
+        list[0],
+        serde_json::json!({"name": "Beta", "id": "0", "hidden": false, "start": SOURCE_ID, "end": SOURCE_ID, "text": "beta", "part": "word/document.xml"})
+    );
+    assert_eq!(bookmark(&list, "Whole")["text"], "second");
+    // The markup projection is unchanged by bookmarks.
+    assert_eq!(read_markup(&out), read_markup(&source));
+}
+
+#[test]
+fn bookmark_add_is_never_tracked_and_reports_its_op() {
+    let source = document(&[(SOURCE_ID, "alpha beta")]);
+    let p = Plan { change_mode: ChangeMode::Track, ..plan(&source, ops(serde_json::json!([
+        {"op": "bookmark_add", "at": SOURCE_ID, "name": "Beta", "select": "beta", "occurrence": 1},
+    ]))) };
+    let report = match execute_plan(&source, &PlanRequest { plan: p, preview_key: None }) {
+        PlanResult::Previewed { report, .. } => report,
+        other => panic!("preview rejected: {other:?}"),
+    };
+    assert_eq!(report.ops[0].op, "bookmark_add");
+    assert!(report.ops[0].summary.contains("bookmark \"Beta\" (id 0) added around occurrence 1 of 1"), "{}", report.ops[0].summary);
+    assert_eq!(report.ops[0].affected[0]["para_id"], SOURCE_ID);
+    let out = commit_mode(&source, ops(serde_json::json!([
+        {"op": "bookmark_add", "at": SOURCE_ID, "name": "Beta", "select": "beta"},
+    ])), ChangeMode::Track);
+    let xml = document_xml(&out);
+    assert!(!xml.contains("<w:ins") && !xml.contains("<w:del"), "{xml}");
+}
+
+#[test]
+fn bookmark_add_targets_a_plan_local_alias() {
+    let source = document(&[(SOURCE_ID, "alpha")]);
+    let out = commit_plan(
+        &source,
+        ops(serde_json::json!([
+            {"op": "insert_paragraph", "at": SOURCE_ID, "position": "after", "with": "fresh words", "as": "new"},
+            {"op": "bookmark_add", "at": "$new", "name": "Fresh", "select": "words"},
+        ])),
+    );
+    let list = bookmark_list(&out);
+    assert_eq!(bookmark(&list, "Fresh")["text"], "words");
+    assert_ne!(bookmark(&list, "Fresh")["start"], SOURCE_ID);
+}
+
+#[test]
+fn bookmark_names_follow_word_rules_with_hints() {
+    let source = body_document(&format!(
+        "<w:p w14:paraId=\"{SOURCE_ID}\"><w:bookmarkStart w:id=\"3\" w:name=\"Intro\"/><w:r><w:t>alpha</w:t></w:r><w:bookmarkEnd w:id=\"3\"/><w:bookmarkStart w:id=\"4\" w:name=\"_GoBack\"/><w:bookmarkEnd w:id=\"4\"/></w:p>"
+    ));
+    let add = |name: &str| ops(serde_json::json!([{"op": "bookmark_add", "at": SOURCE_ID, "name": name}]));
+    let invalid = rejection(&source, add("2nd"));
+    assert_eq!(invalid.code, "invalid_operation");
+    assert_eq!(invalid.path.as_deref(), Some("ops[0].name"));
+    assert!(invalid.message.contains("starts with a digit"), "{}", invalid.message);
+    assert!(rejection(&source, add("two words")).message.contains("\"two_words\""));
+    assert!(rejection(&source, add(&"x".repeat(41))).message.contains("41 characters"));
+    let hidden = rejection(&source, add("_Mine"));
+    assert!(hidden.message.contains("hidden or reserved"), "{}", hidden.message);
+    let duplicate = rejection(&source, add("INTRO"));
+    assert_eq!(duplicate.code, "operation_rejected");
+    assert!(duplicate.message.contains("already used by bookmark \"Intro\""), "{}", duplicate.message);
+    let rename_hidden = rejection(&source, ops(serde_json::json!([{"op": "bookmark_rename", "name": "Intro", "new_name": "_x"}])));
+    assert_eq!(rename_hidden.path.as_deref(), Some("ops[0].new_name"));
+    let unknown = rejection(&source, ops(serde_json::json!([{"op": "bookmark_delete", "name": "Intor"}])));
+    assert!(unknown.message.contains("no bookmark named \"Intor\"; close matches: \"Intro\""), "{}", unknown.message);
+    assert!(!unknown.message.contains("_GoBack"), "{}", unknown.message);
+    // A case-only rename of the same bookmark is fine; hidden ones may be
+    // renamed from, moved and deleted.
+    let out = commit_plan(&source, ops(serde_json::json!([
+        {"op": "bookmark_rename", "name": "intro", "new_name": "INTRO"},
+        {"op": "bookmark_rename", "name": "_GoBack", "new_name": "Back"},
+        {"op": "bookmark_move", "name": "Back", "at": SOURCE_ID, "select": "lph"},
+    ])));
+    let list = bookmark_list(&out);
+    assert_eq!(bookmark(&list, "INTRO")["id"], "3");
+    assert_eq!(bookmark(&list, "Back")["id"], "4");
+    assert_eq!(bookmark(&list, "Back")["text"], "lph");
+    assert_paired(&out);
+    let hidden_source = body_document(&format!(
+        "<w:p w14:paraId=\"{SOURCE_ID}\"><w:bookmarkStart w:id=\"4\" w:name=\"_GoBack\"/><w:bookmarkEnd w:id=\"4\"/><w:r><w:t>alpha</w:t></w:r></w:p>"
+    ));
+    let list = bookmark_list(&hidden_source);
+    assert_eq!(list[0]["hidden"], true);
+    assert_eq!(list[0]["text"], "");
+    let out = commit_plan(&hidden_source, ops(serde_json::json!([{"op": "bookmark_delete", "name": "_GoBack"}])));
+    assert!(!document_xml(&out).contains("bookmark"));
+}
+
+#[test]
+fn bookmark_move_keeps_name_and_id_and_delete_keeps_text() {
+    let source = body_document(&format!(
+        "<w:p w14:paraId=\"{SOURCE_ID}\"><w:r><w:t xml:space=\"preserve\">one </w:t></w:r><w:bookmarkStart w:id=\"9\" w:name=\"Span\"/><w:r><w:t>two</w:t></w:r></w:p>\
+         <w:p w14:paraId=\"{SECOND_ID}\"><w:r><w:t>three four</w:t></w:r><w:bookmarkEnd w:id=\"9\"/></w:p>"
+    ));
+    let list = bookmark_list(&source);
+    assert_eq!(list[0]["start"], SOURCE_ID);
+    assert_eq!(list[0]["end"], SECOND_ID);
+    assert_eq!(list[0]["text"], "two\nthree four");
+    let moved = commit_plan(&source, ops(serde_json::json!([
+        {"op": "bookmark_move", "name": "span", "at": SECOND_ID, "select": "four"},
+    ])));
+    assert_paired(&moved);
+    let list = bookmark_list(&moved);
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0]["name"], "Span");
+    assert_eq!(list[0]["id"], "9");
+    assert_eq!(list[0]["start"], SECOND_ID);
+    assert_eq!(list[0]["text"], "four");
+    let deleted = commit_plan(&moved, ops(serde_json::json!([{"op": "bookmark_delete", "name": "Span"}])));
+    assert!(!document_xml(&deleted).contains("bookmark"));
+    assert_eq!(read_markup(&deleted), read_markup(&source));
+}
+
+#[test]
+fn header_bookmarks_are_read_and_refused_for_editing() {
+    let source = document_with_header_bookmark(&format!(
+        "<w:p w14:paraId=\"{SOURCE_ID}\"><w:r><w:t>alpha</w:t></w:r></w:p>"
+    ));
+    let list = bookmark_list(&source);
+    assert_eq!(
+        list[0],
+        serde_json::json!({"name": "InHeader", "id": "7", "hidden": false, "start": "55555555", "end": "55555555", "text": "Running head", "part": "word/header1.xml"})
+    );
+    let refused = rejection(&source, ops(serde_json::json!([{"op": "bookmark_delete", "name": "InHeader"}])));
+    assert!(refused.message.contains("is in word/header1.xml; bookmark editing is body-only"), "{}", refused.message);
+    let duplicate = rejection(&source, ops(serde_json::json!([{"op": "bookmark_add", "at": SOURCE_ID, "name": "inheader"}])));
+    assert!(duplicate.message.contains("in word/header1.xml"), "{}", duplicate.message);
+    // New ids clear every story's ids.
+    let out = commit_plan(&source, ops(serde_json::json!([{"op": "bookmark_add", "at": SOURCE_ID, "name": "Body"}])));
+    assert_eq!(bookmark(&bookmark_list(&out), "Body")["id"], "8");
+}
+
+#[test]
+fn bookmark_markers_climb_out_of_wrappers_only_when_the_range_is_unchanged() {
+    let source = body_document(&format!(
+        "<w:p w14:paraId=\"{SOURCE_ID}\"><w:hyperlink w:anchor=\"x\"><w:r><w:t>link text</w:t></w:r></w:hyperlink><w:r><w:t xml:space=\"preserve\"> after</w:t></w:r></w:p>"
+    ));
+    let out = commit_plan(&source, ops(serde_json::json!([
+        {"op": "bookmark_add", "at": SOURCE_ID, "name": "Whole_link", "select": "link text"},
+        {"op": "bookmark_add", "at": SOURCE_ID, "name": "Inner", "select": "text"},
+    ])));
+    let xml = document_xml(&out);
+    assert!(xml.contains("<w:bookmarkStart w:id=\"0\" w:name=\"Whole_link\"/><w:hyperlink"), "{xml}");
+    assert!(xml.contains("</w:hyperlink><w:bookmarkEnd w:id=\"1\"/><w:bookmarkEnd w:id=\"0\"/>"), "{xml}");
+    // The inner start stays in the hyperlink (text precedes it there); its
+    // end climbs out, since nothing follows the run inside the hyperlink.
+    assert!(xml.contains("<w:bookmarkStart w:id=\"1\" w:name=\"Inner\"/><w:r><w:t>text</w:t></w:r></w:hyperlink><w:bookmarkEnd w:id=\"1\"/>"), "{xml}");
+    let list = bookmark_list(&out);
+    assert_eq!(bookmark(&list, "Inner")["text"], "text");
+    assert_eq!(bookmark(&list, "Whole_link")["text"], "link text");
+    assert_paired(&out);
+}
+
+#[test]
+fn existing_edits_keep_bookmarks_paired() {
+    let marked = |body: &str| body_document(body);
+    let one = format!(
+        "<w:p w14:paraId=\"{SOURCE_ID}\"><w:r><w:t xml:space=\"preserve\">alpha </w:t></w:r><w:bookmarkStart w:id=\"1\" w:name=\"Mid\"/><w:r><w:t>beta</w:t></w:r><w:bookmarkEnd w:id=\"1\"/><w:r><w:t xml:space=\"preserve\"> gamma</w:t></w:r></w:p>\
+         <w:p w14:paraId=\"{SECOND_ID}\"><w:r><w:t>second</w:t></w:r></w:p>"
+    );
+    let cross = format!(
+        "<w:p w14:paraId=\"{SOURCE_ID}\"><w:r><w:t xml:space=\"preserve\">alpha </w:t></w:r><w:bookmarkStart w:id=\"1\" w:name=\"Mid\"/><w:r><w:t>beta</w:t></w:r></w:p>\
+         <w:p w14:paraId=\"{SECOND_ID}\"><w:r><w:t>second</w:t></w:r><w:bookmarkEnd w:id=\"1\"/></w:p>\
+         <w:p w14:paraId=\"33333333\"><w:r><w:t>third</w:t></w:r></w:p>"
+    );
+    let cases = [
+        serde_json::json!({"op": "replace_text", "at": SOURCE_ID, "select": "beta", "with": "BETA"}),
+        serde_json::json!({"op": "replace_text", "at": SOURCE_ID, "select": "alpha beta", "with": "all new"}),
+        serde_json::json!({"op": "replace_text", "at": SOURCE_ID, "select": "a b", "with": "a <i>b</i>"}),
+        serde_json::json!({"op": "revise_text", "at": SOURCE_ID, "edits": [{"select": "a b", "with": "a-b"}, {"select": "lph", "with": "LPH"}]}),
+        serde_json::json!({"op": "replace_paragraph", "at": SOURCE_ID, "with": "Replaced <b>text</b>"}),
+        serde_json::json!({"op": "delete_paragraphs", "at": [SOURCE_ID]}),
+    ];
+    for body in [&one, &cross] {
+        for case in &cases {
+            for mode in [ChangeMode::Track, ChangeMode::Direct] {
+                let source = marked(body);
+                let out = commit_mode(&source, ops(serde_json::json!([case])), mode);
+                assert_paired(&out);
+                let list = bookmark_list(&out);
+                assert!(!list.is_empty(), "{case} {mode:?} lost the bookmark: {}", document_xml(&out));
+                let mid = bookmark(&list, "Mid");
+                assert!(mid["start"].is_string() && mid["end"].is_string(), "{case} {mode:?}: {mid}");
+                // The bookmark remains editable after the edit.
+                let moved = commit_mode(&out, ops(serde_json::json!([{"op": "bookmark_move", "name": "Mid", "at": SECOND_ID}])), mode);
+                assert_paired(&moved);
+                assert_eq!(bookmark(&bookmark_list(&moved), "Mid")["text"], "second");
+            }
+        }
+        // Deleting every bookmarked paragraph and accepting keeps the pair.
+        let source = marked(body);
+        let out = commit_mode(&source, ops(serde_json::json!([
+            {"op": "delete_paragraphs", "at": [SOURCE_ID, SECOND_ID]},
+            {"op": "revision_settle", "target": "all", "action": "accept"},
+        ])), ChangeMode::Track);
+        assert_paired(&out);
     }
 }

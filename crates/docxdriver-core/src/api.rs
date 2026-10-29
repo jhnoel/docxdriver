@@ -748,6 +748,35 @@ pub enum EditOp {
     CommentDelete {
         comment_id: String,
     },
+    /// Bookmark the paragraph at `at`: its whole content, or the `select`
+    /// span. Applied directly in both change modes (Word does not track
+    /// bookmarks). Body paragraphs only.
+    BookmarkAdd {
+        at: ParagraphAddress,
+        name: String,
+        #[serde(default)]
+        select: Option<String>,
+        #[serde(default)]
+        occurrence: Option<u32>,
+    },
+    /// Rename a body bookmark; `new_name` follows the add rules.
+    BookmarkRename {
+        name: String,
+        new_name: String,
+    },
+    /// Re-anchor a body bookmark, keeping its name and `w:id`.
+    BookmarkMove {
+        name: String,
+        at: ParagraphAddress,
+        #[serde(default)]
+        select: Option<String>,
+        #[serde(default)]
+        occurrence: Option<u32>,
+    },
+    /// Remove a body bookmark's start and end markers; the text stays.
+    BookmarkDelete {
+        name: String,
+    },
     RevisionSettle {
         target: RevisionTarget,
         action: RevisionAction,
@@ -1260,7 +1289,11 @@ fn validate_plan(mut p: Plan) -> Result<Plan, Diagnostic> {
 }
 
 fn validation_field(message: &str) -> Option<&'static str> {
-    let field = if message.contains("MathML") {
+    let field = if message.starts_with("new_name ") {
+        "new_name"
+    } else if message.starts_with("name ") {
+        "name"
+    } else if message.contains("MathML") {
         "mathml"
     } else if message.contains("equation must") {
         "equation"
@@ -1566,6 +1599,31 @@ fn normalize_op(op: &mut EditOp) -> Result<(), String> {
                 return Err("set_page_margins requires a margin".into());
             }
         }
+        EditOp::BookmarkAdd {
+            name,
+            select,
+            occurrence,
+            ..
+        } => {
+            crate::commands::bookmarks::validate_new_name(name, "name")?;
+            validate_bookmark_select(select, occurrence)?;
+        }
+        EditOp::BookmarkMove {
+            name,
+            select,
+            occurrence,
+            ..
+        } => {
+            crate::commands::bookmarks::validate_existing_name(name)?;
+            validate_bookmark_select(select, occurrence)?;
+        }
+        EditOp::BookmarkRename { name, new_name } => {
+            crate::commands::bookmarks::validate_existing_name(name)?;
+            crate::commands::bookmarks::validate_new_name(new_name, "new_name")?;
+        }
+        EditOp::BookmarkDelete { name } => {
+            crate::commands::bookmarks::validate_existing_name(name)?;
+        }
         EditOp::CommentAdd {
             text,
             occurrence,
@@ -1617,6 +1675,18 @@ fn normalize_op(op: &mut EditOp) -> Result<(), String> {
                 return Err("section must be positive".into());
             }
         }
+    }
+    Ok(())
+}
+fn validate_bookmark_select(select: &Option<String>, occurrence: &Option<u32>) -> Result<(), String> {
+    if select.as_deref() == Some("") {
+        return Err("select must be non-empty; omit it to bookmark the whole paragraph".into());
+    }
+    if occurrence == &Some(0) {
+        return Err("occurrence must be positive".into());
+    }
+    if occurrence.is_some() && select.is_none() {
+        return Err("occurrence requires select".into());
     }
     Ok(())
 }
@@ -1992,6 +2062,16 @@ fn explain_selector_drift(
             at,
             select: Some(select),
             ..
+        }
+        | EditOp::BookmarkAdd {
+            at,
+            select: Some(select),
+            ..
+        }
+        | EditOp::BookmarkMove {
+            at,
+            select: Some(select),
+            ..
         } => (at, vec![select.as_str()]),
         EditOp::ReviseText {
             at: Some(at),
@@ -2098,6 +2178,10 @@ fn operation_name(op: &EditOp) -> &'static str {
         EditOp::CommentReply { .. } => "comment_reply",
         EditOp::CommentSetStatus { .. } => "comment_set_status",
         EditOp::CommentDelete { .. } => "comment_delete",
+        EditOp::BookmarkAdd { .. } => "bookmark_add",
+        EditOp::BookmarkRename { .. } => "bookmark_rename",
+        EditOp::BookmarkMove { .. } => "bookmark_move",
+        EditOp::BookmarkDelete { .. } => "bookmark_delete",
         EditOp::RevisionSettle { .. } => "revision_settle",
     }
 }
@@ -2128,7 +2212,9 @@ fn resolve_typed_aliases(
         | EditOp::InsertTable { at, .. }
         | EditOp::SetSectionBoundary { at, .. }
         | EditOp::FormatParagraph { at, .. }
-        | EditOp::CommentAdd { at, .. } => resolve(at)?,
+        | EditOp::CommentAdd { at, .. }
+        | EditOp::BookmarkAdd { at, .. }
+        | EditOp::BookmarkMove { at, .. } => resolve(at)?,
         EditOp::ReviseText { at: Some(at), .. } => resolve(at)?,
         EditOp::InsertParagraph { at, .. } => {
             if let InsertAnchor::Paragraph(addr) = at {
@@ -2476,6 +2562,11 @@ fn typed_read(input: Option<&[u8]>, kind: &str, view: Option<&str>) -> crate::ou
         "revisions" => typed_listing(
             crate::commands::revisions::list_revisions(&state.package, &state.xml),
             "revisions",
+            source,
+        ),
+        "bookmarks" => typed_listing(
+            crate::commands::bookmarks::list_bookmarks(&state.package, &state.xml, source),
+            "bookmarks",
             source,
         ),
         other => crate::outcome::Outcome::error(format!("unknown read kind: {other}")),

@@ -7,7 +7,7 @@ import { readFile } from 'node:fs/promises';
 import { generatedOperationSchema } from './schema.js';
 
 const Path = Type.String({ description: 'Path to a .docx file, relative to cwd or absolute under cwd' });
-const Kind = Type.Union([Type.Literal('document'), Type.Literal('styles'), Type.Literal('comments'), Type.Literal('revisions'), Type.Literal('assets')]);
+const Kind = Type.Union([Type.Literal('document'), Type.Literal('styles'), Type.Literal('comments'), Type.Literal('revisions'), Type.Literal('bookmarks'), Type.Literal('assets')]);
 const View = Type.Union([Type.Literal('markup'), Type.Literal('final'), Type.Literal('original')]);
 const ChangeMode = Type.Union([Type.Literal('track'), Type.Literal('direct')]);
 const PlanInline = Type.Object({ operations: Type.Array(generatedOperationSchema(), { minItems: 1 }), author: Type.Optional(Type.String()), change_mode: Type.Optional(ChangeMode) }, { additionalProperties: false });
@@ -35,7 +35,7 @@ export async function registerDocxTools(pi: ExtensionAPI): Promise<void> {
   });
   pi.registerTool({
     name: 'docx_read', label: 'DOCX read',
-    description: 'Read a document, styles, comments, or revisions.', promptSnippet: 'Read a DOCX or typed listing',
+    description: 'Read a document, styles, comments, revisions, bookmarks, or assets.', promptSnippet: 'Read a DOCX or typed listing',
     parameters: Type.Object({ path: Path, kind: Type.Optional(Kind), view: Type.Optional(View) }, { additionalProperties: false }),
     async execute(_id, params, _signal, _update, ctx) {
       const p = params as any; const kind = p.kind ?? 'document';

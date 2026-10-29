@@ -4,7 +4,7 @@ import re
 import unittest
 
 from docxdriver import Document, create
-from docxdriver.plan import CommentAdd, Plan, ReplaceText
+from docxdriver.plan import BookmarkAdd, BookmarkDelete, BookmarkMove, BookmarkRename, CommentAdd, Plan, ReplaceText
 
 
 def first_paragraph(markup):
@@ -45,6 +45,35 @@ class DocumentTests(unittest.TestCase):
         # Keys are single-use.
         with self.assertRaises(ValueError):
             doc.commit(review.key)
+
+    def test_bookmarks_add_read_rename_move_delete(self):
+        doc = create(paragraphs=['Pay within thirty days.', 'Second clause.'])
+        first, second = re.findall(r'<p id="([0-9A-F]{8})"', doc.markup())[:2]
+        self.assertEqual(doc.bookmarks(), [])
+        review = doc.review(Plan(author='T', ops=[
+            BookmarkAdd(at=first, name='Term', select='thirty days'),
+            BookmarkAdd(at=second, name='Second'),
+        ]))
+        doc = doc.commit(review.key)
+        marks = {mark['name']: mark for mark in doc.read(kind='bookmarks')}
+        self.assertEqual(marks['Term']['text'], 'thirty days')
+        self.assertEqual(marks['Term']['start'], first)
+        self.assertFalse(marks['Term']['hidden'])
+        self.assertEqual(marks['Second']['text'], 'Second clause.')
+        self.assertEqual(doc.read(kind='bookmarks'), doc.bookmarks())
+        review = doc.review(Plan(author='T', ops=[
+            BookmarkRename(name='Term', new_name='Payment'),
+            BookmarkMove(name='Payment', at=second, select='clause'),
+            BookmarkDelete(name='Second'),
+        ]))
+        doc = doc.commit(review.key)
+        self.assertEqual([(m['name'], m['text']) for m in doc.bookmarks()], [('Payment', 'clause')])
+        with self.assertRaisesRegex(ValueError, 'close matches: "Payment"'):
+            doc.review(Plan(author='T', ops=[BookmarkDelete(name='Paymnt')]))
+        with self.assertRaisesRegex(ValueError, 'hidden or reserved'):
+            doc.review(Plan(author='T', ops=[BookmarkAdd(at=first, name='_Mine')]))
+        with self.assertRaisesRegex(ValueError, 'unknown read kind'):
+            doc.read(kind='marks')
 
     def test_commit_needs_a_reviewed_key(self):
         doc = create(paragraphs=['Alpha'])

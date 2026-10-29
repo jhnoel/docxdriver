@@ -285,7 +285,7 @@ impl DocxServer {
                 "preview": "preview_key required for commit"
             },
             "read": {
-                "kinds": ["document", "styles", "comments", "revisions", "assets"],
+                "kinds": ["document", "styles", "comments", "revisions", "bookmarks", "assets"],
                 "document_surface": "HTML with MathML"
             }
         }))
@@ -440,7 +440,7 @@ fn tool_definition(name: &str) -> Tool {
             true,
         ),
         "docx_read" => (
-            "Read document, styles, comments, or revisions.",
+            "Read document, styles, comments, revisions, bookmarks, or assets.",
             read_schema(),
             true,
             false,
@@ -536,7 +536,7 @@ fn read_schema() -> Map<String, Value> {
             ("path", path_schema()),
             (
                 "kind",
-                json!({"type": "string", "enum": ["document", "styles", "comments", "revisions", "assets"]}),
+                json!({"type": "string", "enum": ["document", "styles", "comments", "revisions", "bookmarks", "assets"]}),
             ),
             (
                 "view",

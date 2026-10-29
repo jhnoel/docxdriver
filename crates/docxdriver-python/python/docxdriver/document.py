@@ -2,7 +2,8 @@
 #
 #   doc = Document(Path("a.docx").read_bytes())
 #   doc.markup()                       body with the ids plans address
-#   doc.equations() / comments() / revisions() / styles() / assets()
+#   doc.equations() / comments() / revisions() / bookmarks() / styles() / assets()
+#   doc.read("bookmarks")             any listing kind by name
 #   doc.find("thirty")
 #   review = doc.review(Plan(ops=[...]))
 #   doc = doc.commit("K7QM-3XRP-...")  a new Document
@@ -23,6 +24,7 @@ import json
 try:
     from docxdriver._core import (
         _docx_assets,
+        _docx_bookmarks,
         _docx_comments,
         _docx_commit,
         _docx_create,
@@ -39,8 +41,8 @@ except ImportError:
 
 class Document:
     """One .docx as bytes: Document(Path("a.docx").read_bytes()).
-    Read: markup(view), equations(), comments(), revisions(), styles(), assets(),
-    find(query). Edit: review(Plan(ops=[...])) previews, then
+    Read: markup(view), equations(), comments(), revisions(), bookmarks(),
+    styles(), assets(), read(kind), find(query). Edit: review(Plan(ops=[...])) previews, then
     commit(key) returns the edited Document; save its .data."""
 
     def __init__(self, data):
@@ -49,7 +51,7 @@ class Document:
     def __repr__(self):
         return (
             "<Document " + str(len(self.data)) + " bytes. Read: markup(view='markup'|'final'|'original'), "
-            "equations(), comments(), revisions(), styles(), assets(), find(query). Edit: review(Plan(ops=[...])) "
+            "equations(), comments(), revisions(), bookmarks(), styles(), assets(), read(kind), find(query). Edit: review(Plan(ops=[...])) "
             "-> Review, then commit(key) -> Document; save with Path(p).write_bytes(doc.data).>"
         )
 
@@ -70,6 +72,35 @@ class Document:
     def revisions(self):
         """Tracked changes: id, kind, author, text; ids feed AcceptRevision."""
         return json.loads(_docx_revisions(self.data))
+
+    def bookmarks(self):
+        """Bookmarks in every story: name, id, hidden, start and end
+        (paragraph ids), text (truncated; empty for a point) and part.
+        Bookmark ops edit body bookmarks only."""
+        return json.loads(_docx_bookmarks(self.data))
+
+    def read(self, kind="document", view="markup"):
+        """One read by kind: "document" (the markup string for view),
+        "comments", "revisions", "bookmarks", "styles", "assets" or
+        "equations" (lists)."""
+        if kind == "document":
+            return self.markup(view)
+        if kind == "comments":
+            return self.comments()
+        if kind == "revisions":
+            return self.revisions()
+        if kind == "bookmarks":
+            return self.bookmarks()
+        if kind == "styles":
+            return self.styles()
+        if kind == "assets":
+            return self.assets()
+        if kind == "equations":
+            return self.equations()
+        raise ValueError(
+            "unknown read kind: " + str(kind)
+            + " (expected document, comments, revisions, bookmarks, styles, assets or equations)"
+        )
 
     def styles(self):
         """Style definitions: styleId, name, type."""

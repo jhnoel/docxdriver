@@ -11,6 +11,53 @@ for Python keyword collisions and `to_dict()` maps back to the schema
 field names. Operations are addressed by the paragraph `id` attribute
 from `doc.markup()` or `doc.find()` (uppercase eight-digit hex) or a `$name` alias.
 
+### BookmarkAdd
+
+`BookmarkAdd(at: str, name: str, occurrence: int | None = None, select: str | None = None)`
+
+Bookmark the paragraph at `at` with `name`: omit `select` to wrap the whole paragraph, or pass `select`/`occurrence` (1-based) to wrap one exact span. Names start with a letter, then letters, digits or underscores, at most 40 characters, unique ignoring case; a leading `_` is reserved for hidden bookmarks. Applies directly in both change modes (Word does not track bookmarks). Body paragraphs only.
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `at` | `str` | yes |
+| `name` | `str` | yes |
+| `occurrence` | `int | None` | no |
+| `select` | `str | None` | no |
+
+### BookmarkDelete
+
+`BookmarkDelete(name: str)`
+
+Remove the body bookmark `name`: its start and end markers only; the text is untouched.
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `name` | `str` | yes |
+
+### BookmarkMove
+
+`BookmarkMove(at: str, name: str, occurrence: int | None = None, select: str | None = None)`
+
+Re-anchor the body bookmark `name` to the paragraph at `at` (whole paragraph, or `select`/`occurrence`), keeping its name and id.
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `at` | `str` | yes |
+| `name` | `str` | yes |
+| `occurrence` | `int | None` | no |
+| `select` | `str | None` | no |
+
+### BookmarkRename
+
+`BookmarkRename(name: str, new_name: str)`
+
+Rename the body bookmark `name` to `new_name` (same rules as bookmark_add); hidden bookmarks may be renamed from but not to.
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `name` | `str` | yes |
+| `new_name` | `str` | yes |
+
 ### ClearFooter
 
 `ClearFooter(kind: str | None = None, section: int | None = None)`

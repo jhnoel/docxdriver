@@ -10,6 +10,63 @@ from dataclasses import dataclass
 
 # BEGIN GENERATED DATACLASSES
 @dataclass
+class BookmarkAdd:
+    at: str
+    name: str
+    occurrence: int | None = None
+    select: str | None = None
+    def to_dict(self):
+        value = {"op": "bookmark_add"}
+        if self.at is not None:
+            value["at"] = self.at
+        if self.name is not None:
+            value["name"] = self.name
+        if self.occurrence is not None:
+            value["occurrence"] = self.occurrence
+        if self.select is not None:
+            value["select"] = self.select
+        return value
+
+@dataclass
+class BookmarkDelete:
+    name: str
+    def to_dict(self):
+        value = {"op": "bookmark_delete"}
+        if self.name is not None:
+            value["name"] = self.name
+        return value
+
+@dataclass
+class BookmarkMove:
+    at: str
+    name: str
+    occurrence: int | None = None
+    select: str | None = None
+    def to_dict(self):
+        value = {"op": "bookmark_move"}
+        if self.at is not None:
+            value["at"] = self.at
+        if self.name is not None:
+            value["name"] = self.name
+        if self.occurrence is not None:
+            value["occurrence"] = self.occurrence
+        if self.select is not None:
+            value["select"] = self.select
+        return value
+
+@dataclass
+class BookmarkRename:
+    name: str
+    new_name: str
+    def to_dict(self):
+        value = {"op": "bookmark_rename"}
+        if self.name is not None:
+            value["name"] = self.name
+        if self.new_name is not None:
+            value["new_name"] = self.new_name
+        return value
+
+@dataclass
 class ClearFooter:
     kind: str | None = None
     section: int | None = None

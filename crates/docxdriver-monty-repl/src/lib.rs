@@ -48,17 +48,19 @@ pub const DOCUMENT: &str = include_str!("../sandbox/document.py");
 /// | `_docx_equations`  | data                     | JSON list                 |
 /// | `_docx_comments`   | data                     | JSON list                 |
 /// | `_docx_revisions`  | data                     | JSON list                 |
+/// | `_docx_bookmarks`  | data                     | JSON list                 |
 /// | `_docx_styles`     | data                     | JSON list                 |
 /// | `_docx_assets`     | data                     | JSON list                 |
 /// | `_docx_find`       | data, query, ignore_case | JSON list                 |
 /// | `_docx_review`     | data, plan JSON          | JSON `{"report"}`         |
 /// | `_docx_commit`     | data, commit key         | bytes                     |
-pub const ENGINE: [&str; 10] = [
+pub const ENGINE: [&str; 11] = [
     "_docx_create",
     "_docx_markup",
     "_docx_equations",
     "_docx_comments",
     "_docx_revisions",
+    "_docx_bookmarks",
     "_docx_styles",
     "_docx_assets",
     "_docx_find",

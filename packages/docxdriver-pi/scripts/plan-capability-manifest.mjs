@@ -44,6 +44,10 @@ export const PLAN_CAPABILITIES = {
     'comment_reply',
     'comment_set_status',
     'comment_delete',
+    'bookmark_add',
+    'bookmark_rename',
+    'bookmark_move',
+    'bookmark_delete',
     'revision_settle',
   ],
   docs: {
@@ -96,6 +100,14 @@ export const PLAN_CAPABILITIES = {
       'Set a comment\'s status to `open` or `resolved` by decimal `comment_id`.',
     comment_delete:
       'Delete a comment by decimal `comment_id`.',
+    bookmark_add:
+      "Bookmark the paragraph at `at` with `name`: omit `select` to wrap the whole paragraph, or pass `select`/`occurrence` (1-based) to wrap one exact span. Names start with a letter, then letters, digits or underscores, at most 40 characters, unique ignoring case; a leading `_` is reserved for hidden bookmarks. Applies directly in both change modes (Word does not track bookmarks). Body paragraphs only.",
+    bookmark_rename:
+      "Rename the body bookmark `name` to `new_name` (same rules as bookmark_add); hidden bookmarks may be renamed from but not to.",
+    bookmark_move:
+      "Re-anchor the body bookmark `name` to the paragraph at `at` (whole paragraph, or `select`/`occurrence`), keeping its name and id.",
+    bookmark_delete:
+      "Remove the body bookmark `name`: its start and end markers only; the text is untouched.",
     revision_settle:
       'Accept or reject tracked changes: `target` is a decimal revision id from `docx_read(path, kind="revisions")` or `all`; `action` is `accept` or `reject`. Prefer the `AcceptRevision(target)` / `RejectRevision(target)` shorthands. Settling `all` also settles tracked changes made by earlier operations in the same plan, and later selectors address the settled text.',
   },

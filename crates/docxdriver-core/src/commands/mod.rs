@@ -1,4 +1,5 @@
 //! Internal typed operation runtime: typed commands only.
+pub(crate) mod bookmarks;
 pub(crate) mod comments;
 pub(crate) mod equations;
 pub(crate) mod headers;
@@ -564,6 +565,25 @@ fn run_typed_edit_inner(
         EditOp::CommentDelete { comment_id } => mutate(state, |pkg, xml, _| {
             comments::delete_comment_typed(pkg, xml, comment_id)
         }),
+        // Word does not track bookmarks: both change modes apply directly.
+        EditOp::BookmarkAdd { at, name, select, occurrence } => {
+            let at = para_id!(at);
+            mutate(state, |pkg, xml, source| {
+                let anchor = bookmarks::Anchor { at: &at, select: select.as_deref(), occurrence: occurrence.map(|v| v as usize) };
+                bookmarks::add(pkg, xml, source, name, &anchor)
+            })
+        }
+        EditOp::BookmarkRename { name, new_name } => {
+            mutate(state, |pkg, xml, _| bookmarks::rename(pkg, xml, name, new_name))
+        }
+        EditOp::BookmarkMove { name, at, select, occurrence } => {
+            let at = para_id!(at);
+            mutate(state, |pkg, xml, source| {
+                let anchor = bookmarks::Anchor { at: &at, select: select.as_deref(), occurrence: occurrence.map(|v| v as usize) };
+                bookmarks::move_to(pkg, xml, source, name, &anchor)
+            })
+        }
+        EditOp::BookmarkDelete { name } => mutate(state, |pkg, xml, _| bookmarks::delete(pkg, xml, name)),
         EditOp::RevisionSettle { target, action } => match target {
             RevisionTarget::All => mutate(state, |pkg, xml, _| {
                 revisions::accept_reject_all(pkg, xml, matches!(action, RevisionAction::Accept))

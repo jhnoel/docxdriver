@@ -32,7 +32,8 @@ fields). Consult `docx_help` for the generated reference. Typical operations
 are `revise_text`, `replace_text`, `replace_paragraph`, `format_text`, `format_paragraph`,
 `insert_paragraph`, `delete_paragraphs`, `set_header`, `set_footer`,
 `clear_header`, `clear_footer`, `set_even_and_odd_headers`, `comment_add`,
-`comment_reply`, `comment_set_status`, `comment_delete`, `set_page_margins`,
+`comment_reply`, `comment_set_status`, `comment_delete`, `bookmark_add`,
+`bookmark_rename`, `bookmark_move`, `bookmark_delete`, `set_page_margins`,
 and `revision_settle`.
 
 Prefer `revise_text` for precise wording changes: `within` names a phrase
@@ -56,6 +57,17 @@ presentation MathML operands. No LaTeX is required.
 plus optional `select`/`occurrence` (1-based); reply, set status
 (`open`/`resolved`), and delete by decimal `comment_id`. Read
 `kind: "comments"` to list ids.
+
+Bookmarks: `bookmark_add` (`at`, `name`, optional `select`/`occurrence`;
+omit `select` to wrap the whole paragraph), `bookmark_rename` (`name`,
+`new_name`), `bookmark_move` (`name`, `at`, optional `select`/`occurrence`;
+keeps name and id) and `bookmark_delete` (`name`; text untouched). Names start
+with a letter, then letters, digits or underscores, at most 40 characters,
+unique ignoring case; new names must not start with `_` (hidden bookmarks such
+as `_GoBack`, which may still be moved, renamed from or deleted). They apply
+directly in tracked plans too and edit body bookmarks only. Read
+`kind: "bookmarks"` for `{name, id, hidden, start, end, text, part}`
+(`start`/`end` are paragraph ids); markup does not show bookmarks.
 
 Paragraph addresses are uppercase eight-digit IDs from `docx_read`;
 `insert_paragraph` also accepts `table:N` anchors from body-level

@@ -9,7 +9,7 @@ clean-sheet contract.
 `typed_api.rs` is the conformance suite for the public
 `Request`/`Command`/`Plan` API. It covers:
 
-- `create`, `read` (document, styles, comments, revisions), `find`, and the
+- `create`, `read` (document, styles, comments, revisions, bookmarks), `find`, and the
   expected-source compare-and-swap guard;
 - all 13 `EditOp` variants through both an individual `Command::Edit` and a
   one-entry `Plan`;

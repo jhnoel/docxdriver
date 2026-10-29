@@ -318,7 +318,7 @@ class PlanHost:
         target = self.path(path)
         if isinstance(kind, dict):
             kind = kind.get('kind')
-        if kind in ('comments', 'styles', 'revisions'):
+        if kind in ('comments', 'styles', 'revisions', 'bookmarks'):
             arguments = {'read_kind': kind}
         else:
             if view not in ('markup', 'final', 'original'):

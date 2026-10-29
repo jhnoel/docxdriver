@@ -158,6 +158,6 @@ export function runHelp(topic?: string): EngineResult {
     topic: topic ?? 'all',
     tools: ['docx_create', 'docx_read', 'docx_find', 'docx_edit', 'docx_help'],
     plan: { operations, schema: operationSchema, preview: 'preview_key required for commit' },
-    read: { kinds: ['document', 'styles', 'comments', 'revisions', 'assets'], document_surface: 'HTML with MathML' },
+    read: { kinds: ['document', 'styles', 'comments', 'revisions', 'bookmarks', 'assets'], document_surface: 'HTML with MathML' },
   } };
 }

@@ -29,6 +29,63 @@ import re
 
 # BEGIN GENERATED DATACLASSES
 @dataclass
+class BookmarkAdd:
+    at: str
+    name: str
+    occurrence: int | None = None
+    select: str | None = None
+    def to_dict(self):
+        value = {"op": "bookmark_add"}
+        if self.at is not None:
+            value["at"] = self.at
+        if self.name is not None:
+            value["name"] = self.name
+        if self.occurrence is not None:
+            value["occurrence"] = self.occurrence
+        if self.select is not None:
+            value["select"] = self.select
+        return value
+
+@dataclass
+class BookmarkDelete:
+    name: str
+    def to_dict(self):
+        value = {"op": "bookmark_delete"}
+        if self.name is not None:
+            value["name"] = self.name
+        return value
+
+@dataclass
+class BookmarkMove:
+    at: str
+    name: str
+    occurrence: int | None = None
+    select: str | None = None
+    def to_dict(self):
+        value = {"op": "bookmark_move"}
+        if self.at is not None:
+            value["at"] = self.at
+        if self.name is not None:
+            value["name"] = self.name
+        if self.occurrence is not None:
+            value["occurrence"] = self.occurrence
+        if self.select is not None:
+            value["select"] = self.select
+        return value
+
+@dataclass
+class BookmarkRename:
+    name: str
+    new_name: str
+    def to_dict(self):
+        value = {"op": "bookmark_rename"}
+        if self.name is not None:
+            value["name"] = self.name
+        if self.new_name is not None:
+            value["new_name"] = self.new_name
+        return value
+
+@dataclass
 class ClearFooter:
     kind: str | None = None
     section: int | None = None
@@ -605,13 +662,13 @@ def docx_create(path: str, html: str):
     return _docx_create(path, html)
 
 def docx_read(path: str, view: str = "markup", kind: str = "document"):
-    _listing_kinds = ("comments", "styles", "revisions", "assets")
+    _listing_kinds = ("comments", "styles", "revisions", "bookmarks", "assets")
     if kind == "document" and view in _listing_kinds:
         kind = view
     if kind in _listing_kinds:
         return _docx_read(path, view, kind)
     if kind != "document":
-        raise ValueError('kind must be one of document, comments, styles, revisions, assets')
+        raise ValueError('kind must be one of document, comments, styles, revisions, bookmarks, assets')
     result = _docx_read(path, view)
     return ReadResult(markup=result["markup"], styles=result.get("styles", {}), css=result.get("css", {}), equations=result.get("equations", []), selection_space=result.get("selection_space"), selections=result.get("selections"), comments=result.get("comments", []), assets=result.get("assets", []), comments_error=result.get("comments_error"))
 
@@ -652,6 +709,33 @@ class re:
     def split(pattern: str, string: str, maxsplit: int = 0, flags: int = 0) -> list: ...
 
 # BEGIN GENERATED TYPE STUBS
+class BookmarkAdd:
+    def __init__(self, at: str, name: str, occurrence: int | None = None, select: str | None = None): ...
+    at: str
+    name: str
+    occurrence: int | None
+    select: str | None
+    def to_dict(self) -> dict: ...
+
+class BookmarkDelete:
+    def __init__(self, name: str): ...
+    name: str
+    def to_dict(self) -> dict: ...
+
+class BookmarkMove:
+    def __init__(self, at: str, name: str, occurrence: int | None = None, select: str | None = None): ...
+    at: str
+    name: str
+    occurrence: int | None
+    select: str | None
+    def to_dict(self) -> dict: ...
+
+class BookmarkRename:
+    def __init__(self, name: str, new_name: str): ...
+    name: str
+    new_name: str
+    def to_dict(self) -> dict: ...
+
 class ClearFooter:
     def __init__(self, kind: str | None = None, section: int | None = None): ...
     kind: str | None
@@ -957,6 +1041,53 @@ optional fields whose value is \`None\`; constructors use \`with_\`/\`as_\`
 for Python keyword collisions and \`to_dict()\` maps back to the schema
 field names. Operations are addressed by the paragraph \`id\` attribute
 from \`docx_read\` (uppercase eight-digit hex) or a \`$name\` alias.
+
+### BookmarkAdd
+
+\`BookmarkAdd(at: str, name: str, occurrence: int | None = None, select: str | None = None)\`
+
+Bookmark the paragraph at \`at\` with \`name\`: omit \`select\` to wrap the whole paragraph, or pass \`select\`/\`occurrence\` (1-based) to wrap one exact span. Names start with a letter, then letters, digits or underscores, at most 40 characters, unique ignoring case; a leading \`_\` is reserved for hidden bookmarks. Applies directly in both change modes (Word does not track bookmarks). Body paragraphs only.
+
+| Field | Type | Required |
+| --- | --- | --- |
+| \`at\` | \`str\` | yes |
+| \`name\` | \`str\` | yes |
+| \`occurrence\` | \`int | None\` | no |
+| \`select\` | \`str | None\` | no |
+
+### BookmarkDelete
+
+\`BookmarkDelete(name: str)\`
+
+Remove the body bookmark \`name\`: its start and end markers only; the text is untouched.
+
+| Field | Type | Required |
+| --- | --- | --- |
+| \`name\` | \`str\` | yes |
+
+### BookmarkMove
+
+\`BookmarkMove(at: str, name: str, occurrence: int | None = None, select: str | None = None)\`
+
+Re-anchor the body bookmark \`name\` to the paragraph at \`at\` (whole paragraph, or \`select\`/\`occurrence\`), keeping its name and id.
+
+| Field | Type | Required |
+| --- | --- | --- |
+| \`at\` | \`str\` | yes |
+| \`name\` | \`str\` | yes |
+| \`occurrence\` | \`int | None\` | no |
+| \`select\` | \`str | None\` | no |
+
+### BookmarkRename
+
+\`BookmarkRename(name: str, new_name: str)\`
+
+Rename the body bookmark \`name\` to \`new_name\` (same rules as bookmark_add); hidden bookmarks may be renamed from but not to.
+
+| Field | Type | Required |
+| --- | --- | --- |
+| \`name\` | \`str\` | yes |
+| \`new_name\` | \`str\` | yes |
 
 ### ClearFooter
 
@@ -1371,8 +1502,8 @@ Rich replacements retain whole-selection tracking to apply their formatting.
 
 - \`docx_create(path: str, html: str)\`
 - \`docx_read(path: str, view: str = "markup", kind: str = "document") -> ReadResult | dict\` — complete HTML
-  markup and a current equations-address listing (at, equation, display, editable) by default (\`kind="document"\`); \`kind="comments"\`, \`"styles"\`, \`"revisions"\`, or \`"assets"\` returns the
-  core listing object (and a second positional of \`comments\`/\`styles\`/\`revisions\` is treated as \`kind\`).
+  markup and a current equations-address listing (at, equation, display, editable) by default (\`kind="document"\`); \`kind="comments"\`, \`"styles"\`, \`"revisions"\`, \`"bookmarks"\`, or \`"assets"\` returns the
+  core listing object (and a second positional of \`comments\`/\`styles\`/\`revisions\`/\`bookmarks\` is treated as \`kind\`).
 - \`docx_find(path: str, query: str, ignore_case: bool = False) -> list\` — core find match
   records verbatim (\`{index, id?, text, style?, number?}\` per matching paragraph; \`id\` is
   the canonical uppercase paragraph address)

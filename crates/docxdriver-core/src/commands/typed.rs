@@ -56,7 +56,7 @@ pub(super) fn visible_text(xml: &DocxXml, paragraph: NodeId) -> String {
     selection_projection(xml, paragraph).current
 }
 
-fn select_in_paragraph(
+pub(super) fn select_in_paragraph(
     xml: &DocxXml,
     paragraph: NodeId,
     select: &str,
@@ -126,7 +126,7 @@ fn blocker_label(xml: &DocxXml, node: NodeId) -> Option<&'static str> {
 
 /// A blocked diagnostic carrying the target address so the plan layer can
 /// report the affected paragraph's current markup.
-fn blocked_at(at: &str, message: impl Into<String>) -> Outcome {
+pub(super) fn blocked_at(at: &str, message: impl Into<String>) -> Outcome {
     let address = at.to_uppercase();
     Outcome {
         status: Status::Blocked,
@@ -1213,7 +1213,8 @@ pub fn replace_paragraph_typed(
             .collect();
         let insert_before = content_insert_point(xml, paragraph, &content);
         for node in &content {
-            xml.doc.remove_node(*node);
+            // Range markers nested in removed content stay, collapsed.
+            crate::segments::remove_content(xml, *node);
         }
         insert_plain_pieces(
             xml,
@@ -1301,10 +1302,24 @@ fn remove_range_direct(
             ancestors.push(candidate);
             parent = xml.doc.parent(candidate);
         }
-        xml.doc.remove_node(node);
+        // Range markers (bookmarks, permissions, …) are not content: they
+        // stay, collapsed, so a pair is never cut in two.
+        if crate::segments::is_range_marker(xml, node) {
+            continue;
+        }
+        crate::segments::remove_content(xml, node);
         for ancestor in ancestors {
-            let has_children = xml.doc.children(ancestor).any(|n| xml.doc.is_element(n));
-            if !has_children {
+            let markers_only = xml
+                .doc
+                .children(ancestor)
+                .filter(|&n| xml.doc.is_element(n))
+                .all(|n| crate::segments::is_range_marker(xml, n));
+            if markers_only {
+                let markers: Vec<NodeId> = xml.doc.children(ancestor).filter(|&n| xml.doc.is_element(n)).collect();
+                for marker in markers {
+                    xml.doc.detach(marker);
+                    xml.doc.insert_before(ancestor, marker);
+                }
                 xml.doc.remove_node(ancestor);
             }
         }

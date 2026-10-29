@@ -4,7 +4,7 @@
 //! ```text
 //! let doc = Document::open(&bytes);
 //! doc.markup(View::Markup)?            body with the ids plans address
-//! doc.comments()? / revisions()? / styles()? / assets()?
+//! doc.comments()? / revisions()? / styles()? / assets()? / bookmarks()?
 //! doc.find("thirty", Case::Sensitive)?
 //! let plan = doc.plan(json)?           bound to these bytes
 //! let review = doc.review(&plan)?      key + report, nothing written
@@ -111,6 +111,12 @@ impl<'a> Document<'a> {
     /// Style definitions.
     pub fn styles(&self) -> Result<Vec<Value>, Diagnostic> {
         self.list("styles")
+    }
+
+    /// Bookmarks in every story: name, id, hidden, start/end paragraph ids,
+    /// bookmarked text and part.
+    pub fn bookmarks(&self) -> Result<Vec<Value>, Diagnostic> {
+        self.list("bookmarks")
     }
 
     /// Embedded images and media.

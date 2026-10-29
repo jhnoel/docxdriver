@@ -229,6 +229,48 @@ struct CommentDeleteArgs {
     comment_id: String,
 }
 #[derive(Args, Debug, Clone)]
+struct BookmarkAddArgs {
+    #[command(flatten)]
+    common: MutArgs,
+    #[arg(long)]
+    at: String,
+    #[arg(long)]
+    name: String,
+    #[arg(long)]
+    select: Option<String>,
+    #[arg(long)]
+    occurrence: Option<u32>,
+}
+#[derive(Args, Debug, Clone)]
+struct BookmarkRenameArgs {
+    #[command(flatten)]
+    common: MutArgs,
+    #[arg(long)]
+    name: String,
+    #[arg(long = "new-name")]
+    new_name: String,
+}
+#[derive(Args, Debug, Clone)]
+struct BookmarkMoveArgs {
+    #[command(flatten)]
+    common: MutArgs,
+    #[arg(long)]
+    name: String,
+    #[arg(long)]
+    at: String,
+    #[arg(long)]
+    select: Option<String>,
+    #[arg(long)]
+    occurrence: Option<u32>,
+}
+#[derive(Args, Debug, Clone)]
+struct BookmarkDeleteArgs {
+    #[command(flatten)]
+    common: MutArgs,
+    #[arg(long)]
+    name: String,
+}
+#[derive(Args, Debug, Clone)]
 struct RevisionSettleArgs {
     #[command(flatten)]
     common: MutArgs,
@@ -298,6 +340,10 @@ enum Commands {
     CommentReply(CommentReplyArgs),
     CommentSetStatus(CommentStatusArgs),
     CommentDelete(CommentDeleteArgs),
+    BookmarkAdd(BookmarkAddArgs),
+    BookmarkRename(BookmarkRenameArgs),
+    BookmarkMove(BookmarkMoveArgs),
+    BookmarkDelete(BookmarkDeleteArgs),
     RevisionSettle(RevisionSettleArgs),
 }
 fn main() -> ExitCode {

@@ -43,7 +43,7 @@ if review is not None:
 
 - `docx_create(path, html)`
 - `docx_read(path, view="markup", kind="document")` → full `ReadResult`
-- `docx_read(path, kind="comments" | "styles" | "revisions" | "assets")` → dict
+- `docx_read(path, kind="comments" | "styles" | "revisions" | "bookmarks" | "assets")` → dict
 - `docx_find(path, query, ignore_case=False)` → match records with `id` / `text`
 - `docx_help(topic=None)`
 - `docx_review(path, plan)` → `ReviewResult(commit_key, edits)` or `None`
@@ -118,6 +118,21 @@ Comments:
   `CommentDelete(comment_id)` — `comment_id` is a decimal string. After add, the
   review `summary` includes the new id (`comment {id} anchored…`). Status is
   `open` or `resolved`.
+
+Bookmarks:
+
+- `BookmarkAdd(at, name, select=None, occurrence=None)` — wrap the whole
+  paragraph, or one exact `select` span.
+- `BookmarkRename(name, new_name)`, `BookmarkMove(name, at, select=None,
+  occurrence=None)` (keeps name and id), `BookmarkDelete(name)` (markers only;
+  text untouched).
+- Names: a letter, then letters, digits or underscores; at most 40; unique
+  ignoring case. New names must not start with `_` (hidden: `_GoBack`,
+  `_Toc…`), though hidden bookmarks can be moved, renamed from or deleted.
+- Applied directly even in tracked plans; body bookmarks only. An unknown
+  name's error lists close matches.
+- `docx_read(path, kind="bookmarks")["bookmarks"]` lists `{name, id, hidden,
+  start, end, text, part}` for every story; markup does not show bookmarks.
 
 Tracked changes:
 

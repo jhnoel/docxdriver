@@ -272,6 +272,11 @@ const RANGE_MARKERS: &[&str] = &[
     "permEnd",
 ];
 
+/// Whether `node` is a range marker ([`RANGE_MARKERS`]).
+pub fn is_range_marker(xml: &DocxXml, node: NodeId) -> bool {
+    RANGE_MARKERS.iter().any(|m| xml.is_w(node, m))
+}
+
 /// Remove an element and its content without breaking what pairs
 /// with it from outside: range markers stay as zero-width markers, comment
 /// references stay in a bare run (their comment would be left unanchored),

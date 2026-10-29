@@ -16,7 +16,7 @@ changed. Expected plan/source/validation refusals are structured normal tool
 results; filesystem and engine failures remain tool errors.
 
 `docx_read` is the one read surface. `kind` is `document` (default), `styles`,
-`comments`, `revisions`, or `assets`. Document reads return the complete HTML
+`comments`, `revisions`, `bookmarks`, or `assets`. Document reads return the complete HTML
 projection with semantic metadata. Full-document context is the default. The
 five-tool response includes the source SHA-256; Python plans bind it in the host.
 

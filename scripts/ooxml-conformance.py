@@ -387,6 +387,21 @@ def scenarios(read):
             ('delete_paragraphs', mode, [{'op': 'delete_paragraphs', 'at': [other]}]),
             ('comment_add', mode, [{'op': 'comment_add', 'at': at, 'select': second, 'occurrence': 1, 'text': 'Check this'}]),
         ]
+        # Bookmarks apply directly in both modes; later edits must keep them paired.
+        mark = {'op': 'bookmark_add', 'at': at, 'name': 'DocxdriverConformance', 'select': second, 'occurrence': 1}
+        whole = {'op': 'bookmark_add', 'at': other, 'name': 'DocxdriverWhole'}
+        out += [
+            ('bookmark_add', mode, [mark]),
+            ('bookmark_add', mode, [whole]),
+            ('bookmark_rename', mode, [mark, {'op': 'bookmark_rename', 'name': 'DocxdriverConformance', 'new_name': 'DocxdriverRenamed'}]),
+            ('bookmark_move', mode, [mark, {'op': 'bookmark_move', 'name': 'DocxdriverConformance', 'at': other}]),
+            ('bookmark_move', mode, [whole, {'op': 'bookmark_move', 'name': 'DocxdriverWhole', 'at': at, 'select': first, 'occurrence': 1}]),
+            ('bookmark_delete', mode, [mark, {'op': 'bookmark_delete', 'name': 'DocxdriverConformance'}]),
+            ('replace_text', mode, [mark, {'op': 'replace_text', 'at': at, 'select': second, 'with': 'Bookmarked', 'occurrence': 1}]),
+            ('revise_text', mode, [mark, {'op': 'revise_text', 'at': at, 'edits': [{'select': second, 'with': 'Y', 'occurrence': 1}]}]),
+            ('replace_paragraph', mode, [mark, {'op': 'replace_paragraph', 'at': at, 'with': 'Replaced <b>bookmarked</b>'}]),
+            ('delete_paragraphs', mode, [whole, {'op': 'delete_paragraphs', 'at': [other]}]),
+        ]
     # Rewriting, removing and settling the plan author's own pending changes.
     out += [
         ('revise_text', 'track', [

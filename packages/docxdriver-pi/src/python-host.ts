@@ -950,7 +950,7 @@ export function createPlanPythonHost(
         }
         const abs = await resolveUnderCwd(cwd, String(path));
         const readAbort = readSignal(signal, deadline.signal);
-        if (readKind === 'comments' || readKind === 'styles' || readKind === 'revisions' || readKind === 'assets') {
+        if (readKind === 'comments' || readKind === 'styles' || readKind === 'revisions' || readKind === 'bookmarks' || readKind === 'assets') {
           return withFileMutationQueue(abs, async () => {
             const bytes = new Uint8Array(await io.readFile(abs, limits.maxDocxBytes, readAbort));
             const output = runRead(bytes, { kind: readKind });

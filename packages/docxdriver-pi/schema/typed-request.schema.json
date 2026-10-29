@@ -2644,6 +2644,130 @@
         },
         {
           "additionalProperties": false,
+          "description": "Bookmark the paragraph at `at`: its whole content, or the `select` span. Applied directly in both change modes (Word does not track bookmarks). Body paragraphs only.",
+          "properties": {
+            "at": {
+              "$ref": "#/$defs/ParagraphAddress"
+            },
+            "name": {
+              "type": "string"
+            },
+            "occurrence": {
+              "default": null,
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "op": {
+              "enum": [
+                "bookmark_add"
+              ],
+              "type": "string"
+            },
+            "select": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "at",
+            "name",
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Rename a body bookmark; `new_name` follows the add rules.",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "new_name": {
+              "type": "string"
+            },
+            "op": {
+              "enum": [
+                "bookmark_rename"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "new_name",
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Re-anchor a body bookmark, keeping its name and `w:id`.",
+          "properties": {
+            "at": {
+              "$ref": "#/$defs/ParagraphAddress"
+            },
+            "name": {
+              "type": "string"
+            },
+            "occurrence": {
+              "default": null,
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "op": {
+              "enum": [
+                "bookmark_move"
+              ],
+              "type": "string"
+            },
+            "select": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "at",
+            "name",
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Remove a body bookmark's start and end markers; the text stays.",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "op": {
+              "enum": [
+                "bookmark_delete"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
           "properties": {
             "action": {
               "$ref": "#/$defs/RevisionAction"

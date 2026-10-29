@@ -45,10 +45,14 @@ export type EditOp =
   | { op: 'comment_reply'; comment_id: string; text: string }
   | { op: 'comment_set_status'; comment_id: string; status: 'open'|'resolved' }
   | { op: 'comment_delete'; comment_id: string }
+  | { op: 'bookmark_add'; at: ParagraphAddress; name: string; select?: string; occurrence?: number }
+  | { op: 'bookmark_rename'; name: string; new_name: string }
+  | { op: 'bookmark_move'; name: string; at: ParagraphAddress; select?: string; occurrence?: number }
+  | { op: 'bookmark_delete'; name: string }
   | { op: 'revision_settle'; target: string; action: 'accept'|'reject' };
 export type TextEdit = { select: string; with: string; occurrence?: number; all?: boolean };
 export type CreateCommand = { kind: 'create'; paragraphs?: string[]; html?: string };
-export type ReadCommand = { kind: 'read'; read_kind?: 'document'|'document_ui'|'styles'|'comments'|'revisions'|'assets'; view?: 'markup'|'final'|'original' };
+export type ReadCommand = { kind: 'read'; read_kind?: 'document'|'document_ui'|'styles'|'comments'|'revisions'|'bookmarks'|'assets'; view?: 'markup'|'final'|'original' };
 export type FindCommand = { kind: 'find'; query: string; ignore_case?: boolean; view?: 'markup'|'final'|'original' };
 export type EditCommand = { kind: 'edit'; author: string; change_mode: ChangeMode; op: EditOp };
 export type Command = CreateCommand | ReadCommand | FindCommand | EditCommand;
