@@ -339,7 +339,7 @@
       "html_authoring": "supported",
       "typed_edit": "supported",
       "python_repl": "exposed",
-      "note": "Direct insert_table/edit_table support bounded rectangular grid edits, merge/split and deletion. Merged grids must be split before row/column editing. Tracked structural changes and overlapping annotations/revisions are rejected.",
+      "note": "Direct insert_table/edit_table support bounded rectangular grid edits, merge/split and deletion. insert_table cells fills the new table in the same plan, with $alias_rNcM cell paragraph aliases. Merged grids must be split before row/column editing. Tracked structural changes and overlapping annotations/revisions are rejected.",
       "operations": [
         "insert_table",
         "edit_table"

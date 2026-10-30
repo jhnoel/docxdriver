@@ -4,7 +4,10 @@ import re
 import unittest
 
 from docxdriver import Document, create
-from docxdriver.plan import BookmarkAdd, BookmarkDelete, BookmarkMove, BookmarkRename, CommentAdd, Plan, ReplaceText
+from docxdriver.plan import (
+    BookmarkAdd, BookmarkDelete, BookmarkMove, BookmarkRename, CommentAdd, InsertTable, Plan, ReplaceParagraph,
+    ReplaceText,
+)
 
 
 def first_paragraph(markup):
@@ -74,6 +77,25 @@ class DocumentTests(unittest.TestCase):
             doc.review(Plan(author='T', ops=[BookmarkAdd(at=first, name='_Mine')]))
         with self.assertRaisesRegex(ValueError, 'unknown read kind'):
             doc.read(kind='marks')
+
+    def test_insert_table_fills_cells_in_one_plan(self):
+        doc = create(paragraphs=['Team'])
+        at = first_paragraph(doc.markup())
+        review = doc.review(Plan(author='T', change_mode='direct', ops=[
+            InsertTable(at=at, position='after', rows=2, columns=2, as_='t',
+                        cells=[['<b>Name</b>', '<b>Role</b>'], ['Ada']]),
+            ReplaceParagraph(at='$t_r2c2', with_='Analyst'),
+        ]))
+        self.assertEqual(review.report['ops'][0]['summary'], 'inserted table table:1 with 3 filled cells')
+        self.assertEqual(len(review.report['allocated_ids']), 4)
+        self.assertEqual(review.report['aliases']['t_r1c1'], review.report['allocated_ids'][0])
+        markup = doc.commit(review.key).markup()
+        for text in ('<b>Name</b>', '<b>Role</b>', '>Ada<', '>Analyst<'):
+            self.assertIn(text, markup)
+        with self.assertRaisesRegex(ValueError, r'remove cells\[0\]\[2\.\.\]'):
+            doc.review(Plan(author='T', change_mode='direct', ops=[
+                InsertTable(at=at, position='after', rows=1, columns=2, cells=[['a', 'b', 'c']]),
+            ]))
 
     def test_commit_needs_a_reviewed_key(self):
         doc = create(paragraphs=['Alpha'])

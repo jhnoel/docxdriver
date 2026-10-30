@@ -139,12 +139,13 @@ class InsertParagraph:
     def to_dict(self) -> dict: ...
 
 class InsertTable:
-    def __init__(self, at: str, columns: int, position: str, rows: int, as_: str | None = None): ...
+    def __init__(self, at: str, columns: int, position: str, rows: int, as_: str | None = None, cells: list | None = None): ...
     at: str
     columns: int
     position: str
     rows: int
     as_: str | None
+    cells: list | None
     def to_dict(self) -> dict: ...
 
 class ReplaceEquation:

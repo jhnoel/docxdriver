@@ -1541,6 +1541,19 @@ fn insert_plain_pieces(
             }
             cursor = xml.doc.next_sibling(node);
         }
+        // A part without hyperlinks may not declare the relationships prefix.
+        if let Some(root) = xml.doc.root_element() {
+            let declared = xml.doc.attributes(root).iter().any(|a| {
+                a.name == "xmlns:r" || (a.name == "r" && a.value.contains("relationships"))
+            });
+            if !declared {
+                xml.doc.set_attribute(
+                    root,
+                    "xmlns:r",
+                    "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+                );
+            }
+        }
         let link = xml.doc.create_element("w:hyperlink");
         xml.doc.set_attribute(link, "r:id", &rid);
         attach_created(xml, paragraph, before, link);
@@ -2544,6 +2557,51 @@ fn allocate_insert_para_id_typed(
     seed.push(b'|');
     seed.extend_from_slice(&0u64.to_le_bytes());
     allocator.allocate(&seed).map(format_para_id)
+}
+
+/// Unused `w14:paraId`s for the cell paragraphs of a table inserted by
+/// operation `op_index`, one per cell in row-major order. Cell `n` (from 1)
+/// seeds probe slot `n`; slot 0 is the one `insert_paragraph` uses.
+pub(crate) fn allocate_table_cell_para_ids(
+    xml: &DocxXml,
+    source_hash: Option<[u8; 32]>,
+    plan_seed: &[u8; 32],
+    op_index: usize,
+    count: usize,
+) -> Result<Vec<String>, String> {
+    let mut allocator = ParaIdAllocator::new();
+    for node in xml.all_paragraphs() {
+        if let Some(value) = xml.para_id(node).filter(|v| is_valid_para_id(v)) {
+            allocator.reserve(u32::from_str_radix(value, 16).unwrap_or(0));
+        }
+    }
+    let mut prefix = Vec::with_capacity(96);
+    prefix.extend_from_slice(&source_hash.unwrap_or([0; 32]));
+    prefix.push(b'|');
+    prefix.extend_from_slice(plan_seed);
+    prefix.push(b'|');
+    prefix.extend_from_slice(&(op_index as u64).to_le_bytes());
+    prefix.push(b'|');
+    (1..=count as u64)
+        .map(|slot| {
+            let mut seed = prefix.clone();
+            seed.extend_from_slice(&slot.to_le_bytes());
+            allocator.allocate(&seed).map(format_para_id)
+        })
+        .collect()
+}
+
+/// Fill an empty paragraph with `with`, the inline content `insert_paragraph`
+/// accepts, as direct (untracked) runs.
+pub(crate) fn fill_paragraph_direct(
+    package: &mut Package,
+    xml: &mut DocxXml,
+    paragraph: NodeId,
+    with: &str,
+) -> Result<(), Outcome> {
+    let (pieces, link_href) = parse_with(with)?;
+    insert_plain_pieces(xml, package, paragraph, None, &pieces, link_href.as_deref())
+        .map_err(Outcome::error)
 }
 
 /// `insert_paragraph`: insert one paragraph before or after an existing

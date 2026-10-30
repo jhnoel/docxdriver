@@ -31,7 +31,7 @@ export type EditOp =
   | { op: 'format_row'; at: string; format: RowFormat }
   | { op: 'format_cell'; at: string; format: CellFormat }
   | { op: 'edit_table'; at: string; action: TableEdit }
-  | { op: 'insert_table'; at: ParagraphAddress; position: InsertPosition; rows: number; columns: number; as?: string }
+  | { op: 'insert_table'; at: ParagraphAddress; position: InsertPosition; rows: number; columns: number; cells?: string[][]; as?: string }
   | { op: 'set_page_margins'; section?: number; top?: Point; right?: Point; bottom?: Point; left?: Point; header?: Point; footer?: Point; gutter?: Point }
   | { op: 'set_section_boundary'; at: ParagraphAddress; remove?: boolean; break_type?: 'nextPage'|'continuous'|'oddPage'|'evenPage'|'nextColumn' }
   | { op: 'set_section_layout'; section?: number; section_handle?: string; page_size?: 'letter'|'legal'|'a4'|'a3'|'a5'; width?: Point; height?: Point; orientation?: 'portrait'|'landscape'; columns?: number; column_spacing?: Point; column_widths?: Point[]; column_separator?: boolean; break_type?: 'nextPage'|'continuous'|'oddPage'|'evenPage'|'nextColumn'; page_number_format?: 'decimal'|'upperRoman'|'lowerRoman'|'upperLetter'|'lowerLetter'; page_number_start?: number; page_number_continue?: boolean }

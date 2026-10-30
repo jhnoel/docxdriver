@@ -1621,6 +1621,7 @@
         },
         {
           "additionalProperties": false,
+          "description": "A `rows` × `columns` grid of new cells. `cells` fills them row by row with the inline content `insert_paragraph`'s `with` accepts; missing trailing rows and cells stay empty. With `as`, cell row N column M is the paragraph alias `$<as>_rNcM` for later operations.",
           "properties": {
             "as": {
               "default": null,
@@ -1631,6 +1632,19 @@
             },
             "at": {
               "$ref": "#/$defs/ParagraphAddress"
+            },
+            "cells": {
+              "default": null,
+              "items": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
             },
             "columns": {
               "format": "uint32",

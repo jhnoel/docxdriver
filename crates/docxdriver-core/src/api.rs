@@ -564,7 +564,20 @@ pub enum EditOp {
         with: String,
     },
     EditTable { at: String, action: TableEdit },
-    InsertTable { at: ParagraphAddress, position: InsertPosition, rows: u32, columns: u32, #[serde(rename = "as", default)] alias: Option<String> },
+    /// A `rows` × `columns` grid of new cells. `cells` fills them row by
+    /// row with the inline content `insert_paragraph`'s `with` accepts;
+    /// missing trailing rows and cells stay empty. With `as`, cell row N
+    /// column M is the paragraph alias `$<as>_rNcM` for later operations.
+    InsertTable {
+        at: ParagraphAddress,
+        position: InsertPosition,
+        rows: u32,
+        columns: u32,
+        #[serde(default)]
+        cells: Option<Vec<Vec<String>>>,
+        #[serde(rename = "as", default)]
+        alias: Option<String>,
+    },
     FormatTable { at: String, format: TableFormat },
     FormatRow { at: String, format: RowFormat },
     FormatCell { at: String, format: CellFormat },
@@ -1394,9 +1407,31 @@ fn normalize_op(op: &mut EditOp) -> Result<(), String> {
             }
         }
         EditOp::EditTable { at, action } => crate::commands::table_structure::validate(at, action)?,
-        EditOp::InsertTable { rows, columns, alias, .. } => {
+        EditOp::InsertTable { rows, columns, cells, alias, .. } => {
             if *rows == 0 || *columns == 0 || *rows > 100 || *columns > 100 { return Err("insert_table dimensions must be 1..100".into()); }
             if alias.as_ref().is_some_and(|a| !valid_alias(a)) { return Err("invalid alias".into()); }
+            let cells = cells.as_deref().unwrap_or_default();
+            if cells.len() > *rows as usize {
+                let extra = cells.len() - *rows as usize;
+                return Err(format!(
+                    "cells has {} rows but the table has {rows}: remove cells[{rows}..] (row {}{})",
+                    cells.len(),
+                    *rows + 1,
+                    if extra > 1 { format!(" to row {}", cells.len()) } else { String::new() },
+                ));
+            }
+            for (index, row) in cells.iter().enumerate() {
+                if row.len() > *columns as usize {
+                    let extra = row.len() - *columns as usize;
+                    return Err(format!(
+                        "cells[{index}] (row {}) has {} cells but the table has {columns} columns: remove cells[{index}][{columns}..] (column {}{})",
+                        index + 1,
+                        row.len(),
+                        *columns + 1,
+                        if extra > 1 { format!(" to column {}", row.len()) } else { String::new() },
+                    ));
+                }
+            }
         }
         EditOp::FormatTable { at, format } => crate::commands::tables::validate_table(at, format)?,
         EditOp::FormatRow { at, format } => crate::commands::tables::validate_row(at, format)?,
@@ -2002,6 +2037,37 @@ fn fold_typed(
             if matches!(op, EditOp::InsertTable { .. } | EditOp::EditTable { .. }) {
                 aliases.insert(alias.clone(), Value::String(format!("${alias}")));
             }
+            if let Some(rows) = outcome.result.as_ref().and_then(|r| r.get("cells")).and_then(Value::as_array) {
+                let cells = rows.iter().enumerate().flat_map(|(r, row)| {
+                    row.as_array().into_iter().flatten().enumerate().map(move |(c, id)| (format!("{alias}_r{}c{}", r + 1, c + 1), id.clone()))
+                });
+                for (name, id) in cells {
+                    if aliases.contains_key(&name) {
+                        attach_affected(&mut state, &mut reports, &affected_ids);
+                        let report = PlanReport {
+                            completed: index,
+                            stopped_at: Some(index),
+                            ops: reports,
+                            repaired_ids: repaired_ids.clone(),
+                            allocated_ids: allocated_ids.clone(),
+                            aliases: aliases.clone().into_iter().collect(),
+                        };
+                        return (
+                            report.clone(),
+                            None,
+                            Some((
+                                diag(
+                                    "duplicate_alias",
+                                    format!("cell alias {name:?} of table alias {alias:?} is already defined"),
+                                    Some(format!("ops[{index}].as")),
+                                ),
+                                report,
+                            )),
+                        );
+                    }
+                    aliases.insert(name, id);
+                }
+            }
             if let Some(id) = outcome
                 .result
                 .as_ref()
@@ -2010,6 +2076,12 @@ fn fold_typed(
             {
                 allocated_ids.push(id.as_str().unwrap_or_default().into());
                 aliases.insert(alias.clone(), id);
+            }
+        }
+        if let EditOp::InsertTable { .. } = op {
+            let rows = outcome.result.as_ref().and_then(|r| r.get("cells")).and_then(Value::as_array);
+            for id in rows.into_iter().flatten().filter_map(Value::as_array).flatten() {
+                allocated_ids.push(id.as_str().unwrap_or_default().into());
             }
         }
     }

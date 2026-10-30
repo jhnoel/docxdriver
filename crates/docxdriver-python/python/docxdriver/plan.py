@@ -319,6 +319,7 @@ class InsertTable:
     position: str
     rows: int
     as_: str | None = None
+    cells: list | None = None
     def to_dict(self):
         value = {"op": "insert_table"}
         if self.at is not None:
@@ -331,6 +332,8 @@ class InsertTable:
             value["rows"] = self.rows
         if self.as_ is not None:
             value["as"] = self.as_
+        if self.cells is not None:
+            value["cells"] = self.cells
         return value
 
 @dataclass

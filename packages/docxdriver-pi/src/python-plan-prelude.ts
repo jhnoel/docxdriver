@@ -338,6 +338,7 @@ class InsertTable:
     position: str
     rows: int
     as_: str | None = None
+    cells: list | None = None
     def to_dict(self):
         value = {"op": "insert_table"}
         if self.at is not None:
@@ -350,6 +351,8 @@ class InsertTable:
             value["rows"] = self.rows
         if self.as_ is not None:
             value["as"] = self.as_
+        if self.cells is not None:
+            value["cells"] = self.cells
         return value
 
 @dataclass
@@ -849,12 +852,13 @@ class InsertParagraph:
     def to_dict(self) -> dict: ...
 
 class InsertTable:
-    def __init__(self, at: str, columns: int, position: str, rows: int, as_: str | None = None): ...
+    def __init__(self, at: str, columns: int, position: str, rows: int, as_: str | None = None, cells: list | None = None): ...
     at: str
     columns: int
     position: str
     rows: int
     as_: str | None
+    cells: list | None
     def to_dict(self) -> dict: ...
 
 class ReplaceEquation:
@@ -1278,9 +1282,9 @@ Insert a new paragraph before or after an anchor: paragraph id/alias (\`at\`) or
 
 ### InsertTable
 
-\`InsertTable(at: str, columns: int, position: str, rows: int, as_: str | None = None)\`
+\`InsertTable(at: str, columns: int, position: str, rows: int, as_: str | None = None, cells: list | None = None)\`
 
-Insert a rectangular table before/after paragraph at, with rows and columns in 1..100. Direct mode only. Optional as creates a plan-local table alias for later formatting and structural edits.
+Insert a rectangular table before/after paragraph at, with rows and columns in 1..100, and optionally fill it in the same plan. cells is a list of rows, each a list of cell strings in insert_paragraph's inline content (<b>, <i>, <a href>, ...); missing trailing rows and cells stay empty, extra rows or cells are an error. Direct mode only. Optional as creates a plan-local table alias for later formatting and structural edits, and binds each cell's paragraph as $<as>_rNcM (row N, column M, from 1) for later ops in the same plan. Every cell paragraph id is reported in allocated_ids, row by row.
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -1289,6 +1293,7 @@ Insert a rectangular table before/after paragraph at, with rows and columns in 1
 | \`position\` | \`str\` | yes |
 | \`rows\` | \`int\` | yes |
 | \`as_\` (schema key \`as\`) | \`str | None\` | no |
+| \`cells\` | \`list | None\` | no |
 
 ### ReplaceEquation
 

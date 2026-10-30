@@ -150,6 +150,13 @@ Tracked changes:
 `InsertParagraph` also accepts `table:N` anchors from body-level
 `<table data-docx-table="N">` markup and may set `as_="$name"` for later ops.
 
+Create and fill a table in one plan: `InsertTable(at, position="after",
+rows=2, columns=2, as_="t", cells=[["<b>Name</b>", "<b>Role</b>"], ["Ada"]])`.
+`cells` is rows of inline-content strings; missing trailing rows/cells stay
+empty. With `as_`, cell row N column M is the paragraph alias `$t_rNcM` for
+later ops in the same plan, e.g. `ReplaceParagraph(at="$t_r2c2", with_="Analyst")`.
+Do not commit an empty table and re-read it for cell ids.
+
 Replacement content accepts safe inline HTML: `<strong>`, `<em>`, `<b>`, `<i>`,
 `<u>`, `<s>`, `<sup>`, `<sub>`, `<a>`, `<br>`, styled `<span>`, and native `<math>`.
 Do not include block wrappers, images, notes, fields, comments or revision tags.

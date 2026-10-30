@@ -497,7 +497,10 @@ pub fn insert(
     position: InsertPosition,
     row_count: u32,
     column_count: u32,
+    cell_content: &[Vec<String>],
     tracked: bool,
+    plan_seed: &[u8; 32],
+    op_index: usize,
 ) -> Result<(String, Value), Outcome> {
     if tracked {
         return Err(error(
@@ -535,10 +538,12 @@ pub fn insert(
         x.doc.append_child(g, c);
     }
     x.doc.append_child(t, g);
+    let mut cell_paragraphs = Vec::new();
     for _ in 0..row_count {
         let r = x.doc.create_element("w:tr");
         for _ in 0..column_count {
             let c = empty_cell(x);
+            cell_paragraphs.push(x.doc.children(c).next().unwrap());
             x.doc.append_child(r, c);
         }
         x.doc.append_child(t, r);
@@ -547,6 +552,38 @@ pub fn insert(
         InsertPosition::Before => x.doc.insert_before(p, t),
         InsertPosition::After => x.doc.insert_after(p, t),
     };
+    // Every cell paragraph gets a durable id now, so later operations in the
+    // same plan can address the cells (as `$alias_rNcM` or by id).
+    let ids = super::typed::allocate_table_cell_para_ids(
+        x,
+        source,
+        plan_seed,
+        op_index,
+        cell_paragraphs.len(),
+    )
+    .map_err(|message| Outcome::error(message))?;
+    for (paragraph, id) in cell_paragraphs.iter().zip(&ids) {
+        x.doc.set_attribute(*paragraph, "w14:paraId", id);
+    }
+    x.ensure_w14_declared();
+    let mut filled = 0;
+    for (row, contents) in cell_content.iter().enumerate() {
+        for (column, with) in contents.iter().enumerate() {
+            if with.is_empty() {
+                continue;
+            }
+            let paragraph = cell_paragraphs[row * column_count as usize + column];
+            super::typed::fill_paragraph_direct(package, x, paragraph, with).map_err(|mut outcome| {
+                outcome.summary = format!("cells[{row}][{column}]: {}", outcome.summary);
+                outcome
+            })?;
+            filled += 1;
+        }
+    }
+    let cell_ids = ids
+        .chunks(column_count as usize)
+        .map(|row| json!(row))
+        .collect::<Vec<_>>();
     if x.is_w(parent, "tc") && x.doc.children(parent).last() == Some(t) {
         let end = x.doc.create_element("w:p");
         x.doc.append_child(parent, end);
@@ -556,8 +593,16 @@ pub fn insert(
         .position(|n| *n == t)
         .unwrap()
         + 1;
+    let summary = if cell_content.is_empty() {
+        format!("inserted table table:{ordinal}")
+    } else {
+        format!(
+            "inserted table table:{ordinal} with {filled} filled cell{}",
+            if filled == 1 { "" } else { "s" }
+        )
+    };
     Ok((
-        "inserted table".into(),
-        json!({"table":format!("table:{ordinal}"),"tracked":false}),
+        summary,
+        json!({"table":format!("table:{ordinal}"),"tracked":false,"cells":cell_ids,"filled":filled}),
     ))
 }

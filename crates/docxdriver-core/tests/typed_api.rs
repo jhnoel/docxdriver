@@ -2972,3 +2972,111 @@ fn existing_edits_keep_bookmarks_paired() {
         assert_paired(&out);
     }
 }
+
+fn preview_plan(bytes: &[u8], ops: Vec<EditOp>) -> PlanResult {
+    execute_plan(bytes, &PlanRequest { plan: plan(bytes, ops), preview_key: None })
+}
+
+#[test]
+fn insert_table_cells_fill_in_one_plan_and_bind_cell_aliases() {
+    let source = document(&[(SOURCE_ID, "first"), (SECOND_ID, "last")]);
+    let table = ops(serde_json::json!([
+        {"op": "insert_table", "at": SOURCE_ID, "position": "after", "rows": 3, "columns": 2, "as": "t",
+         "cells": [["<b>Name</b>", "<i>Role</i>"], ["Ada", ""], ["Grace"]]},
+        {"op": "replace_paragraph", "at": "$t_r2c2", "with": "Analyst"},
+        {"op": "insert_paragraph", "at": "$t_r3c1", "position": "after", "with": "Hopper"},
+    ]));
+    let report = match preview_plan(&source, table.clone()) {
+        PlanResult::Previewed { report, .. } => report,
+        other => panic!("preview rejected: {other:?}"),
+    };
+    assert_eq!(report.ops[0].summary, "inserted table table:1 with 4 filled cells");
+    let cell = |name: &str| report.aliases[name].as_str().unwrap().to_string();
+    let ids: Vec<_> = ["t_r1c1", "t_r1c2", "t_r2c1", "t_r2c2", "t_r3c1", "t_r3c2"].iter().map(|n| cell(n)).collect();
+    // Six cell ids, then the inserted paragraph's.
+    assert_eq!(report.allocated_ids.len(), 6, "{report:?}");
+    assert_eq!(ids, report.allocated_ids);
+    assert_eq!(report.aliases["t"], "$t");
+
+    let out = commit_plan(&source, table.clone());
+    // The same plan allocates the same ids at commit.
+    let xml = document_xml(&out);
+    for id in &ids {
+        assert!(xml.contains(&format!("w14:paraId=\"{id}\"")), "{id} missing: {xml}");
+    }
+    let markup = read_markup(&out);
+    for text in ["<b>Name</b>", "<i>Role</i>", ">Ada<", ">Analyst<", ">Grace<", ">Hopper<"] {
+        assert!(markup.contains(text), "{text} missing: {markup}");
+    }
+    // Committing twice is deterministic.
+    assert_eq!(commit_plan(&source, table), out);
+}
+
+#[test]
+fn insert_table_without_cells_still_allocates_cell_ids() {
+    let source = document(&[(SOURCE_ID, "first")]);
+    let table = ops(serde_json::json!([
+        {"op": "insert_table", "at": SOURCE_ID, "position": "before", "rows": 2, "columns": 2},
+    ]));
+    let report = match preview_plan(&source, table.clone()) {
+        PlanResult::Previewed { report, .. } => report,
+        other => panic!("preview rejected: {other:?}"),
+    };
+    assert_eq!(report.ops[0].summary, "inserted table table:1");
+    assert_eq!(report.allocated_ids.len(), 4);
+    assert!(report.aliases.is_empty());
+    // Ids depend on the whole plan; the committed plan keeps the previewed ids.
+    let xml = document_xml(&commit_plan(&source, table));
+    for id in &report.allocated_ids {
+        assert!(xml.contains(&format!("w14:paraId=\"{id}\"")), "{id} missing: {xml}");
+    }
+}
+
+#[test]
+fn insert_table_cells_reject_extra_rows_columns_and_bad_markup() {
+    let source = document(&[(SOURCE_ID, "first")]);
+    let rejected = |value: serde_json::Value| match preview_plan(&source, ops(serde_json::json!([value]))) {
+        PlanResult::Rejected { diagnostic, .. } => diagnostic.message,
+        other => panic!("expected rejection, got {other:?}"),
+    };
+    let rows = rejected(serde_json::json!({"op": "insert_table", "at": SOURCE_ID, "position": "after", "rows": 1, "columns": 2, "cells": [["a"], ["b"], ["c"]]}));
+    assert!(rows.contains("cells has 3 rows but the table has 1") && rows.contains("row 2 to row 3"), "{rows}");
+    let columns = rejected(serde_json::json!({"op": "insert_table", "at": SOURCE_ID, "position": "after", "rows": 2, "columns": 2, "cells": [["a", "b"], ["c", "d", "e"]]}));
+    assert!(columns.contains("cells[1] (row 2) has 3 cells but the table has 2 columns") && columns.contains("(column 3)"), "{columns}");
+    let markup = rejected(serde_json::json!({"op": "insert_table", "at": SOURCE_ID, "position": "after", "rows": 1, "columns": 2, "cells": [["a", "<table>x</table>"]]}));
+    assert!(markup.contains("cells[0][1]"), "{markup}");
+    // Tracked insertion stays unsupported, filled or not.
+    let mut tracked = plan(&source, ops(serde_json::json!([
+        {"op": "insert_table", "at": SOURCE_ID, "position": "after", "rows": 1, "columns": 1, "cells": [["a"]]},
+    ])));
+    tracked.change_mode = ChangeMode::Track;
+    match execute_plan(&source, &PlanRequest { plan: tracked, preview_key: None }) {
+        PlanResult::Rejected { diagnostic, .. } => assert!(diagnostic.message.contains("tracked table insertion"), "{}", diagnostic.message),
+        other => panic!("expected rejection, got {other:?}"),
+    }
+}
+
+#[test]
+fn insert_table_cell_aliases_collide_with_existing_aliases() {
+    let source = document(&[(SOURCE_ID, "first")]);
+    match preview_plan(&source, ops(serde_json::json!([
+        {"op": "insert_paragraph", "at": SOURCE_ID, "position": "after", "with": "x", "as": "t_r1c1"},
+        {"op": "insert_table", "at": SOURCE_ID, "position": "after", "rows": 1, "columns": 1, "as": "t"},
+    ]))) {
+        PlanResult::Rejected { diagnostic, .. } => assert_eq!(diagnostic.code, "duplicate_alias"),
+        other => panic!("expected rejection, got {other:?}"),
+    }
+}
+
+#[test]
+fn insert_table_link_cell_declares_the_relationships_prefix() {
+    // `document` declares only w and w14, as some producers do.
+    let source = document(&[(SOURCE_ID, "first")]);
+    assert!(!document_xml(&source).contains("xmlns:r="));
+    let out = commit_plan(&source, ops(serde_json::json!([
+        {"op": "insert_table", "at": SOURCE_ID, "position": "after", "rows": 1, "columns": 1,
+         "cells": [["<a href=\"https://example.com/\">site</a>"]]},
+    ])));
+    let xml = document_xml(&out);
+    assert!(xml.contains("xmlns:r=") && xml.contains("<w:hyperlink r:id="), "{xml}");
+}

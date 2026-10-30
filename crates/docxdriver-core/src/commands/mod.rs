@@ -328,9 +328,10 @@ fn run_typed_edit_inner(
         EditOp::EditTable { at, action } => {
             mutate(state, |pkg, xml, _source| table_structure::edit(pkg, xml, at, action, tracked))
         }
-        EditOp::InsertTable { at, position, rows, columns, .. } => {
+        EditOp::InsertTable { at, position, rows, columns, cells, .. } => {
             let at = para_id!(at);
-            mutate(state, |pkg, xml, source| table_structure::insert(pkg, xml, source, &at, *position, *rows, *columns, tracked))
+            let cells = cells.as_deref().unwrap_or_default();
+            mutate(state, |pkg, xml, source| table_structure::insert(pkg, xml, source, &at, *position, *rows, *columns, cells, tracked, &plan_seed, index))
         }
         EditOp::FormatTable { at, format } => mutate(state, |pkg, xml, _| tables::format_table(Some(pkg), xml, at, format, tracked, author, ctx)),
         EditOp::FormatRow { at, format } => mutate(state, |_, xml, _| tables::format_row(xml, at, format, tracked, author, ctx)),

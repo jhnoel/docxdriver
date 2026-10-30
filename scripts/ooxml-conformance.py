@@ -331,6 +331,12 @@ def scenarios(read):
     out.append(('set_section_boundary', 'direct', [{'op': 'set_section_boundary', 'at': at, 'break_type': 'continuous'}]))
     out.append(('set_section_boundary', 'direct', [{'op': 'set_section_boundary', 'at': at}, {'op': 'set_section_layout', 'section_handle': f'section:{at}', 'columns': 2}, {'op': 'set_section_boundary', 'at': at, 'remove': True}]))
     out.append(('insert_table', 'direct', [{'op': 'insert_table', 'at': at, 'position': 'before', 'rows': 2, 'columns': 2, 'as': 'grid'}, {'op': 'edit_table', 'at': '$grid', 'action': {'kind': 'insert_rows', 'row': 1, 'position': 'after', 'count': 1}}]))
+    out.append(('insert_table', 'direct', [
+        {'op': 'insert_table', 'at': at, 'position': 'after', 'rows': 3, 'columns': 2, 'as': 'filled',
+         'cells': [['<b>Name</b>', '<i>Role</i>'], ['<a href="https://example.com/ada">Ada Lovelace</a>', 'line<br>break'], ['Grace']]},
+        {'op': 'replace_paragraph', 'at': '$filled_r3c2', 'with': 'Admiral <u>Hopper</u>'},
+        {'op': 'insert_paragraph', 'at': '$filled_r1c1', 'position': 'after', 'with': 'second line'},
+    ]))
     for action in [
         {'kind': 'insert_columns', 'column': 1, 'position': 'after', 'count': 1},
         {'kind': 'delete_rows', 'row': 1, 'count': 1},
