@@ -252,7 +252,7 @@ fn set_chrome_typed(
             ))
         })?;
         let bytes = match track {
-            Some((author, ctx)) => tracked_story(xml, package.get(&part), scope, Some(&inner), author, ctx, op)?,
+            Some((author, ctx)) => tracked_story(xml, package, Some(&part), scope, Some(&inner), author, ctx, op)?,
             None => chrome_part_xml(scope, &inner).into_bytes(),
         };
         package.set(&part, bytes);
@@ -272,7 +272,7 @@ fn set_chrome_typed(
     // its reference cannot be tracked (CT_SectPrBase has no references),
     // so rejecting leaves it empty.
     let bytes = match track {
-        Some((author, ctx)) => tracked_story(xml, None, scope, Some(&inner), author, ctx, op)?,
+        Some((author, ctx)) => tracked_story(xml, package, None, scope, Some(&inner), author, ctx, op)?,
         None => chrome_part_xml(scope, &inner).into_bytes(),
     };
     package.set(&part_name, bytes);
@@ -314,6 +314,20 @@ fn even_and_odd_headers(package: &Package) -> bool {
         .is_some_and(|node| !matches!(settings.attr(node, "val"), Some("0" | "false" | "off")))
 }
 
+/// The highest revision id in any part but the main document (the body's
+/// allocator covers it) and `skip`, the story being rewritten.
+fn other_parts_revision_floor(package: &Package, skip: Option<&str>) -> u64 {
+    let main = package.document_part_name();
+    package
+        .parts()
+        .filter(|(name, _)| {
+            *name != main && Some(*name) != skip && name.starts_with("word/") && name.ends_with(".xml")
+        })
+        .filter_map(|(_, bytes)| DocxXml::parse(bytes).ok()?.max_revision_id())
+        .max()
+        .unwrap_or(0)
+}
+
 /// A header or footer story rewritten as tracked changes: its old content
 /// becomes a tracked deletion and `inner` (none to clear) a tracked
 /// insertion, laid out so that accept-all leaves exactly `inner` and
@@ -327,11 +341,13 @@ fn even_and_odd_headers(package: &Package) -> bool {
 /// ```
 ///
 /// Old or new content other than paragraphs (a table, a content control)
-/// is refused. Revision ids continue the body's allocator past the story's
-/// own, so they stay unique across the package.
+/// is refused. Revision ids continue the body's allocator past every id in
+/// the story and in the package's other parts, so they stay unique across
+/// the package.
 fn tracked_story(
     body: &DocxXml,
-    old: Option<&[u8]>,
+    package: &Package,
+    part: Option<&str>,
     scope: &str,
     inner: Option<&str>,
     author: &str,
@@ -339,6 +355,7 @@ fn tracked_story(
     op: &str,
 ) -> Result<Vec<u8>, Outcome> {
     let empty = chrome_part_xml(scope, "");
+    let old = part.and_then(|name| package.get(name));
     let mut story = DocxXml::parse(old.unwrap_or(empty.as_bytes()))
         .map_err(|error| Outcome::error(format!("{op}: {error}")))?;
     let root = story.doc.root_element().ok_or_else(|| Outcome::error(format!("{op}: empty story part")))?;
@@ -374,7 +391,7 @@ fn tracked_story(
         None => Vec::new(),
     };
     let checkpoint = story.revision_checkpoint();
-    let floor = story.max_revision_id().unwrap_or(0);
+    let floor = story.max_revision_id().unwrap_or(0).max(other_parts_revision_floor(package, part));
     let next_id = || loop {
         let id = body.next_revision_id();
         if id > floor {
@@ -551,7 +568,7 @@ fn clear_chrome_typed(
         let part = resolve_chrome_part(package, xml, rid).ok_or_else(|| {
             Outcome::blocked(format!("section {section} {kind_str} {scope} reference does not resolve to a package part"))
         })?;
-        let bytes = tracked_story(xml, package.get(&part), scope, None, author, ctx, op)?;
+        let bytes = tracked_story(xml, package, Some(&part), scope, None, author, ctx, op)?;
         package.set(&part, bytes);
         return Ok((
             format!("section {section} {kind_str} {scope} content marked for tracked deletion"),

@@ -212,11 +212,12 @@ pub(crate) fn set_list(
     levels: Option<&[crate::api::ListLevel]>,
     author: &str,
     ctx: &ExecCtx,
+    tracked: bool,
 ) -> Result<(String, Value), Outcome> {
     let mut cache = ListState::new(xml);
     let result = set_list_cached(
         package, xml, source, at, num_id, format, level, start, remove, levels, author, ctx,
-        &mut cache,
+        tracked, &mut cache,
     );
     cache.flush(package);
     result
@@ -236,6 +237,7 @@ pub(crate) fn set_list_cached(
     levels: Option<&[crate::api::ListLevel]>,
     author: &str,
     ctx: &ExecCtx,
+    tracked: bool,
     cache: &mut ListState,
 ) -> Result<(String, Value), Outcome> {
     // Resolve every target and reject conflicting revisions before any write.
@@ -278,6 +280,12 @@ pub(crate) fn set_list_cached(
         targets.push(paragraph);
     }
     let mut assigned = 0;
+    // A tracked change that joins a list nothing refers to yet gets its own
+    // instance of it: rejecting takes back the instances only the change
+    // referred to, and must not take one the input already held.
+    let own_instance = tracked
+        && start.is_none()
+        && num_id.is_some_and(|id| !referenced_num_ids(package, xml).contains(&id.to_string()));
     if !remove {
         if cache.numbering.is_none() {
             cache.numbering = Some(NumberingState::new(package)?);
@@ -285,7 +293,7 @@ pub(crate) fn set_list_cached(
         let state = cache.numbering.as_mut().unwrap();
         let numbering = &mut state.xml;
         let root = state.root;
-        let next_num = if num_id.is_none() || start.is_some() {
+        let next_num = if num_id.is_none() || start.is_some() || own_instance {
             state
                 .max_num
                 .checked_add(1)
@@ -319,34 +327,37 @@ pub(crate) fn set_list_cached(
                     "requested level is not defined by the existing list",
                 ));
             }
-            if start.is_none() {
+            if start.is_none() && !own_instance {
                 assigned = num_id.unwrap();
             } else {
-                // Clone the instance and add a level override: never change a shared definition.
+                // Clone the instance (and add a level override for a start):
+                // never change a shared definition.
                 assigned = next_num;
                 let clone = numbering.doc.clone_node(existing, true);
                 super::layout::set_attr(numbering, clone, "w:numId", &assigned.to_string());
-                let over = numbering.doc.children(clone).find(|&n| {
-                    numbering.is_w(n, "lvlOverride")
-                        && numbering.attr(n, "ilvl") == Some(level.to_string().as_str())
-                });
-                let over = over.unwrap_or_else(|| {
-                    let n = numbering.doc.create_element("w:lvlOverride");
-                    numbering.doc.set_attribute(n, "w:ilvl", &level.to_string());
-                    numbering.doc.append_child(clone, n);
-                    n
-                });
-                if let Some(old) = numbering.child_w(over, "startOverride") {
-                    numbering.doc.detach(old);
-                }
-                let n = numbering.doc.create_element("w:startOverride");
-                numbering
-                    .doc
-                    .set_attribute(n, "w:val", &start.unwrap().to_string());
-                if let Some(first) = numbering.doc.children(over).next() {
-                    numbering.doc.insert_before(first, n);
-                } else {
-                    numbering.doc.append_child(over, n);
+                if let Some(start) = start {
+                    let over = numbering.doc.children(clone).find(|&n| {
+                        numbering.is_w(n, "lvlOverride")
+                            && numbering.attr(n, "ilvl") == Some(level.to_string().as_str())
+                    });
+                    let over = over.unwrap_or_else(|| {
+                        let n = numbering.doc.create_element("w:lvlOverride");
+                        numbering.doc.set_attribute(n, "w:ilvl", &level.to_string());
+                        numbering.doc.append_child(clone, n);
+                        n
+                    });
+                    if let Some(old) = numbering.child_w(over, "startOverride") {
+                        numbering.doc.detach(old);
+                    }
+                    let n = numbering.doc.create_element("w:startOverride");
+                    numbering
+                        .doc
+                        .set_attribute(n, "w:val", &start.to_string());
+                    if let Some(first) = numbering.doc.children(over).next() {
+                        numbering.doc.insert_before(first, n);
+                    } else {
+                        numbering.doc.append_child(over, n);
+                    }
                 }
                 // CT_Numbering requires all num instances before numIdMacAtCleanup.
                 if let Some(last) = state.cleanup {

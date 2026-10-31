@@ -1219,3 +1219,73 @@ fn rejecting_a_list_change_takes_back_its_definitions() {
         }
     }
 }
+
+/// Every revision `w:id` in the package's WordprocessingML parts, as
+/// `part: id`.
+fn revision_ids(bytes: &[u8]) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for (name, xml) in parts(bytes) {
+        if !name.starts_with("word/") || name.contains("_rels") {
+            continue;
+        }
+        for tag in REVISION_TAGS {
+            for suffix in [" ", ">", "/"] {
+                let needle = format!("<w:{tag}{suffix}");
+                for (at, _) in xml.match_indices(&needle) {
+                    let element = &xml[at..at + xml[at..].find('>').unwrap()];
+                    if let Some(start) = element.find(" w:id=\"") {
+                        let value = &element[start + 7..];
+                        out.push((name.clone(), value[..value.find('"').unwrap()].to_string()));
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+// A tracked header took ids past its own part only, so a later plan reused
+// the ids a tracked footer already held.
+#[test]
+fn tracked_stories_in_separate_plans_keep_revision_ids_unique() {
+    let footer = run(&fixture(), "track", AUTHOR, r#"[{"op":"set_footer","with":"<p>New footer</p>"}]"#).unwrap();
+    let both = run(&footer, "track", AUTHOR, r#"[{"op":"set_header","with":"<p>New header</p>"}]"#).unwrap();
+    let ids = revision_ids(&both);
+    assert!(ids.iter().any(|(part, _)| part.contains("header")), "{ids:?}");
+    assert!(ids.iter().any(|(part, _)| part.contains("footer")), "{ids:?}");
+    let mut seen = BTreeMap::new();
+    for (part, id) in &ids {
+        if let Some(other) = seen.insert(id.clone(), part.clone()) {
+            panic!("revision id {id} in both {other} and {part}");
+        }
+    }
+}
+
+// Rejecting a tracked set_list that joined a list nothing referred to took
+// back that list, although the input held it.
+#[test]
+fn rejecting_a_join_of_an_unreferenced_list_keeps_the_list() {
+    let base = fixture();
+    let supplier = first_id(&base, "Supplier");
+    let either = first_id(&base, "Either party");
+    let input = run(&base, "direct", "setup", &format!(r#"[{{"op":"set_list","at":["{either}"],"format":"upperRoman"}}]"#)).unwrap();
+    let input = run(&input, "direct", "setup", &format!(r#"[{{"op":"set_list","at":["{either}"],"remove":true}}]"#)).unwrap();
+    let numbering = part(&input, "word/numbering.xml");
+    let document = part(&input, "word/document.xml");
+    let unreferenced: Vec<String> = numbering
+        .match_indices("<w:num w:numId=\"")
+        .map(|(at, tag)| numbering[at + tag.len()..].split('"').next().unwrap().to_string())
+        .filter(|id| !document.contains(&format!("<w:numId w:val=\"{id}\"")))
+        .collect();
+    assert!(!unreferenced.is_empty(), "{numbering}");
+    let body = |xml: String| xml[xml.find("<w:numbering").unwrap()..].trim_end().to_string();
+    for id in unreferenced {
+        let ops = format!(r#"[{{"op":"set_list","at":["{supplier}"],"num_id":{id}}}]"#);
+        let tracked = run(&input, "track", AUTHOR, &ops).unwrap();
+        assert_eq!(body(part(&settle(&tracked, false), "word/numbering.xml")), body(numbering.clone()), "{id}");
+        assert!(part(&settle(&tracked, true), "word/numbering.xml").contains(&format!("w:numId=\"{id}\"")), "{id}");
+        // A direct edit joins the requested instance itself.
+        let direct = run(&input, "direct", AUTHOR, &ops).unwrap();
+        assert!(paragraph_properties(&direct, &supplier).contains(&format!("<w:numId w:val=\"{id}\"")), "{id}");
+    }
+}
