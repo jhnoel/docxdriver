@@ -67,7 +67,14 @@ pub fn render_block_list(
         let node = children[index];
         let mut paragraphs = Vec::new();
         let mut text = String::new();
-        if xml.is_w(node, "tbl") {
+        if xml.is_w(node, "tbl") && view != RenderView::Markup && table_settled_away(xml, node, view) {
+            // Settling removes every row, and so the table.
+            if let Some(counter) = table_number.as_deref_mut() {
+                *counter += 1;
+            }
+            index += 1;
+            continue;
+        } else if xml.is_w(node, "tbl") {
             render_table(
                 xml,
                 ctx,
@@ -78,6 +85,10 @@ pub fn render_block_list(
                 table_number.as_deref_mut(),
             );
             index += 1;
+        } else if view == RenderView::Original && xml.rejected_insertion_vanishes(node) {
+            // Reject-all removes this paragraph outright.
+            index += 1;
+            continue;
         } else {
             let mut group = vec![node];
             while view != RenderView::Markup
@@ -120,7 +131,7 @@ fn group_lists(ctx: &RenderCtx, body: RenderedBody) -> RenderedBody {
         let mut paragraphs = Vec::new();
         if body.blocks[i]
             .paragraphs
-            .first()
+            .last()
             .is_some_and(|p| ctx.lists.contains_key(p))
             && !body.html[body.blocks[i].start..body.blocks[i].end].starts_with("<table")
         {
@@ -128,7 +139,7 @@ fn group_lists(ctx: &RenderCtx, body: RenderedBody) -> RenderedBody {
             while i < body.blocks.len()
                 && body.blocks[i]
                     .paragraphs
-                    .first()
+                    .last()
                     .is_some_and(|p| ctx.lists.contains_key(p))
                 && !body.html[body.blocks[i].start..body.blocks[i].end].starts_with("<table")
             {
@@ -136,7 +147,7 @@ fn group_lists(ctx: &RenderCtx, body: RenderedBody) -> RenderedBody {
             }
             let mut cursor = begin;
             while cursor < i {
-                let level = ctx.lists[&body.blocks[cursor].paragraphs[0]].level;
+                let level = ctx.lists[lead(&body.blocks[cursor])].level;
                 render_list(ctx, &body, &mut cursor, i, level, &mut html);
             }
             for b in &body.blocks[begin..i] {
@@ -156,6 +167,13 @@ fn group_lists(ctx: &RenderCtx, body: RenderedBody) -> RenderedBody {
     }
     RenderedBody { html, blocks }
 }
+/// The paragraph whose mark ends a block, which carries the block's
+/// properties: in the final and original views a block can join several
+/// paragraphs, and the last one's mark is the one settling keeps.
+fn lead(block: &BlockSpan) -> &NodeId {
+    block.paragraphs.last().expect("a paragraph block")
+}
+
 fn render_list(
     ctx: &RenderCtx,
     body: &RenderedBody,
@@ -164,7 +182,7 @@ fn render_list(
     level: u32,
     out: &mut String,
 ) {
-    let first = &ctx.lists[&body.blocks[*cursor].paragraphs[0]];
+    let first = &ctx.lists[lead(&body.blocks[*cursor])];
     let tag = if first.format == "bullet" { "ul" } else { "ol" };
     let kind = match first.format.as_str() {
         "lowerLetter" => "a",
@@ -191,13 +209,13 @@ fn render_list(
     let identity = first.id.clone();
     while *cursor < end {
         let b = &body.blocks[*cursor];
-        let info = &ctx.lists[&b.paragraphs[0]];
+        let info = &ctx.lists[lead(b)];
         if info.level != level || info.id != identity {
             break;
         }
         let marker = ctx
             .markers
-            .get(&b.paragraphs[0])
+            .get(lead(b))
             .map(String::as_str)
             .unwrap_or("");
         out.push_str(&format!(
@@ -207,7 +225,7 @@ fn render_list(
         out.push_str(&body.html[b.start..b.end]);
         *cursor += 1;
         while *cursor < end {
-            let next = &ctx.lists[&body.blocks[*cursor].paragraphs[0]];
+            let next = &ctx.lists[lead(&body.blocks[*cursor])];
             if next.continuation && next.level == level && next.id == identity {
                 let block = &body.blocks[*cursor];
                 out.push_str(&body.html[block.start..block.end]);
@@ -298,8 +316,12 @@ fn break_hidden(xml: &DocxXml, paragraph: NodeId, view: RenderView) -> bool {
 
 /// The dialect tag + class for a paragraph style: Heading1..Heading6 project
 /// to h1..h6, anything else keeps the style name as a class.
-fn paragraph_tag(xml: &DocxXml, paragraph: NodeId) -> (String, Option<String>) {
-    match xml.paragraph_style(paragraph) {
+fn paragraph_tag(xml: &DocxXml, paragraph: NodeId, original: bool) -> (String, Option<String>) {
+    let style = super::styles::property_bag(xml, paragraph, "pPr", original)
+        .and_then(|ppr| xml.child_w(ppr, "pStyle"))
+        .and_then(|style| xml.attr(style, "val"))
+        .map(str::to_string);
+    match style {
         Some(style) => match style
             .strip_prefix("Heading")
             .and_then(|n| n.parse::<u8>().ok())
@@ -319,15 +341,17 @@ fn render_paragraph_group(
     view: RenderView,
     out: &mut String,
 ) {
-    let first = group[0];
-    let (tag, _) = paragraph_tag(xml, first);
-    let class = ctx.styles.paragraph_style(xml, first, view == RenderView::Original);
+    // The joined paragraph ends at the last paragraph's mark, which keeps
+    // its identity and properties when the view's revisions settle.
+    let lead = *group.last().expect("non-empty group");
+    let (tag, _) = paragraph_tag(xml, lead, view == RenderView::Original);
+    let class = ctx.styles.paragraph_style(xml, lead, view == RenderView::Original);
     out.push('<');
     out.push_str(&tag);
     // Canonical attribute order: id, ord, class, num, break-ins, break-del.
     // id/ord are the engine-owned paragraph address (w14:paraId + story
     // position); ord is informational only and never an address.
-    if let Some((id, ord)) = ctx.para_ids.get(&first) {
+    if let Some((id, ord)) = ctx.para_ids.get(&lead) {
         out.push_str(&format!(" id=\"{}\"", escape_attr(id)));
         out.push_str(&format!(" data-docx-ord=\"{ord}\""));
     }
@@ -335,7 +359,7 @@ fn render_paragraph_group(
         out.push_str(&format!(" data-docx-style=\"{}\"", escape_attr(class)));
     }
     // num is computed, never authored: the paragraph's rendered list marker.
-    if let Some(marker) = ctx.markers.get(&first) {
+    if let Some(marker) = ctx.markers.get(&lead) {
         if !marker.is_empty() {
             out.push_str(&format!(" data-docx-number=\"{}\"", escape_attr(marker)));
         }
@@ -355,7 +379,7 @@ fn render_paragraph_group(
     let inherited_run_css = common_run_css(xml, &ctx.styles, group, view);
     let css = super::styles::merge_paragraph_css(
         &ctx.styles
-            .paragraph_css(xml, first, view == RenderView::Original),
+            .paragraph_css(xml, lead, view == RenderView::Original),
         &inherited_run_css,
     );
     if !css.is_empty() {
@@ -578,6 +602,12 @@ fn rowspan_of(rows: &[Vec<CellInfo>], row_index: usize, grid_start: u32) -> u32 
     span
 }
 
+/// Whether settling `view`'s revisions removes every row of `table`.
+fn table_settled_away(xml: &DocxXml, table: NodeId, view: RenderView) -> bool {
+    let mut rows = xml.doc.children(table).filter(|&n| xml.is_w(n, "tr")).peekable();
+    rows.peek().is_some() && rows.all(|row| xml.row_goes(row, view == RenderView::Final))
+}
+
 fn render_table(
     xml: &DocxXml,
     ctx: &RenderCtx,
@@ -600,6 +630,10 @@ fn render_table(
     out.push_str("<tbody>");
     for (row_index, row) in rows.iter().enumerate() {
         let row_node = row_nodes.get(row_index).copied();
+        // A row that settling removes is not in the final/original view.
+        if view != RenderView::Markup && row_node.is_some_and(|n| xml.row_goes(n, view == RenderView::Final)) {
+            continue;
+        }
         out.push_str(&format!("\n<tr{}>", row_node.map(|n| crate::commands::tables::render_attrs(xml, n, "trPr", view == RenderView::Original, ctx.table_handles.get(&n))).unwrap_or_default()));
         // Runs opened this row start covering at the NEXT row, so they merge
         // into `covered` only after this row's end-of-row decrement.

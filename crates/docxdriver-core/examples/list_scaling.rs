@@ -60,7 +60,7 @@ fn main() {
         &bytes,
         &PlanRequest {
             plan,
-            preview_key: None,
+            preview_key: None, now: None
         },
     );
     let ok = matches!(result, PlanResult::Previewed { .. });

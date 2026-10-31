@@ -21,9 +21,24 @@ impl TypedOutput {
     }
 }
 
+/// WASM has no clock of its own: a request that does not fix `now` gets
+/// the host's current UTC time, to the second.
+fn with_host_time(mut request: docxdriver_core::Request) -> docxdriver_core::Request {
+    let host = || {
+        let iso = String::from(js_sys::Date::new_0().to_iso_string());
+        format!("{}Z", &iso[..19])
+    };
+    match &mut request {
+        docxdriver_core::Request::Plan(plan) if plan.now.is_none() => plan.now = Some(host()),
+        docxdriver_core::Request::Command(command) if command.now.is_none() => command.now = Some(host()),
+        _ => {}
+    }
+    request
+}
+
 #[wasm_bindgen(js_name = executeRequest)]
 pub fn execute_request(input: Option<Vec<u8>>, request_json: &str) -> TypedOutput {
-    let request = serde_json::from_str::<docxdriver_core::Request>(request_json);
+    let request = serde_json::from_str::<docxdriver_core::Request>(request_json).map(with_host_time);
     match request {
         Ok(request) => match docxdriver_core::execute_request(input.as_deref(), &request) {
             docxdriver_core::RequestResult::Command(result) => TypedOutput {

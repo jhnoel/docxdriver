@@ -15,7 +15,7 @@ fn command(input: Option<&[u8]>, cmd: Command) -> CommandResult {
         input,
         &CommandRequest {
             command: cmd,
-            expected_source: None,
+            expected_source: None, now: None
         },
     )
 }
@@ -73,7 +73,7 @@ fn commit_mode(input: &[u8], ops: Vec<EditOp>, mode: ChangeMode) -> Vec<u8> {
         input,
         &PlanRequest {
             plan: plan.clone(),
-            preview_key: None,
+            preview_key: None, now: None
         },
     );
     let key = match preview {
@@ -84,7 +84,7 @@ fn commit_mode(input: &[u8], ops: Vec<EditOp>, mode: ChangeMode) -> Vec<u8> {
         input,
         &PlanRequest {
             plan,
-            preview_key: Some(key),
+            preview_key: Some(key), now: None
         },
     ) {
         PlanResult::Committed { bytes, .. } => bytes,
@@ -464,7 +464,7 @@ fn unsupported_table_formatting_is_rejected_without_output_and_structural_html_s
             &input,
             &PlanRequest {
                 plan,
-                preview_key: None
+                preview_key: None, now: None
             }
         ),
         PlanResult::Rejected { .. }
@@ -656,9 +656,10 @@ fn rejecting_paragraph_formatting_restores_schema_order_on_imported_section_tail
 #[test]
 fn first_page_mode_tracks_properties_and_retains_first_stories_on_reject() {
     let input = fixture("", "");
-    let input = commit(&input, vec![EditOp::SetHeader {
+    // Direct: a tracked first-page header also records the titlePg change.
+    let input = commit_mode(&input, vec![EditOp::SetHeader {
         section: None, kind: Some(ChromeKind::First), with: "<p>First story</p>".into(),
-    }]);
+    }], ChangeMode::Direct);
     let before = xml(&input);
     let changed = commit(&input, vec![EditOp::SetFirstPageMode { section: None, enabled: false }]);
     let changed_xml = String::from_utf8(parts(&changed)["word/document.xml"].clone()).unwrap();
@@ -811,10 +812,10 @@ fn table_source_handles_and_inserted_aliases_survive_shifted_positions() {
 
 fn direct_commit(input: &[u8], ops: Vec<EditOp>) -> Vec<u8> {
     let plan = Plan { base: SourceHash::from_bytes(input), author:"grid".into(), change_mode: ChangeMode::Direct, ops };
-    let request=PlanRequest { plan:plan.clone(), preview_key:None };
+    let request=PlanRequest { plan:plan.clone(), preview_key:None, now: None };
     let preview=execute_plan(input,&request);
     let key=match preview {PlanResult::Previewed{preview_key,..}=>preview_key,other=>panic!("{other:?}")};
-    match execute_plan(input,&PlanRequest{plan,preview_key:Some(key)}){PlanResult::Committed{bytes,..}=>bytes,other=>panic!("{other:?}")}
+    match execute_plan(input,&PlanRequest{plan,preview_key:Some(key), now: None}){PlanResult::Committed{bytes,..}=>bytes,other=>panic!("{other:?}")}
 }
 #[test]
 fn table_grid_insert_merge_split_and_delete_preserve_required_structure() {
@@ -882,14 +883,14 @@ fn table_structural_failures_are_atomic_and_tracking_is_explicit() {
     let input=create("<table><tr><td>A</td><td>B</td></tr><tr><td>C</td><td>D</td></tr></table>");
     let op=|v|serde_json::from_value::<EditOp>(v).unwrap();
     let attempts=vec![
-        (ChangeMode::Track,vec![json!({"op":"edit_table","at":"table:1","action":{"kind":"delete"}})]),
+        (ChangeMode::Track,vec![json!({"op":"edit_table","at":"table:1","action":{"kind":"merge_cells","row":1,"column":1,"row_span":1,"column_span":2}})]),
         (ChangeMode::Direct,vec![json!({"op":"edit_table","at":"table:1","action":{"kind":"insert_rows","row":1,"position":"before","count":1}}),json!({"op":"edit_table","at":"table:1","action":{"kind":"delete_columns","column":9,"count":1}})]),
         (ChangeMode::Direct,vec![json!({"op":"edit_table","at":"table:1","action":{"kind":"delete"}}),json!({"op":"format_table","at":"table:1","format":{"alignment":"center"}})]),
         (ChangeMode::Direct,vec![json!({"op":"edit_table","at":"table:1","action":{"kind":"delete_rows","row":1,"count":2}})]),
     ];
     for(mode,ops)in attempts {
         let plan=Plan{base:SourceHash::from_bytes(&input),author:"grid".into(),change_mode:mode,ops:ops.into_iter().map(op).collect()};
-        let result=execute_plan(&input,&PlanRequest{plan,preview_key:None});
+        let result=execute_plan(&input,&PlanRequest{plan,preview_key:None, now: None});
         assert!(matches!(result,PlanResult::Rejected{..}),"{result:?}");
     }
     assert_table_grids(&input);
@@ -898,7 +899,7 @@ fn table_structural_failures_are_atomic_and_tracking_is_explicit() {
     entries.insert("word/document.xml".into(),raw.replacen("<w:r>","<w:bookmarkStart w:id=\"7\" w:name=\"guard\"/><w:bookmarkEnd w:id=\"7\"/><w:r>",1).into_bytes());
     let mut z=zip::ZipWriter::new(Cursor::new(vec![]));for(name,bytes)in entries{z.start_file(name,zip::write::SimpleFileOptions::default()).unwrap();z.write_all(&bytes).unwrap();}let guarded=z.finish().unwrap().into_inner();
     let plan=Plan{base:SourceHash::from_bytes(&guarded),author:"grid".into(),change_mode:ChangeMode::Direct,ops:vec![op(json!({"op":"edit_table","at":"table:1","action":{"kind":"delete"}}))]};
-    assert!(matches!(execute_plan(&guarded,&PlanRequest{plan,preview_key:None}),PlanResult::Rejected{..}));
+    assert!(matches!(execute_plan(&guarded,&PlanRequest{plan,preview_key:None, now: None}),PlanResult::Rejected{..}));
 }
 
 #[test]
@@ -931,7 +932,7 @@ fn table_validation_and_atomic_failure_leave_source_untouched() {
         if let Ok(op)=op {
             let input=create("<table><tr><td>text</td></tr></table>");
             let plan=Plan {base:SourceHash::from_bytes(&input),author:"validation".into(),change_mode:ChangeMode::Track,ops:vec![op]};
-            assert!(!matches!(execute_plan(&input,&PlanRequest{plan,preview_key:None}),PlanResult::Previewed{..}));
+            assert!(!matches!(execute_plan(&input,&PlanRequest{plan,preview_key:None, now: None}),PlanResult::Previewed{..}));
         }
     }
     let input=create("<table><tr><td rowspan=\"2\">merged</td><td>next</td></tr><tr><td>last</td></tr></table>");
@@ -940,7 +941,7 @@ fn table_validation_and_atomic_failure_leave_source_untouched() {
         serde_json::from_value(json!({"op":"format_cell","at":"table:1/row:2/cell:1","format":{"fill":"#ABCDEF"}})).unwrap(),
     ];
     let plan=Plan{base:SourceHash::from_bytes(&input),author:"validation".into(),change_mode:ChangeMode::Track,ops};
-    let outcome=execute_plan(&input,&PlanRequest{plan,preview_key:None});
+    let outcome=execute_plan(&input,&PlanRequest{plan,preview_key:None, now: None});
     assert!(!matches!(outcome,PlanResult::Previewed{..}),"{outcome:?}");
     assert!(!String::from_utf8(parts(&input)["word/document.xml"].clone()).unwrap().contains("ABCDEF"));
 }
@@ -973,7 +974,7 @@ fn unequal_section_spacing_updates_each_column_and_bounds_large_values() {
     assert_eq!(widths,vec![("3600".into(),"540".into()),("3600".into(),"0".into())]);
     let huge=operation(json!({"op":"set_section_layout","columns":45,"column_spacing":1e20}));
     let plan=Plan{base:SourceHash::from_bytes(&input),author:"validation".into(),change_mode:ChangeMode::Track,ops:vec![huge]};
-    assert!(!matches!(execute_plan(&input,&PlanRequest{plan,preview_key:None}),PlanResult::Previewed{..}));
+    assert!(!matches!(execute_plan(&input,&PlanRequest{plan,preview_key:None, now: None}),PlanResult::Previewed{..}));
 }
 
 #[test]
@@ -997,7 +998,7 @@ fn inserted_row_and_column_group_aliases_bind_new_objects() {
     assert_eq!(fill(first_cells[3]),Some("FF0000"));
     let duplicate=vec![ops[0].clone(),ops[0].clone()].into_iter().map(|v|serde_json::from_value(v).unwrap()).collect();
     let plan=Plan{base:SourceHash::from_bytes(&input),author:"grid".into(),change_mode:ChangeMode::Direct,ops:duplicate};
-    assert!(matches!(execute_plan(&input,&PlanRequest{plan,preview_key:None}),PlanResult::Rejected{..}));
+    assert!(matches!(execute_plan(&input,&PlanRequest{plan,preview_key:None, now: None}),PlanResult::Rejected{..}));
 }
 
 #[test]
@@ -1021,7 +1022,7 @@ fn public_rust_tuple_dimensions_reject_extreme_values_without_overflow() {
     if let EditOp::SetSectionLayout{column_widths,..}=&mut widths {*column_widths=Some(vec![Points(i64::MAX)]);}
     for op in [paragraph,list,spacing,widths] {
         let plan=Plan{base:SourceHash::from_bytes(&input),author:"rust validation".into(),change_mode:ChangeMode::Track,ops:vec![op]};
-        assert!(matches!(execute_plan(&input,&PlanRequest{plan,preview_key:None}),PlanResult::Rejected{..}));
+        assert!(matches!(execute_plan(&input,&PlanRequest{plan,preview_key:None, now: None}),PlanResult::Rejected{..}));
     }
 }
 
@@ -1087,7 +1088,8 @@ fn cached_list_definitions_support_cross_operation_continue_restart_and_settleme
     assert!(html.contains("4.") && html.contains("5.") && html.contains("9.") && html.contains("10."),"{html}");
     let rejected=settle(&changed,RevisionAction::Reject);
     assert!(!String::from_utf8(parts(&rejected)["word/document.xml"].clone()).unwrap().contains("w:numPr"));
-    assert_eq!(parts(&changed)["word/numbering.xml"],parts(&rejected)["word/numbering.xml"]);
+    // Rejecting takes back the list instances nothing refers to any more.
+    assert!(!String::from_utf8(parts(&rejected)["word/numbering.xml"].clone()).unwrap().contains("<w:num "));
     let accepted=settle(&changed,RevisionAction::Accept);
     assert!(!String::from_utf8(parts(&accepted)["word/document.xml"].clone()).unwrap().contains("w:pPrChange"));
     assert!(read(&accepted,"final").to_string().contains("10."));
@@ -1102,14 +1104,20 @@ fn section_page_number_start_respects_the_sdk_signed_integer_range() {
 }
 
 #[test]
-fn cached_list_definitions_survive_in_plan_rejection_and_error_reports_are_flushed() {
+fn cached_list_definitions_go_with_in_plan_rejection_and_error_reports_are_flushed() {
     let input=create("<p>A</p><p>B</p>");let d=xml(&input);
     let ids=d.descendants(d.root()).filter(|&n|local(&d,n)=="p").map(|n|d.attribute(n,"w14:paraId").or_else(||d.attribute(n,"paraId")).unwrap().to_owned()).collect::<Vec<_>>();
     let op=|v|serde_json::from_value::<EditOp>(v).unwrap();
-    let changed=commit(&input,vec![op(json!({"op":"set_list","at":[ids[0]],"format":"decimal","start":4})),op(json!({"op":"revision_settle","target":"all","action":"reject"})),op(json!({"op":"set_list","at":[ids[1]],"num_id":1}))]);
-    let raw=String::from_utf8(parts(&changed)["word/document.xml"].clone()).unwrap();assert_eq!(raw.matches("<w:numPr>").count(),1);assert!(read(&changed,"final").to_string().contains("4."));
+    // Rejecting a list change in the plan takes back its definition, so a
+    // later op cannot continue the rejected list...
+    let plan=Plan{base:SourceHash::from_bytes(&input),author:"cache".into(),change_mode:ChangeMode::Track,ops:vec![op(json!({"op":"set_list","at":[ids[0]],"format":"decimal","start":4})),op(json!({"op":"revision_settle","target":"all","action":"reject"})),op(json!({"op":"set_list","at":[ids[1]],"num_id":1}))]};
+    let PlanResult::Rejected{diagnostic,..}=execute_plan(&input,&PlanRequest{plan,preview_key:None, now: None})else{panic!("expected the rejected list to be gone")};
+    assert!(diagnostic.message.contains("num_id does not exist"),"{diagnostic:?}");
+    // ...while a definition still referenced stays usable after a reject.
+    let changed=commit(&input,vec![op(json!({"op":"set_list","at":[ids[0]],"format":"decimal","start":4})),op(json!({"op":"revision_settle","target":"all","action":"accept"})),op(json!({"op":"revision_settle","target":"all","action":"reject"})),op(json!({"op":"set_list","at":[ids[1]],"num_id":1}))]);
+    let raw=String::from_utf8(parts(&changed)["word/document.xml"].clone()).unwrap();assert_eq!(raw.matches("<w:numPr>").count(),2);assert!(read(&changed,"final").to_string().contains("4."));
     let plan=Plan{base:SourceHash::from_bytes(&input),author:"cache".into(),change_mode:ChangeMode::Track,ops:vec![op(json!({"op":"set_list","at":[ids[0]],"start":4})),op(json!({"op":"format_paragraph","at":"$unknown","alignment":"center"}))]};
-    let PlanResult::Rejected{report:Some(report),..}=execute_plan(&input,&PlanRequest{plan,preview_key:None})else{panic!("expected rejected report")};
+    let PlanResult::Rejected{report:Some(report),..}=execute_plan(&input,&PlanRequest{plan,preview_key:None, now: None})else{panic!("expected rejected report")};
     assert_eq!(report.completed,1);assert!(json!(report.ops[0].affected).to_string().contains("4."));
 }
 
@@ -1139,7 +1147,7 @@ fn list_id_exhaustion_blocks_allocations_but_allows_existing_continuation() {
     let op=|v|serde_json::from_value::<EditOp>(v).unwrap();
     let continued=commit(&input,vec![op(json!({"op":"set_list","at":[at],"num_id":i32::MAX}))]);
     assert!(String::from_utf8(parts(&continued)["word/document.xml"].clone()).unwrap().contains(&format!("w:val=\"{max}\"")));
-    for settings in [json!({"format":"decimal"}),json!({"num_id":i32::MAX,"start":2})]{let mut v=json!({"op":"set_list","at":[at]});v.as_object_mut().unwrap().extend(settings.as_object().unwrap().clone());let plan=Plan{base:SourceHash::from_bytes(&input),author:"bounds".into(),change_mode:ChangeMode::Track,ops:vec![op(v)]};assert!(matches!(execute_plan(&input,&PlanRequest{plan,preview_key:None}),PlanResult::Rejected{..}));}
+    for settings in [json!({"format":"decimal"}),json!({"num_id":i32::MAX,"start":2})]{let mut v=json!({"op":"set_list","at":[at]});v.as_object_mut().unwrap().extend(settings.as_object().unwrap().clone());let plan=Plan{base:SourceHash::from_bytes(&input),author:"bounds".into(),change_mode:ChangeMode::Track,ops:vec![op(v)]};assert!(matches!(execute_plan(&input,&PlanRequest{plan,preview_key:None, now: None}),PlanResult::Rejected{..}));}
 }
 
 #[test]
@@ -1148,5 +1156,5 @@ fn prose_cannot_join_a_protected_continuation_list() {
     let p=d.descendants(d.root()).filter(|&n|local(&d,n)=="p").last().unwrap();let at=d.attribute(p,"w14:paraId").or_else(||d.attribute(p,"paraId")).unwrap();
     let n=d.descendants(d.root()).find(|&n|local(&d,n)=="numId").unwrap();let num_id=d.attribute(n,"w:val").or_else(||d.attribute(n,"val")).unwrap().parse::<u32>().unwrap();
     let plan=Plan{base:SourceHash::from_bytes(&input),author:"guard".into(),change_mode:ChangeMode::Track,ops:vec![serde_json::from_value(json!({"op":"set_list","at":[at],"num_id":num_id})).unwrap()]};
-    assert!(matches!(execute_plan(&input,&PlanRequest{plan,preview_key:None}),PlanResult::Rejected{..}));
+    assert!(matches!(execute_plan(&input,&PlanRequest{plan,preview_key:None, now: None}),PlanResult::Rejected{..}));
 }

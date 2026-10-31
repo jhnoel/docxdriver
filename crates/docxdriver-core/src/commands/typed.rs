@@ -386,7 +386,7 @@ fn paragraph_blocker(xml: &DocxXml, paragraph: NodeId) -> Option<String> {
 
 /// Paragraph content that holds runs: a run, or a hyperlink, smart tag or
 /// bidi wrapper (`w:dir`, `w:bdo`) around runs.
-fn is_run_content(xml: &DocxXml, node: NodeId) -> bool {
+pub(crate) fn is_run_content(xml: &DocxXml, node: NodeId) -> bool {
     ["r", "hyperlink", "smartTag", "dir", "bdo"]
         .iter()
         .any(|name| xml.is_w(node, name))
@@ -2535,6 +2535,7 @@ pub fn format_paragraph(
                 .and_then(Value::as_str)
                 .unwrap_or(DEFAULT_AUTHOR)
                 .to_owned(),
+            tracked: true,
         },
         ctx,
         source_hash,
@@ -2741,9 +2742,14 @@ pub fn insert_paragraph_typed(
     xml.doc.set_attribute(new_p, "w14:paraId", &new_id);
     xml.ensure_w14_declared();
 
+    // An explicit style alone; otherwise the anchor paragraph's properties,
+    // as Word's Enter gives them (a table anchor gives none).
+    let mut continues = None;
     if let Some(style_id) = &style {
         let ppr = ensure_ppr(xml, new_p);
         set_child_val(xml, ppr, "pStyle", style_id);
+    } else if args.at_para.is_some() {
+        continues = crate::commands::layout::inherit_paragraph_properties(xml, package, anchor, new_p, insert_before);
     }
     if tracked {
         let rev_id = xml.next_revision_id();
@@ -2768,11 +2774,14 @@ pub fn insert_paragraph_typed(
     } else {
         "paragraph"
     };
-    let summary = format!(
+    let mut summary = format!(
         "inserted paragraph {new_id} {} {anchor_kind} {address} ({})",
         if insert_before { "before" } else { "after" },
         if tracked { "tracked" } else { "direct" }
     );
+    if let Some((num_id, level)) = &continues {
+        summary.push_str(&format!("; continues list {num_id} level {level}"));
+    }
     let result = json!({
         "paraId": new_id,
         "anchor": address,
@@ -2857,44 +2866,40 @@ fn is_top_level_body_paragraph(xml: &DocxXml, node: NodeId) -> bool {
     false
 }
 
-/// Body-level milestone elements that can sit between paragraphs and are not
-/// blocks themselves.
-const BODY_MILESTONES: &[&str] = &[
-    "bookmarkStart",
-    "bookmarkEnd",
-    "commentRangeStart",
-    "commentRangeEnd",
-    "commentReference",
-    "permStart",
-    "permEnd",
-    "proofErr",
-    "moveFromRangeStart",
-    "moveFromRangeEnd",
-    "moveToRangeStart",
-    "moveToRangeEnd",
-];
-
 /// Whether the block immediately following `paragraph` is a mergeable
 /// paragraph (its terminating break can be marked deleted so accepting the
 /// deletion joins the two paragraphs). Tables, section properties, and other
 /// non-paragraph blocks are not mergeable; milestone elements are skipped.
 fn next_block_is_mergeable_paragraph(xml: &DocxXml, paragraph: NodeId) -> bool {
-    let mut cursor = xml.doc.next_sibling(paragraph);
+    xml.paragraph_join_target(paragraph).is_some()
+}
+
+/// The paragraph whose mark a deletion of `tail` takes when `tail`'s own
+/// mark cannot join forward: the nearest earlier paragraph, past
+/// milestones and paragraphs this deletion joins forward anyway. None when
+/// that is a table, the start of the story, a paragraph ending a section
+/// (joining it would remove the break) or one whose mark already carries a
+/// revision.
+fn previous_joinable(xml: &DocxXml, tail: NodeId, targets: &std::collections::HashSet<NodeId>) -> Option<NodeId> {
+    let ends_section = |node: NodeId| xml.child_w(node, "pPr").is_some_and(|ppr| xml.child_w(ppr, "sectPr").is_some());
+    let mut cursor = xml.doc.prev_sibling(tail);
     while let Some(node) = cursor {
-        if !xml.doc.is_element(node) {
-            cursor = xml.doc.next_sibling(node);
+        cursor = xml.doc.prev_sibling(node);
+        if !xml.doc.is_element(node) || crate::document::BODY_MILESTONES.iter().any(|local| xml.is_w(node, local)) {
             continue;
         }
-        if xml.is_w(node, "p") {
-            return true;
+        if !xml.is_w(node, "p") || ends_section(node) {
+            return None;
         }
-        if BODY_MILESTONES.iter().any(|local| xml.is_w(node, local)) {
-            cursor = xml.doc.next_sibling(node);
+        if targets.contains(&node) && xml.paragraph_mark_del(node).is_some() {
             continue;
         }
-        return false;
+        if xml.paragraph_mark_ins(node).is_some() || xml.paragraph_mark_del(node).is_some() {
+            return None;
+        }
+        return Some(node);
     }
-    false
+    None
 }
 
 /// Whether `paragraph` is wholly `author`'s pending insertion (its mark and
@@ -2980,7 +2985,7 @@ fn move_content_into_del(
 /// existing `w:ins` receives a nested `w:del` (Word's edit-within-edit), and
 /// plain runs/hyperlinks/smartTags are wrapped in a fresh `w:del`. A
 /// `w:del` never wraps multiple `w:p` elements.
-fn wrap_live_content_in_del(
+pub(crate) fn wrap_live_content_in_del(
     xml: &mut DocxXml,
     paragraph: NodeId,
     id: u64,
@@ -3034,6 +3039,9 @@ fn wrap_live_content_in_del(
 pub struct DeleteParagraphsArgs {
     pub at: Vec<String>,
     pub author: String,
+    /// False in direct mode: the deletion is written tracked and settled
+    /// by the caller, and the summary says what the caller leaves.
+    pub tracked: bool,
 }
 
 pub fn delete_paragraphs_typed(
@@ -3076,6 +3084,7 @@ pub fn delete_paragraphs_typed(
 
     let mut break_marks = 0usize;
     let mut removed = 0usize;
+    let mut tails: Vec<NodeId> = Vec::new();
     for (node, address) in &targets {
         // The author's own pending paragraph goes outright, as in Word.
         if is_own_inserted_paragraph(xml, *node, author) {
@@ -3087,22 +3096,60 @@ pub fn delete_paragraphs_typed(
         let rev_id = xml.next_revision_id();
         wrap_live_content_in_del(xml, *node, rev_id, &author, &ctx.now)
             .map_err(|e| blocked_at(address, e))?;
-        // A paragraph mark that is already a tracked deletion stays as it is.
-        if next_block_is_mergeable_paragraph(xml, *node) && xml.paragraph_mark_del(*node).is_none() {
+        // A paragraph mark that is already a tracked deletion stays as it is,
+        // and so does one that ends a section: joining it would take the
+        // section break with it.
+        let ends_section = xml.child_w(*node, "pPr").is_some_and(|ppr| xml.child_w(ppr, "sectPr").is_some());
+        if !ends_section && next_block_is_mergeable_paragraph(xml, *node) && xml.paragraph_mark_del(*node).is_none() {
             xml.add_paragraph_mark_marker(*node, "del", rev_id, &author, &ctx.now);
             break_marks += 1;
+        } else if xml.paragraph_mark_del(*node).is_none() {
+            tails.push(*node);
+        }
+    }
+    // A mark that cannot join forward (the last of the body, before a table,
+    // ending a section) stays; as in Word, the deletion takes the previous
+    // paragraph's mark instead, and the survivor gets that paragraph's
+    // properties (its own recorded in a pPrChange) while keeping its section
+    // properties. Accepting joins the previous paragraph into it: no empty
+    // paragraph is left. Where no previous paragraph can join, it stays.
+    let target_nodes: std::collections::HashSet<NodeId> = targets.iter().map(|(node, _)| *node).collect();
+    let mut kept_empty = 0usize;
+    for tail in tails {
+        match previous_joinable(xml, tail, &target_nodes) {
+            Some(previous) => {
+                let id = xml.next_revision_id();
+                if !crate::commands::layout::adopt_paragraph_properties(xml, tail, previous, id, author, &ctx.now) {
+                    kept_empty += 1;
+                    continue;
+                }
+                let id = xml.next_revision_id();
+                xml.add_paragraph_mark_marker(previous, "del", id, author, &ctx.now);
+                break_marks += 1;
+            }
+            None => kept_empty += 1,
         }
     }
 
     let ids: Vec<String> = targets.iter().map(|(_, id)| id.clone()).collect();
     let marked = ids.len() - removed;
-    let mut summary = format!(
-        "marked {} paragraph{} for tracked deletion ({} break{})",
-        marked,
-        if marked == 1 { "" } else { "s" },
-        break_marks,
-        if break_marks == 1 { "" } else { "s" }
-    );
+    let mut summary = if args.tracked {
+        format!(
+            "marked {} paragraph{} for tracked deletion ({} break{})",
+            marked,
+            if marked == 1 { "" } else { "s" },
+            break_marks,
+            if break_marks == 1 { "" } else { "s" }
+        )
+    } else {
+        format!("deleted {} paragraph{}", marked, if marked == 1 { "" } else { "s" })
+    };
+    if kept_empty > 0 {
+        summary.push_str(&format!(
+            "; {kept_empty} paragraph{} left empty (no previous paragraph can join it)",
+            if kept_empty == 1 { "" } else { "s" }
+        ));
+    }
     if removed > 0 {
         summary.push_str(&format!(
             "; removed {removed} own pending paragraph{}",
@@ -3112,8 +3159,8 @@ pub fn delete_paragraphs_typed(
     let result = json!({
         "paragraphs": ids,
         "breaks": break_marks,
-        "revisions": marked,
-        "tracked": true,
+        "revisions": if args.tracked { marked } else { 0 },
+        "tracked": args.tracked,
     });
     Ok((summary, result))
 }
@@ -3147,6 +3194,7 @@ pub fn delete_paragraphs(
                 .and_then(Value::as_str)
                 .unwrap_or(DEFAULT_AUTHOR)
                 .to_owned(),
+            tracked: true,
         },
         ctx,
         source_hash,
@@ -3307,6 +3355,7 @@ pub fn comment_add(
                 .and_then(Value::as_str)
                 .unwrap_or(DEFAULT_AUTHOR)
                 .to_owned(),
+            tracked: true,
         },
         ctx,
         source_hash,

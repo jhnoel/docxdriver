@@ -73,12 +73,12 @@ fn commit(bytes: &[u8], ops: Vec<EditOp>) -> Result<Vec<u8>, String> {
         change_mode: ChangeMode::Track,
         ops,
     };
-    let key = match execute_plan(bytes, &PlanRequest { plan: plan.clone(), preview_key: None }) {
+    let key = match execute_plan(bytes, &PlanRequest { plan: plan.clone(), preview_key: None, now: None }) {
         PlanResult::Previewed { preview_key, .. } => preview_key,
         PlanResult::Rejected { diagnostic, .. } => return Err(format!("{}: {}", diagnostic.code, diagnostic.message)),
         other => panic!("unexpected preview {other:?}"),
     };
-    match execute_plan(bytes, &PlanRequest { plan, preview_key: Some(key) }) {
+    match execute_plan(bytes, &PlanRequest { plan, preview_key: Some(key), now: None }) {
         PlanResult::Committed { bytes, .. } => Ok(bytes),
         PlanResult::Rejected { diagnostic, .. } => Err(format!("{}: {}", diagnostic.code, diagnostic.message)),
         other => panic!("unexpected commit {other:?}"),
@@ -222,11 +222,11 @@ fn justify_is_written_as_the_schema_value() {
 
 fn commit_mode(bytes: &[u8], mode: ChangeMode, ops: Vec<EditOp>) -> Vec<u8> {
     let plan = Plan { base: SourceHash::from_bytes(bytes), author: "gate-test".into(), change_mode: mode, ops };
-    let key = match execute_plan(bytes, &PlanRequest { plan: plan.clone(), preview_key: None }) {
+    let key = match execute_plan(bytes, &PlanRequest { plan: plan.clone(), preview_key: None, now: None }) {
         PlanResult::Previewed { preview_key, .. } => preview_key,
         other => panic!("preview rejected: {other:?}"),
     };
-    match execute_plan(bytes, &PlanRequest { plan, preview_key: Some(key) }) {
+    match execute_plan(bytes, &PlanRequest { plan, preview_key: Some(key), now: None }) {
         PlanResult::Committed { bytes, .. } => bytes,
         other => panic!("commit rejected: {other:?}"),
     }

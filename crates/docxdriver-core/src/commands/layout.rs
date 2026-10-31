@@ -62,6 +62,9 @@ pub fn set_page_margins_typed(
     header: Option<i64>,
     footer: Option<i64>,
     gutter: Option<i64>,
+    tracked: bool,
+    author: &str,
+    ctx: &super::ExecCtx,
 ) -> Result<(String, Value), Outcome> {
     if section == 0 {
         return Err(Outcome::error("section must be >= 1"));
@@ -73,9 +76,15 @@ pub fn set_page_margins_typed(
         return Err(Outcome::error("setPageMargins requires at least one margin field (top/right/bottom/left/header/footer/gutter, twips)"));
     }
     let sect = ensure_sect_pr(xml, section)?;
+    // Tracked, the old margins go into a section property change, as Word
+    // records them.
+    if tracked {
+        snapshot_section_properties(xml, sect, author, ctx)?;
+    }
     let pg_mar = ensure_pg_mar(sect, xml);
     let mut applied = serde_json::Map::new();
     applied.insert("section".into(), json!(section));
+    applied.insert("tracked".into(), json!(tracked));
     for (key, value) in [
         ("top", top),
         ("right", right),
@@ -233,6 +242,83 @@ fn styles_part_name(package: &Package) -> String {
     }
 }
 
+/// The paragraph style Word gives a new paragraph typed after one in
+/// `style_id` (its `w:next`), and the default paragraph style, from
+/// styles.xml. `style_id` None is the default paragraph style.
+pub(crate) fn next_paragraph_style(package: &Package, style_id: Option<&str>) -> (Option<String>, Option<String>) {
+    let part = styles_part_name(package);
+    let Some(styles_xml) = package.get(&part).and_then(|bytes| DocxXml::parse(bytes).ok()) else {
+        return (None, None);
+    };
+    let root = styles_xml.doc.root();
+    let paragraph_styles: Vec<NodeId> = styles_xml
+        .doc
+        .descendants(root)
+        .filter(|&n| styles_xml.is_w(n, "style") && styles_xml.attr(n, "type").unwrap_or("paragraph") == "paragraph")
+        .collect();
+    let default = paragraph_styles
+        .iter()
+        .find(|&&n| matches!(styles_xml.attr(n, "default"), Some("1" | "true" | "on")))
+        .and_then(|&n| styles_xml.attr(n, "styleId"))
+        .map(str::to_owned);
+    let id = style_id.map(str::to_owned).or_else(|| default.clone());
+    let next = id.and_then(|id| {
+        paragraph_styles
+            .iter()
+            .find(|&&n| styles_xml.attr(n, "styleId") == Some(id.as_str()))
+            .and_then(|&n| styles_xml.child_w(n, "next"))
+            .and_then(|n| styles_xml.attr(n, "val"))
+            .map(str::to_owned)
+    });
+    (next, default)
+}
+
+/// Give `new_paragraph` the paragraph properties Word's Enter gives a
+/// paragraph typed beside `anchor`: a copy of the anchor's (CT_PPrBase:
+/// style, numbering, indents, spacing, ...; not its mark's run properties,
+/// section properties or a pending property change); after a paragraph
+/// whose style names a different next style (a heading), that style alone.
+/// Returns the anchor's list (numId, level) when the new paragraph
+/// continues it.
+pub(crate) fn inherit_paragraph_properties(
+    xml: &mut DocxXml,
+    package: &Package,
+    anchor: NodeId,
+    new_paragraph: NodeId,
+    before: bool,
+) -> Option<(String, String)> {
+    let anchor_ppr = xml.child_w(anchor, "pPr");
+    let style = anchor_ppr.and_then(|ppr| xml.child_w(ppr, "pStyle")).and_then(|s| xml.attr(s, "val")).map(str::to_owned);
+    if !before {
+        let (next, default) = next_paragraph_style(package, style.as_deref());
+        let current = style.clone().or_else(|| default.clone());
+        if let Some(next) = next.filter(|next| Some(next) != current.as_ref()) {
+            if Some(&next) != default.as_ref() {
+                let ppr = ensure_ppr(xml, new_paragraph);
+                set_child_val(xml, ppr, "pStyle", &next);
+            }
+            return None;
+        }
+    }
+    let anchor_ppr = anchor_ppr?;
+    let base: Vec<NodeId> = xml
+        .doc
+        .children(anchor_ppr)
+        .filter(|&c| xml.doc.is_element(c) && !["rPr", "sectPr", "pPrChange"].iter().any(|n| xml.is_w(c, n)))
+        .collect();
+    if base.is_empty() {
+        return None;
+    }
+    let ppr = ensure_ppr(xml, new_paragraph);
+    for node in base {
+        let copy = xml.doc.clone_node(node, true);
+        xml.doc.append_child(ppr, copy);
+    }
+    let numbering = xml.child_w(ppr, "numPr")?;
+    let value = |name: &str| xml.child_w(numbering, name).and_then(|n| xml.attr(n, "val")).map(str::to_owned);
+    Some((value("numId")?, value("ilvl").unwrap_or_else(|| "0".into())))
+}
+
 pub(crate) fn paragraph_style_exists(package: &Package, style_id: &str) -> bool {
     let part = styles_part_name(package);
     let Some(bytes) = package.get(&part) else {
@@ -273,6 +359,69 @@ mod tests {
     }
 }
 
+/// Whether two elements have the same name, attributes and element
+/// children (text is not compared: property elements hold none).
+fn same_tree(xml: &DocxXml, a: NodeId, b: NodeId) -> bool {
+    let attributes = |n: NodeId| {
+        let mut out: Vec<(String, String)> = xml.doc.attributes(n).iter().map(|x| (x.name.clone(), x.value.clone())).collect();
+        out.sort();
+        out
+    };
+    let children = |n: NodeId| xml.doc.children(n).filter(|&c| xml.doc.is_element(c)).collect::<Vec<_>>();
+    let (left, right) = (children(a), children(b));
+    xml.doc.node_name(a) == xml.doc.node_name(b)
+        && attributes(a) == attributes(b)
+        && left.len() == right.len()
+        && left.iter().zip(&right).all(|(&x, &y)| same_tree(xml, x, y))
+}
+
+/// Give paragraph `target` a copy of `source`'s paragraph properties
+/// (CT_PPrBase), recording `target`'s own in a pPrChange when they differ.
+/// `target`'s paragraph-mark run properties and section properties stay.
+/// Returns false, changing nothing, when `target` already has a pending
+/// paragraph property change.
+pub(crate) fn adopt_paragraph_properties(xml: &mut DocxXml, target: NodeId, source: NodeId, id: u64, author: &str, date: &str) -> bool {
+    let base = |xml: &DocxXml, paragraph: NodeId| -> Vec<NodeId> {
+        xml.child_w(paragraph, "pPr")
+            .map(|ppr| {
+                xml.doc
+                    .children(ppr)
+                    .filter(|&c| xml.doc.is_element(c) && !["rPr", "sectPr", "pPrChange"].iter().any(|n| xml.is_w(c, n)))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let old = base(xml, target);
+    let new = base(xml, source);
+    if old.len() == new.len() && old.iter().zip(&new).all(|(&a, &b)| same_tree(xml, a, b)) {
+        return true;
+    }
+    if xml.child_w(target, "pPr").is_some_and(|ppr| xml.child_w(ppr, "pPrChange").is_some()) {
+        return false;
+    }
+    let ppr = ensure_ppr(xml, target);
+    let snapshot = xml.doc.create_element("w:pPr");
+    for node in old {
+        xml.doc.detach(node);
+        xml.doc.append_child(snapshot, node);
+    }
+    let tail = xml.doc.children(ppr).find(|&c| xml.is_w(c, "rPr") || xml.is_w(c, "sectPr") || xml.is_w(c, "pPrChange"));
+    for node in new {
+        let node = xml.doc.clone_node(node, true);
+        match tail {
+            Some(tail) => xml.doc.insert_before(tail, node),
+            None => xml.doc.append_child(ppr, node),
+        }
+    }
+    let change = xml.doc.create_element("w:pPrChange");
+    xml.doc.set_attribute(change, "w:id", &id.to_string());
+    xml.doc.set_attribute(change, "w:author", author);
+    xml.doc.set_attribute(change, "w:date", date);
+    xml.doc.append_child(change, snapshot);
+    xml.doc.append_child(ppr, change);
+    true
+}
+
 const SECT_PR_SEQUENCE: &[&str] = &[
     "headerReference", "footerReference", "footnotePr", "endnotePr", "type", "pgSz",
     "pgMar", "paperSrc", "pgBorders", "lnNumType", "pgNumType", "cols", "formProt",
@@ -289,8 +438,13 @@ pub(crate) fn ensure_sect_pr_child(xml: &mut DocxXml, sect: NodeId, local: &str)
 pub(crate) fn snapshot_section_properties(
     xml: &mut DocxXml, sect: NodeId, author: &str, ctx: &super::ExecCtx,
 ) -> Result<(), Outcome> {
-    if xml.child_w(sect, "sectPrChange").is_some() {
-        return Err(Outcome::blocked("section already has a pending property change; accept or reject it first"));
+    // The author's own pending change keeps its snapshot, as Word folds
+    // one author's successive changes into one record.
+    if let Some(change) = xml.child_w(sect, "sectPrChange") {
+        if xml.attr(change, "author") == Some(author) {
+            return Ok(());
+        }
+        return Err(Outcome::blocked("section already has a pending property change by another author; accept or reject it first"));
     }
     let snapshot = xml.doc.create_element("w:sectPr");
     for child in xml.doc.children(sect).collect::<Vec<_>>() {
@@ -313,7 +467,7 @@ pub fn set_first_page_mode(
     author: &str, ctx: &super::ExecCtx,
 ) -> Result<(String, Value), Outcome> {
     let sect = ensure_sect_pr(xml, section)?;
-    if xml.child_w(sect, "sectPrChange").is_some() {
+    if xml.child_w(sect, "sectPrChange").is_some_and(|change| !tracked || xml.attr(change, "author") != Some(author)) {
         return Err(Outcome::blocked("section already has a pending property change; accept or reject it first"));
     }
     let current = xml.child_w(sect, "titlePg").is_some_and(|node| {
@@ -336,7 +490,7 @@ pub fn set_section_layout(
         columns, column_spacing, column_widths, column_separator, break_type,
         page_number_format, page_number_start, page_number_continue, .. } = op else { unreachable!() };
     let sect = ensure_sect_pr(xml, section)?;
-    if xml.child_w(sect, "sectPrChange").is_some() {
+    if xml.child_w(sect, "sectPrChange").is_some_and(|change| !tracked || xml.attr(change, "author") != Some(author)) {
         return Err(Outcome::blocked("section already has a pending property change; accept or reject it first"));
     }
     let dimension = |tag: &str, attr: &str, default: i64| {

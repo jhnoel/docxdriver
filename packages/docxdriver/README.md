@@ -185,7 +185,7 @@ List membership can be changed with `{"op":"set_list","at":["12345678"],"format"
 
 A new `set_list` may supply `levels`, an array of one to nine definitions. Each definition supplies `format` and `label`; `%1` through the current level reference counters. Optional positive `start`, zero-based ancestor `restart_after`, signed `indent_left`/`indent_right`/`first_line_indent`, and `marker_bold`/`marker_italic`/`marker_font`/six-digit `marker_color` control that level. `levels` cannot restyle an existing `num_id`; creating a new instance keeps neighboring lists isolated. HTML `<li>` accepts multiple paragraphs and nested lists. Subsequent paragraphs explicitly belong to the same item, persist with an empty `_docxdriver_cont_…` bookmark and `numId=0` to suppress their Word marker, and read as `continuation_paragraph: true`. Ordinary paragraphs are never inferred as continuations from their indentation.
 
-Direct structural edits use `edit_table` with a source-bound table handle and a tagged `action`: `insert_rows`, `delete_rows`, `insert_columns`, `delete_columns`, `merge_cells`, `split_cell`, or `delete`. Row/column coordinates and counts are one-based; insert actions specify `position: "before" | "after"`. Merge specifies `row`, `column`, `row_span`, and `column_span`. Split specifies its logical origin `row`/`column`. Insertion/deletion of rows or columns and merging require a rectangular grid without preexisting merges or omitted cells. Merge moves content in row-major order and preserves nested tables; split retains content in the first resulting cell and creates empty neighbors. Structural edits reject tracked mode and unresolved revisions, bookmarks, comments, fields, or content controls in the table. Remove a table instead of deleting every row or column.
+Direct structural edits use `edit_table` with a source-bound table handle and a tagged `action`: `insert_rows`, `delete_rows`, `insert_columns`, `delete_columns`, `merge_cells`, `split_cell`, or `delete`. Row/column coordinates and counts are one-based; insert actions specify `position: "before" | "after"`. Merge specifies `row`, `column`, `row_span`, and `column_span`. Split specifies its logical origin `row`/`column`. Insertion/deletion of rows or columns and merging require a rectangular grid without preexisting merges or omitted cells. Merge moves content in row-major order and preserves nested tables; split retains content in the first resulting cell and creates empty neighbors. In track mode `insert_rows`, `delete_rows` and `delete` are tracked row insertions and deletions and the other actions are refused (see Change modes). Structural edits reject unresolved revisions of other authors, bookmarks, comments, fields, or content controls in the table. Remove a table instead of deleting every row or column.
 
 Bookmarks use four operations. `{"op":"bookmark_add","at":"12345678","name":"Clause_4","select":"sixty days","occurrence":1}` wraps one exact span; omit `select` (and `occurrence`) to wrap the whole paragraph. `{"op":"bookmark_rename","name":"Clause_4","new_name":"Term"}` renames, `{"op":"bookmark_move","name":"Term","at":"87654321","select":"thirty days"}` re-anchors keeping the name and `w:id`, and `{"op":"bookmark_delete","name":"Term"}` removes the start and end markers while leaving the text untouched. Names follow Word's rules: a letter first, then letters, digits or underscores, at most 40 characters, unique in the document ignoring case. `bookmark_add` and `bookmark_rename` reject a leading `_`, which marks hidden or reserved bookmarks (`_GoBack`, `_Toc…`, `_docxdriver_cont_…`); existing bookmarks of any name can still be moved, deleted or renamed from. Names are matched exactly, then ignoring case; an unknown name lists close matches. Bookmark operations apply directly in both change modes, because Word does not track bookmarks, and edit body bookmarks only (`word/document.xml`); a bookmark in a header, footer or note is reported but refused. New `w:id`s are unique across every story. Markers sit between runs (runs are split at `select` boundaries, as for comments), outside hyperlinks and other wrappers whenever that leaves the bookmarked text unchanged. Text edits never orphan a marker: replacing or deleting bookmarked text collapses the markers in place.
 
@@ -228,6 +228,67 @@ Typed `set_list` membership changes on a list containing explicit continuation p
 List IDs and start values are bounded to 1–2147483647. For new definitions, an operation-level `start` applies only to the selected level; other levels default to 1. An explicit per-level `start` takes precedence. Continuing an existing list allocates no definition and remains supported when the source numbering ID range is exhausted. Typed operations cannot join or alter a list instance containing persisted continuation paragraphs.
 
 List definition review scaling can be checked with `cargo run --release -p docxdriver-core --example list_scaling -- PARAS OPS`. Numbering definitions are cached and indexed for a plan, then serialized at report/output boundaries.
+
+### Change modes
+
+Every plan has an `author` and a `change_mode`. A `direct` edit leaves no
+revision of its own; a `track` edit leaves no unmarked change: each op
+writes the tracked form Word writes, or is refused with an error that
+names it. Accepting every revision of a tracked edit gives the direct
+edit, and rejecting every revision gives the input (up to run boundaries
+and empty property elements). The `final` and `original` views are
+rendered from a copy of the document with every revision accepted or
+rejected, so they are what accept-all and reject-all produce. Other authors' pending revisions are
+never re-authored or settled, except by `revision_settle`.
+
+| Op | Track | Direct |
+| --- | --- | --- |
+| `replace_text`, `revise_text`, `replace_paragraph` | `w:del` / `w:ins` | replaced |
+| `insert_paragraph` | inserted content and paragraph mark; reject-all removes the paragraph. Without `style` the new paragraph takes the anchor's paragraph properties (Word's Enter), so it continues a list | inserted |
+| `delete_paragraphs` | deleted content and paragraph mark; accept-all leaves the next paragraph's id and properties. A mark that cannot join forward (last paragraph, before a table, section end) stays, and the previous paragraph's mark is deleted instead, as in Word | removed (the tracked edit, accepted) |
+| `format_text` | `w:rPrChange` | applied |
+| `format_paragraph`, `set_list` | `w:pPrChange`; rejecting a list change removes the list definitions it added | applied |
+| `format_table`, `format_row`, `format_cell` | `w:tblPrChange`, `w:trPrChange`, `w:tcPrChange` | applied |
+| `insert_table` | inserted rows (`w:trPr/w:ins`) and content; refused as the last block of a cell | inserted |
+| `edit_table` `insert_rows` / `delete_rows` / `delete` | row insertion / deletion (`w:trPr/w:ins` / `w:del`) | applied |
+| `edit_table` `insert_columns` / `delete_columns` / `merge_cells` / `split_cell` | refused (Word does not track them) | applied |
+| `replace_equation`, `delete_equation` | `w:del` / `w:ins` | applied |
+| `set_header`, `set_footer` | old content deleted, new inserted; simple fields become complex field runs; a new story stays (empty) after reject-all, since a header or footer reference has no revision form (direct mode is exact); `kind: first` tracks `titlePg`; `kind: even` refused while even/odd headers are off | replaced |
+| `clear_header`, `clear_footer` | content deleted, the empty story stays referenced; refused after section 1 | reference removed |
+| `set_page_margins`, `set_section_layout`, `set_first_page_mode` | `w:sectPrChange` | applied |
+| `set_section_boundary`, `set_even_and_odd_headers` | refused (no Word revision exists) | applied |
+| `comment_*`, `bookmark_*` | applied directly (Word does not track comments or bookmarks) | applied |
+| `revision_settle` | settles; writes no revision | settles |
+
+Revisions and comments carry the time of the commit (`w:date`, UTC,
+second precision). `PlanRequest.now` / `CommandRequest.now`
+(`YYYY-MM-DDTHH:MM:SSZ`) fixes it for byte-stable output; the CLI and MCP
+server read it from `DOCXDRIVER_NOW`, and the WASM binding uses the
+host's clock when it is omitted.
+
+### Amendment formatting
+
+`convert_revisions_to_formatting` turns tracked changes into the amendment
+convention of 37 CFR 1.121: inserted text underlined, deleted text struck
+through, no revision left. Make ordinary tracked edits (the word-level
+redlines below), then convert:
+
+```json
+{"op": "convert_revisions_to_formatting", "target": "all"}
+```
+
+`target` is `"all"`, `{"id": "<revision id>"}` or `{"author": "<name>"}`;
+`at` (paragraph ids) limits it to revisions in those body paragraphs, and
+without `at` headers and footers convert too. A deletion's text comes back
+before the insertion that replaced it, as the markup shows it. Inserted and
+deleted paragraphs and table rows stay, their text underlined or struck;
+text deleted inside a converted insertion goes (it was never in the
+source). Formatting, table and section property changes have no amendment
+form and are accepted. Moves convert as a deletion and an insertion.
+Existing underline and strike are kept. It settles revisions, so it writes
+none of its own in either change mode, and converting twice changes
+nothing. The report says how many insertions, deletions, paragraph marks,
+rows and formatting changes it converted.
 
 ### Word-level redlines
 

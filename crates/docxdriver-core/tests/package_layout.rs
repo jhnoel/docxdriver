@@ -62,7 +62,7 @@ fn read_document(bytes: &[u8]) -> serde_json::Value {
                 read_kind: Some("document_ui".into()),
                 view: None,
             }),
-            expected_source: None,
+            expected_source: None, now: None
         }),
     ) {
         RequestResult::Command(CommandResult::Completed {
@@ -93,7 +93,7 @@ fn main_part_resolves_via_package_rels_for_typed_read_and_plan_write() {
         &bytes,
         &PlanRequest {
             plan: p.clone(),
-            preview_key: None,
+            preview_key: None, now: None
         },
     );
     let key = match preview {
@@ -104,7 +104,7 @@ fn main_part_resolves_via_package_rels_for_typed_read_and_plan_write() {
         &bytes,
         &PlanRequest {
             plan: p,
-            preview_key: Some(key),
+            preview_key: Some(key), now: None
         },
     ) {
         PlanResult::Committed { bytes, .. } => bytes,
@@ -165,11 +165,11 @@ fn untouched_parts_are_copied_through_byte_for_byte() {
             with: "real text".into(),
         }],
     };
-    let key = match execute_plan(&bytes, &PlanRequest { plan: p.clone(), preview_key: None }) {
+    let key = match execute_plan(&bytes, &PlanRequest { plan: p.clone(), preview_key: None, now: None }) {
         PlanResult::Previewed { preview_key, .. } => preview_key,
         other => panic!("preview failed: {other:?}"),
     };
-    let out = match execute_plan(&bytes, &PlanRequest { plan: p, preview_key: Some(key) }) {
+    let out = match execute_plan(&bytes, &PlanRequest { plan: p, preview_key: Some(key), now: None }) {
         PlanResult::Committed { bytes, .. } => bytes,
         other => panic!("commit failed: {other:?}"),
     };

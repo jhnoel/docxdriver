@@ -545,6 +545,59 @@ impl<'de> Deserialize<'de> for RevisionTarget {
     }
 }
 
+/// Which revisions `convert_revisions_to_formatting` converts: `"all"`,
+/// `{"id": "<decimal revision id>"}` or `{"author": "<name>"}`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RevisionSelector {
+    All,
+    Id(String),
+    Author(String),
+}
+impl Serialize for RevisionSelector {
+    fn serialize<S>(&self, s: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            Self::All => s.serialize_str("all"),
+            Self::Id(id) => serde_json::json!({ "id": id }).serialize(s),
+            Self::Author(author) => serde_json::json!({ "author": author }).serialize(s),
+        }
+    }
+}
+impl<'de> Deserialize<'de> for RevisionSelector {
+    fn deserialize<D>(d: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let error = || serde::de::Error::custom("target must be \"all\", {\"id\": \"<decimal revision id>\"} or {\"author\": \"<name>\"}");
+        match Value::deserialize(d)? {
+            Value::String(all) if all == "all" => Ok(Self::All),
+            Value::Object(object) if object.len() == 1 => match object.into_iter().next() {
+                Some((key, Value::String(id))) if key == "id" && !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()) => Ok(Self::Id(id)),
+                Some((key, Value::String(author))) if key == "author" && !author.is_empty() => Ok(Self::Author(author)),
+                _ => Err(error()),
+            },
+            _ => Err(error()),
+        }
+    }
+}
+impl JsonSchema for RevisionSelector {
+    fn schema_name() -> String {
+        "RevisionSelector".into()
+    }
+    fn json_schema(_generator: &mut schemars::gen::SchemaGenerator) -> Schema {
+        serde_json::from_value(serde_json::json!({
+            "oneOf": [
+                {"type": "string", "const": "all"},
+                {"type": "object", "additionalProperties": false, "required": ["id"], "properties": {"id": {"type": "string", "pattern": "^[0-9]+$"}}},
+                {"type": "object", "additionalProperties": false, "required": ["author"], "properties": {"author": {"type": "string", "minLength": 1}}}
+            ]
+        }))
+        .unwrap()
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[serde(tag = "mode", content = "value", rename_all = "snake_case")]
@@ -576,6 +629,7 @@ pub struct ListLevel {
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
 pub enum EditOp {
     /// Replace one current equation without matching reconstructed LaTeX.
+    /// Tracked: the old equation deleted, the new one inserted. Direct: replaced.
     ReplaceEquation {
         at: ParagraphAddress,
         mathml: String,
@@ -585,11 +639,13 @@ pub enum EditOp {
         display: Option<bool>,
     },
     /// Delete one current equation while preserving the surrounding paragraph.
+    /// Tracked: a tracked deletion. Direct: removed.
     DeleteEquation {
         at: ParagraphAddress,
         #[serde(default)]
         equation: Option<u32>,
     },
+    /// Tracked: w:del / w:ins (the author's own pending insertion is edited in place). Direct: replaced, no revision.
     ReplaceText {
         at: ParagraphAddress,
         select: String,
@@ -601,6 +657,7 @@ pub enum EditOp {
     /// `at`, the unique `within` span (in `at`, or anywhere in the body when
     /// `at` is omitted), or the whole body. Every edit resolves against the
     /// scope as it stands when this operation starts.
+    /// Tracked: w:del / w:ins per edit. Direct: replaced, no revision.
     ReviseText {
         #[serde(default)]
         at: Option<ParagraphAddress>,
@@ -610,15 +667,18 @@ pub enum EditOp {
         occurrence: Option<u32>,
         edits: Vec<TextEdit>,
     },
+    /// Tracked: old content deleted, new inserted. Direct: replaced, no revision.
     ReplaceParagraph {
         at: ParagraphAddress,
         with: String,
     },
+    /// Tracked: `insert_rows`, `delete_rows` and `delete` are row insertions/deletions (w:trPr/w:ins|w:del, deleted cell content; the author's own inserted rows go outright); `insert_columns`, `delete_columns`, `merge_cells` and `split_cell` are refused (Word does not track them). Direct: applied, no revision.
     EditTable { at: String, action: TableEdit },
     /// A `rows` × `columns` grid of new cells. `cells` fills them row by
     /// row with the inline content `insert_paragraph`'s `with` accepts;
     /// missing trailing rows and cells stay empty. With `as`, cell row N
     /// column M is the paragraph alias `$<as>_rNcM` for later operations.
+    /// Tracked: an inserted table (every row w:trPr/w:ins, cell content w:ins); refused as the last block of a table cell. Direct: inserted, no revision.
     InsertTable {
         at: ParagraphAddress,
         position: InsertPosition,
@@ -629,9 +689,13 @@ pub enum EditOp {
         #[serde(rename = "as", default)]
         alias: Option<String>,
     },
+    /// Tracked: w:tblPrChange. Direct: applied, no revision.
     FormatTable { at: String, format: TableFormat },
+    /// Tracked: w:trPrChange. Direct: applied, no revision.
     FormatRow { at: String, format: RowFormat },
+    /// Tracked: w:tcPrChange. Direct: applied, no revision.
     FormatCell { at: String, format: CellFormat },
+    /// Tracked: w:rPrChange. Direct: applied, no revision.
     FormatText {
         at: ParagraphAddress,
         select: String,
@@ -658,6 +722,7 @@ pub enum EditOp {
         #[serde(default)]
         clear: Vec<String>,
     },
+    /// Tracked: w:pPrChange. Direct: applied, no revision.
     FormatParagraph {
         at: ParagraphAddress,
         #[serde(default)]
@@ -681,7 +746,8 @@ pub enum EditOp {
         clear: Vec<String>,
     },
     /// Assign selected paragraphs to a new or existing list. `remove` explicitly
-    /// suppresses inherited numbering; new definitions remain after rejection.
+    /// suppresses inherited numbering.
+    /// Tracked: w:pPrChange; rejecting it also removes the list definitions it added once nothing refers to them (definitions the input already left unreferenced stay). Direct: applied, no revision.
     SetList {
         #[serde(default)]
         levels: Option<Vec<ListLevel>>,
@@ -701,6 +767,7 @@ pub enum EditOp {
     /// With `as`, a single paragraph is `$<as>`; for a list, `$<as>` is the
     /// group (expanded in paragraph lists, its first or last paragraph as an
     /// insert anchor) and item N is `$<as>_N`.
+    /// Without `style`, a new paragraph takes the paragraph properties of a paragraph anchor (style, numbering, indents, spacing; not its mark's run properties, section properties or pending changes), as Word's Enter does: inserted into a list it is a list item. After a paragraph whose style names a different next style (a heading), it takes that style instead. Tracked: inserted content and paragraph mark; reject-all removes the paragraph. Direct: inserted, no revision.
     InsertParagraph {
         at: InsertAnchor,
         position: InsertPosition,
@@ -711,9 +778,11 @@ pub enum EditOp {
         #[serde(rename = "as", default)]
         alias: Option<String>,
     },
+    /// Tracked: content and paragraph mark deleted; accept-all leaves the following paragraph's id and properties as they were. A paragraph whose mark cannot join forward (the last of the body, one before a table, one ending a section) takes the previous paragraph's mark instead, as Word does: it gets that paragraph's properties (its own in a pPrChange) and keeps its section properties, and accept-all leaves the previous paragraph, with its id, in its place. Where no previous paragraph can join (a table or another author's mark revision before it) it is left empty. Direct: the same edit accepted, no revision.
     DeleteParagraphs {
         at: Vec<ParagraphAddress>,
     },
+    /// Tracked: w:sectPrChange. Direct: applied, no revision.
     SetPageMargins {
         #[serde(default)]
         section: Option<u32>,
@@ -733,7 +802,9 @@ pub enum EditOp {
         gutter: Option<Points>,
     },
     /// Selective section-property edits. Dimensions are points; omitted fields preserve source.
+    /// Refused in track mode: Word records no revision for adding or removing a section break. Direct only.
     SetSectionBoundary { at: ParagraphAddress, #[serde(default)] remove: bool, #[serde(default)] break_type: Option<String> },
+    /// Tracked: w:sectPrChange. Direct: applied, no revision.
     SetSectionLayout {
         #[serde(default)] section_handle: Option<String>,
         #[serde(default)]
@@ -763,14 +834,17 @@ pub enum EditOp {
         #[serde(default)]
         page_number_continue: Option<bool>,
     },
+    /// Tracked: w:sectPrChange. Direct: applied, no revision.
     SetFirstPageMode {
         #[serde(default)]
         section: Option<u32>,
         enabled: bool,
     },
+    /// Refused in track mode: a document setting (settings.xml) Word records no revision for. Direct only.
     SetEvenAndOddHeaders {
         even_and_odd: bool,
     },
+    /// Tracked: the old content a tracked deletion and the new a tracked insertion (simple fields written as complex field runs); a new header's part and reference cannot be tracked, so reject-all leaves it empty. `kind: first` records titlePg in a w:sectPrChange; `kind: even` is refused while even/odd headers are off. Direct: replaced, no revision.
     SetHeader {
         #[serde(default)]
         section: Option<u32>,
@@ -778,6 +852,7 @@ pub enum EditOp {
         kind: Option<ChromeKind>,
         with: String,
     },
+    /// Tracked and direct as `set_header`.
     SetFooter {
         #[serde(default)]
         section: Option<u32>,
@@ -785,18 +860,21 @@ pub enum EditOp {
         kind: Option<ChromeKind>,
         with: String,
     },
+    /// Tracked: the content becomes a tracked deletion and the (then empty) header stays referenced; refused after section 1, where removing a reference changes inheritance. Direct: the reference is removed.
     ClearHeader {
         #[serde(default)]
         section: Option<u32>,
         #[serde(default)]
         kind: Option<ChromeKind>,
     },
+    /// Tracked and direct as `clear_header`.
     ClearFooter {
         #[serde(default)]
         section: Option<u32>,
         #[serde(default)]
         kind: Option<ChromeKind>,
     },
+    /// Applied directly in both change modes: Word does not track comments.
     CommentAdd {
         at: ParagraphAddress,
         #[serde(default)]
@@ -805,14 +883,17 @@ pub enum EditOp {
         occurrence: Option<u32>,
         text: String,
     },
+    /// Applied directly in both change modes: Word does not track comments.
     CommentReply {
         comment_id: String,
         text: String,
     },
+    /// Applied directly in both change modes: Word does not track comments.
     CommentSetStatus {
         comment_id: String,
         status: CommentStatus,
     },
+    /// Applied directly in both change modes: Word does not track comments.
     CommentDelete {
         comment_id: String,
     },
@@ -828,11 +909,13 @@ pub enum EditOp {
         occurrence: Option<u32>,
     },
     /// Rename a body bookmark; `new_name` follows the add rules.
+    /// Applied directly in both change modes (Word does not track bookmarks).
     BookmarkRename {
         name: String,
         new_name: String,
     },
     /// Re-anchor a body bookmark, keeping its name and `w:id`.
+    /// Applied directly in both change modes (Word does not track bookmarks).
     BookmarkMove {
         name: String,
         at: ParagraphAddress,
@@ -842,12 +925,31 @@ pub enum EditOp {
         occurrence: Option<u32>,
     },
     /// Remove a body bookmark's start and end markers; the text stays.
+    /// Applied directly in both change modes (Word does not track bookmarks).
     BookmarkDelete {
         name: String,
     },
+    /// Settles revisions in both change modes; it writes none.
     RevisionSettle {
         target: RevisionTarget,
         action: RevisionAction,
+    },
+    /// Turn tracked changes into amendment formatting (37 CFR 1.121): an
+    /// insertion's text stays, underlined; a deletion's text comes back,
+    /// struck through; no revision is left. A deleted paragraph mark stays
+    /// (the paragraph's struck text keeps its own line); an inserted
+    /// paragraph stays with its text underlined; inserted and deleted table
+    /// rows stay, their text underlined or struck. Formatting, table and
+    /// section property changes have no amendment form and are accepted.
+    /// Moves convert as deletion (source) and insertion (destination).
+    /// Existing underline and strike are kept. `target` is `"all"`,
+    /// `{"id": ...}` or `{"author": ...}`; `at` limits it to revisions in
+    /// those body paragraphs. Settles revisions, so it writes none of its
+    /// own in either change mode.
+    ConvertRevisionsToFormatting {
+        target: RevisionSelector,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        at: Option<Vec<ParagraphAddress>>,
     },
 }
 
@@ -989,6 +1091,9 @@ pub struct CommandRequest {
     pub command: Command,
     #[serde(default)]
     pub expected_source: Option<SourceHash>,
+    /// As [`PlanRequest::now`], for an `edit` command.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub now: Option<String>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -1003,6 +1108,12 @@ pub struct PlanRequest {
     pub plan: Plan,
     #[serde(default)]
     pub preview_key: Option<PreviewKey>,
+    /// The time stamped on the revisions and comments a commit writes, as
+    /// `YYYY-MM-DDTHH:MM:SSZ` (UTC, second precision, as Word writes
+    /// `w:date`). Omitted, the current UTC time. Pass a fixed time for
+    /// byte-stable output (tests, golden files).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub now: Option<String>,
 }
 impl JsonSchema for PlanRequest {
     fn schema_name() -> String {
@@ -1011,7 +1122,7 @@ impl JsonSchema for PlanRequest {
     fn json_schema(_generator: &mut schemars::gen::SchemaGenerator) -> Schema {
         serde_json::from_value(serde_json::json!({
             "type":"object","additionalProperties":false,"required":["plan"],
-            "properties":{"plan":{"$ref":"#/definitions/Plan"},"preview_key":{"anyOf":[{"$ref":"#/definitions/PreviewKey"},{"type":"null"}]}}
+            "properties":{"plan":{"$ref":"#/definitions/Plan"},"preview_key":{"anyOf":[{"$ref":"#/definitions/PreviewKey"},{"type":"null"}]},"now":{"type":"string","pattern":"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$","description":"Revision and comment time (UTC, second precision); omitted, the current time."}}
         })).unwrap()
     }
 }
@@ -1765,6 +1876,11 @@ fn normalize_op(op: &mut EditOp) -> Result<(), String> {
             ..
         }
         | EditOp::SetEvenAndOddHeaders { .. } => {}
+        EditOp::ConvertRevisionsToFormatting { at, .. } => {
+            if at.as_ref().is_some_and(Vec::is_empty) {
+                return Err("at must name at least one paragraph when given".into());
+            }
+        }
         EditOp::SetFirstPageMode { section, .. }
         | EditOp::SetHeader { section, .. }
         | EditOp::SetFooter { section, .. }
@@ -1926,7 +2042,13 @@ pub fn execute_plan(input: &[u8], request: &PlanRequest) -> PlanResult {
             };
         }
     }
-    let (report, bytes, failure) = fold_typed(input, plan, request.preview_key.is_some());
+    let now = match revision_time(request.now.as_deref()) {
+        Ok(now) => now,
+        Err(diagnostic) => {
+            return PlanResult::Rejected { source: Some(source), plan: Some(plan.clone()), diagnostic, report: None };
+        }
+    };
+    let (report, bytes, failure) = fold_typed(input, plan, request.preview_key.is_some(), now);
     if let Some((diagnostic, report)) = failure {
         return PlanResult::Rejected {
             source: Some(source),
@@ -1953,10 +2075,72 @@ pub fn execute_plan(input: &[u8], request: &PlanRequest) -> PlanResult {
         }
     }
 }
+/// The time a commit stamps: `given` when valid, else the current UTC time.
+pub fn revision_time(given: Option<&str>) -> Result<String, Diagnostic> {
+    match given {
+        Some(value) => {
+            let valid = value.len() == 20
+                && value.bytes().enumerate().all(|(i, b)| match i {
+                    4 | 7 => b == b'-',
+                    10 => b == b'T',
+                    13 | 16 => b == b':',
+                    19 => b == b'Z',
+                    _ => b.is_ascii_digit(),
+                });
+            if valid {
+                Ok(value.to_string())
+            } else {
+                Err(diag("invalid_now", format!("now must be a UTC time YYYY-MM-DDTHH:MM:SSZ, got {value:?}"), Some("now".into())))
+            }
+        }
+        None => Ok(current_utc()),
+    }
+}
+
+/// The current UTC time, second precision, as Word writes `w:date`.
+fn current_utc() -> String {
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+    let seconds = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    // No clock without a host: the WASM binding passes the host's time.
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+    let seconds = 0i64;
+    format_utc(seconds)
+}
+
+/// `seconds` since the Unix epoch as `YYYY-MM-DDTHH:MM:SSZ`.
+fn format_utc(seconds: i64) -> String {
+    let (days, rest) = (seconds.div_euclid(86_400), seconds.rem_euclid(86_400));
+    // Civil date from days (Howard Hinnant's algorithm).
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + i64::from(month <= 2);
+    format!("{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}Z", rest / 3600, rest % 3600 / 60, rest % 60)
+}
+
+#[cfg(test)]
+mod clock_tests {
+    #[test]
+    fn civil_dates() {
+        assert_eq!(super::format_utc(0), "1970-01-01T00:00:00Z");
+        assert_eq!(super::format_utc(951_782_400), "2000-02-29T00:00:00Z");
+        assert_eq!(super::format_utc(1_793_450_096), "2026-10-31T12:34:56Z");
+    }
+}
+
 fn fold_typed(
     input: &[u8],
     plan: &Plan,
     commit: bool,
+    now: String,
 ) -> (
     PlanReport,
     Option<Vec<u8>>,
@@ -2005,10 +2189,7 @@ fn fold_typed(
     let mut affected_ids: Vec<Vec<String>> = Vec::new();
     let plan_seed = crate::commands::plan_seed(plan);
     let mut allocated_ids = Vec::new();
-    let ctx = crate::commands::ExecCtx {
-        dry_run: !commit,
-        now: "2000-01-01T00:00:00Z".into(),
-    };
+    let ctx = crate::commands::ExecCtx { dry_run: !commit, now };
     for (index, op) in plan.ops.iter().enumerate() {
         let resolved = match resolve_typed_aliases(op, &aliases, &groups) {
             Ok(value) => value,
@@ -2258,7 +2439,7 @@ fn explain_selector_drift(
         .iter()
         .enumerate()
         .filter(|(i, earlier)| {
-            matches!(earlier, EditOp::RevisionSettle { .. })
+            matches!(earlier, EditOp::RevisionSettle { .. } | EditOp::ConvertRevisionsToFormatting { .. })
                 || affected_ids[*i].iter().any(|touched| touched.eq_ignore_ascii_case(&id))
         })
         .map(|(i, earlier)| format!("ops[{i}] {}", operation_name(earlier)))
@@ -2339,6 +2520,7 @@ fn operation_name(op: &EditOp) -> &'static str {
         EditOp::BookmarkMove { .. } => "bookmark_move",
         EditOp::BookmarkDelete { .. } => "bookmark_delete",
         EditOp::RevisionSettle { .. } => "revision_settle",
+        EditOp::ConvertRevisionsToFormatting { .. } => "convert_revisions_to_formatting",
     }
 }
 fn group_map(groups: &BTreeMap<String, Vec<String>>) -> Map<String, Value> {
@@ -2423,6 +2605,7 @@ fn resolve_typed_aliases(
             }
         }
         EditOp::DeleteParagraphs { at } | EditOp::SetList { at, .. } => resolve_list(at)?,
+        EditOp::ConvertRevisionsToFormatting { at: Some(at), .. } => resolve_list(at)?,
         EditOp::SetSectionLayout { section_handle:Some(handle),.. } => {
             if let Some(alias)=handle.strip_prefix("section:$") {
                 let Some(Value::String(id))=aliases.get(alias) else { return Err(diag("unknown_alias",format!("unknown section paragraph alias ${alias}"),None)); };
@@ -2488,7 +2671,11 @@ pub fn execute_command(input: Option<&[u8]>, r: &CommandRequest) -> CommandResul
                 }
             }
         };
-        let (report, output, failure) = fold_typed(bytes, &plan, true);
+        let now = match revision_time(r.now.as_deref()) {
+            Ok(now) => now,
+            Err(diagnostic) => return CommandResult::Rejected { source, result: None, diagnostic },
+        };
+        let (report, output, failure) = fold_typed(bytes, &plan, true, now);
         if let Some((diagnostic, _)) = failure {
             return CommandResult::Rejected {
                 source,

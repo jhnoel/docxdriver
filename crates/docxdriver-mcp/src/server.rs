@@ -158,6 +158,7 @@ impl DocxServer {
                     html: input.html,
                 }),
                 expected_source: None,
+                now: None,
             }),
         ) {
             RequestResult::Command(result) => result,
@@ -196,6 +197,7 @@ impl DocxServer {
                     view: if kind == "document" { input.view } else { None },
                 }),
                 expected_source: None,
+                now: None,
             }),
         ) {
             RequestResult::Command(result) => result,
@@ -218,6 +220,7 @@ impl DocxServer {
                     view: None,
                 }),
                 expected_source: None,
+                now: None,
             }),
         ) {
             RequestResult::Command(result) => result,
@@ -249,7 +252,7 @@ impl DocxServer {
         };
         let result = match execute_request(
             Some(&document.bytes),
-            &Request::Plan(PlanRequest { plan, preview_key }),
+            &Request::Plan(PlanRequest { plan, preview_key, now: std::env::var("DOCXDRIVER_NOW").ok() }),
         ) {
             RequestResult::Plan(result) => result,
             RequestResult::Command(_) => unreachable!(),

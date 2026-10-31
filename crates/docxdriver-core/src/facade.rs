@@ -155,9 +155,16 @@ impl<'a> Document<'a> {
         }
     }
 
-    /// Applies a reviewed plan, returning the new document's bytes.
+    /// Applies a reviewed plan, returning the new document's bytes. Its
+    /// revisions and comments carry the current UTC time.
     pub fn commit(&self, plan: &Plan, key: &PreviewKey) -> Result<Vec<u8>, Diagnostic> {
-        match self.execute(plan, Some(key.clone())) {
+        self.commit_at(plan, key, None)
+    }
+
+    /// [`Document::commit`] at a fixed time (`YYYY-MM-DDTHH:MM:SSZ`), for
+    /// byte-stable output; `None` is the current UTC time.
+    pub fn commit_at(&self, plan: &Plan, key: &PreviewKey, now: Option<&str>) -> Result<Vec<u8>, Diagnostic> {
+        match execute_plan(self.bytes, &PlanRequest { plan: plan.clone(), preview_key: Some(key.clone()), now: now.map(str::to_owned) }) {
             PlanResult::Committed { bytes, .. } => Ok(bytes),
             PlanResult::Previewed { .. } => Err(engine("commit only previewed")),
             PlanResult::Rejected { diagnostic, .. } => Err(diagnostic),
@@ -165,7 +172,7 @@ impl<'a> Document<'a> {
     }
 
     fn execute(&self, plan: &Plan, preview_key: Option<PreviewKey>) -> PlanResult {
-        execute_plan(self.bytes, &PlanRequest { plan: plan.clone(), preview_key })
+        execute_plan(self.bytes, &PlanRequest { plan: plan.clone(), preview_key, now: None })
     }
 
     // One listing read, e.g. "comments" → result["comments"].
@@ -180,7 +187,7 @@ impl<'a> Document<'a> {
 }
 
 fn run(input: Option<&[u8]>, command: Command) -> CommandResult {
-    execute_command(input, &CommandRequest { command, expected_source: None })
+    execute_command(input, &CommandRequest { command, expected_source: None, now: None })
 }
 
 fn completed(result: CommandResult) -> Result<Value, Diagnostic> {

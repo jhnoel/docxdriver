@@ -247,6 +247,13 @@
             }
           ],
           "default": null
+        },
+        "now": {
+          "description": "As [`PlanRequest::now`], for an `edit` command.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
@@ -686,6 +693,11 @@
     "PlanRequest": {
       "additionalProperties": false,
       "properties": {
+        "now": {
+          "description": "Revision and comment time (UTC, second precision); omitted, the current time.",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$",
+          "type": "string"
+        },
         "plan": {
           "$ref": "#/$defs/Plan"
         },
@@ -844,6 +856,40 @@
         "reject"
       ],
       "type": "string"
+    },
+    "RevisionSelector": {
+      "oneOf": [
+        {
+          "const": "all",
+          "type": "string"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[0-9]+$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "author": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "author"
+          ],
+          "type": "object"
+        }
+      ]
     },
     "RevisionTarget": {
       "pattern": "^(?:all|[0-9]+)$",
@@ -1439,7 +1485,7 @@
       "oneOf": [
         {
           "additionalProperties": false,
-          "description": "Replace one current equation without matching reconstructed LaTeX.",
+          "description": "Replace one current equation without matching reconstructed LaTeX. Tracked: the old equation deleted, the new one inserted. Direct: replaced.",
           "properties": {
             "at": {
               "$ref": "#/$defs/ParagraphAddress"
@@ -1479,7 +1525,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Delete one current equation while preserving the surrounding paragraph.",
+          "description": "Delete one current equation while preserving the surrounding paragraph. Tracked: a tracked deletion. Direct: removed.",
           "properties": {
             "at": {
               "$ref": "#/$defs/ParagraphAddress"
@@ -1508,6 +1554,7 @@
         },
         {
           "additionalProperties": false,
+          "description": "Tracked: w:del / w:ins (the author's own pending insertion is edited in place). Direct: replaced, no revision.",
           "properties": {
             "at": {
               "$ref": "#/$defs/ParagraphAddress"
@@ -1544,7 +1591,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Several exact replacements inside one bounded scope: the paragraph `at`, the unique `within` span (in `at`, or anywhere in the body when `at` is omitted), or the whole body. Every edit resolves against the scope as it stands when this operation starts.",
+          "description": "Several exact replacements inside one bounded scope: the paragraph `at`, the unique `within` span (in `at`, or anywhere in the body when `at` is omitted), or the whole body. Every edit resolves against the scope as it stands when this operation starts. Tracked: w:del / w:ins per edit. Direct: replaced, no revision.",
           "properties": {
             "at": {
               "anyOf": [
@@ -1594,6 +1641,7 @@
         },
         {
           "additionalProperties": false,
+          "description": "Tracked: old content deleted, new inserted. Direct: replaced, no revision.",
           "properties": {
             "at": {
               "$ref": "#/$defs/ParagraphAddress"
@@ -1617,6 +1665,7 @@
         },
         {
           "additionalProperties": false,
+          "description": "Tracked: `insert_rows`, `delete_rows` and `delete` are row insertions/deletions (w:trPr/w:ins|w:del, deleted cell content; the author's own inserted rows go outright); `insert_columns`, `delete_columns`, `merge_cells` and `split_cell` are refused (Word does not track them). Direct: applied, no revision.",
           "properties": {
             "action": {
               "$ref": "#/$defs/TableEdit"
@@ -1640,7 +1689,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "A `rows` × `columns` grid of new cells. `cells` fills them row by row with the inline content `insert_paragraph`'s `with` accepts; missing trailing rows and cells stay empty. With `as`, cell row N column M is the paragraph alias `$<as>_rNcM` for later operations.",
+          "description": "A `rows` × `columns` grid of new cells. `cells` fills them row by row with the inline content `insert_paragraph`'s `with` accepts; missing trailing rows and cells stay empty. With `as`, cell row N column M is the paragraph alias `$<as>_rNcM` for later operations. Tracked: an inserted table (every row w:trPr/w:ins, cell content w:ins); refused as the last block of a table cell. Direct: inserted, no revision.",
           "properties": {
             "as": {
               "default": null,
@@ -1696,6 +1745,7 @@
         },
         {
           "additionalProperties": false,
+          "description": "Tracked: w:tblPrChange. Direct: applied, no revision.",
           "properties": {
             "at": {
               "type": "string"
@@ -1719,6 +1769,7 @@
         },
         {
           "additionalProperties": false,
+          "description": "Tracked: w:trPrChange. Direct: applied, no revision.",
           "properties": {
             "at": {
               "type": "string"
@@ -1742,6 +1793,7 @@
         },
         {
           "additionalProperties": false,
+          "description": "Tracked: w:tcPrChange. Direct: applied, no revision.",
           "properties": {
             "at": {
               "type": "string"
@@ -1765,6 +1817,7 @@
         },
         {
           "additionalProperties": false,
+          "description": "Tracked: w:rPrChange. Direct: applied, no revision.",
           "properties": {
             "at": {
               "$ref": "#/$defs/ParagraphAddress"
@@ -1875,6 +1928,7 @@
         },
         {
           "additionalProperties": false,
+          "description": "Tracked: w:pPrChange. Direct: applied, no revision.",
           "properties": {
             "alignment": {
               "default": null,
@@ -1981,7 +2035,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Assign selected paragraphs to a new or existing list. `remove` explicitly suppresses inherited numbering; new definitions remain after rejection.",
+          "description": "Assign selected paragraphs to a new or existing list. `remove` explicitly suppresses inherited numbering. Tracked: w:pPrChange; rejecting it also removes the list definitions it added once nothing refers to them (definitions the input already left unreferenced stay). Direct: applied, no revision.",
           "properties": {
             "at": {
               "items": {
@@ -2049,7 +2103,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "One paragraph, or with a list `with`, one per item in list order. With `as`, a single paragraph is `$<as>`; for a list, `$<as>` is the group (expanded in paragraph lists, its first or last paragraph as an insert anchor) and item N is `$<as>_N`.",
+          "description": "One paragraph, or with a list `with`, one per item in list order. With `as`, a single paragraph is `$<as>`; for a list, `$<as>` is the group (expanded in paragraph lists, its first or last paragraph as an insert anchor) and item N is `$<as>_N`. Without `style`, a new paragraph takes the paragraph properties of a paragraph anchor (style, numbering, indents, spacing; not its mark's run properties, section properties or pending changes), as Word's Enter does: inserted into a list it is a list item. After a paragraph whose style names a different next style (a heading), it takes that style instead. Tracked: inserted content and paragraph mark; reject-all removes the paragraph. Direct: inserted, no revision.",
           "properties": {
             "as": {
               "default": null,
@@ -2095,6 +2149,7 @@
         },
         {
           "additionalProperties": false,
+          "description": "Tracked: content and paragraph mark deleted; accept-all leaves the following paragraph's id and properties as they were. A paragraph whose mark cannot join forward (the last of the body, one before a table, one ending a section) takes the previous paragraph's mark instead, as Word does: it gets that paragraph's properties (its own in a pPrChange) and keeps its section properties, and accept-all leaves the previous paragraph, with its id, in its place. Where no previous paragraph can join (a table or another author's mark revision before it) it is left empty. Direct: the same edit accepted, no revision.",
           "properties": {
             "at": {
               "items": {
@@ -2117,6 +2172,7 @@
         },
         {
           "additionalProperties": false,
+          "description": "Tracked: w:sectPrChange. Direct: applied, no revision.",
           "properties": {
             "bottom": {
               "anyOf": [
@@ -2218,7 +2274,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Selective section-property edits. Dimensions are points; omitted fields preserve source.",
+          "description": "Selective section-property edits. Dimensions are points; omitted fields preserve source. Refused in track mode: Word records no revision for adding or removing a section break. Direct only.",
           "properties": {
             "at": {
               "$ref": "#/$defs/ParagraphAddress"
@@ -2249,6 +2305,7 @@
         },
         {
           "additionalProperties": false,
+          "description": "Tracked: w:sectPrChange. Direct: applied, no revision.",
           "properties": {
             "break_type": {
               "default": null,
@@ -2383,6 +2440,7 @@
         },
         {
           "additionalProperties": false,
+          "description": "Tracked: w:sectPrChange. Direct: applied, no revision.",
           "properties": {
             "enabled": {
               "type": "boolean"
@@ -2411,6 +2469,7 @@
         },
         {
           "additionalProperties": false,
+          "description": "Refused in track mode: a document setting (settings.xml) Word records no revision for. Direct only.",
           "properties": {
             "even_and_odd": {
               "type": "boolean"
@@ -2430,6 +2489,7 @@
         },
         {
           "additionalProperties": false,
+          "description": "Tracked: the old content a tracked deletion and the new a tracked insertion (simple fields written as complex field runs); a new header's part and reference cannot be tracked, so reject-all leaves it empty. `kind: first` records titlePg in a w:sectPrChange; `kind: even` is refused while even/odd headers are off. Direct: replaced, no revision.",
           "properties": {
             "kind": {
               "anyOf": [
@@ -2469,6 +2529,7 @@
         },
         {
           "additionalProperties": false,
+          "description": "Tracked and direct as `set_header`.",
           "properties": {
             "kind": {
               "anyOf": [
@@ -2508,6 +2569,7 @@
         },
         {
           "additionalProperties": false,
+          "description": "Tracked: the content becomes a tracked deletion and the (then empty) header stays referenced; refused after section 1, where removing a reference changes inheritance. Direct: the reference is removed.",
           "properties": {
             "kind": {
               "anyOf": [
@@ -2543,6 +2605,7 @@
         },
         {
           "additionalProperties": false,
+          "description": "Tracked and direct as `clear_header`.",
           "properties": {
             "kind": {
               "anyOf": [
@@ -2578,6 +2641,7 @@
         },
         {
           "additionalProperties": false,
+          "description": "Applied directly in both change modes: Word does not track comments.",
           "properties": {
             "at": {
               "$ref": "#/$defs/ParagraphAddress"
@@ -2617,6 +2681,7 @@
         },
         {
           "additionalProperties": false,
+          "description": "Applied directly in both change modes: Word does not track comments.",
           "properties": {
             "comment_id": {
               "type": "string"
@@ -2640,6 +2705,7 @@
         },
         {
           "additionalProperties": false,
+          "description": "Applied directly in both change modes: Word does not track comments.",
           "properties": {
             "comment_id": {
               "type": "string"
@@ -2663,6 +2729,7 @@
         },
         {
           "additionalProperties": false,
+          "description": "Applied directly in both change modes: Word does not track comments.",
           "properties": {
             "comment_id": {
               "type": "string"
@@ -2722,7 +2789,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Rename a body bookmark; `new_name` follows the add rules.",
+          "description": "Rename a body bookmark; `new_name` follows the add rules. Applied directly in both change modes (Word does not track bookmarks).",
           "properties": {
             "name": {
               "type": "string"
@@ -2746,7 +2813,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Re-anchor a body bookmark, keeping its name and `w:id`.",
+          "description": "Re-anchor a body bookmark, keeping its name and `w:id`. Applied directly in both change modes (Word does not track bookmarks).",
           "properties": {
             "at": {
               "$ref": "#/$defs/ParagraphAddress"
@@ -2786,7 +2853,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Remove a body bookmark's start and end markers; the text stays.",
+          "description": "Remove a body bookmark's start and end markers; the text stays. Applied directly in both change modes (Word does not track bookmarks).",
           "properties": {
             "name": {
               "type": "string"
@@ -2806,6 +2873,7 @@
         },
         {
           "additionalProperties": false,
+          "description": "Settles revisions in both change modes; it writes none.",
           "properties": {
             "action": {
               "$ref": "#/$defs/RevisionAction"
@@ -2822,6 +2890,35 @@
           },
           "required": [
             "action",
+            "op",
+            "target"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Turn tracked changes into amendment formatting (37 CFR 1.121): an insertion's text stays, underlined; a deletion's text comes back, struck through; no revision is left. A deleted paragraph mark stays (the paragraph's struck text keeps its own line); an inserted paragraph stays with its text underlined; inserted and deleted table rows stay, their text underlined or struck. Formatting, table and section property changes have no amendment form and are accepted. Moves convert as deletion (source) and insertion (destination). Existing underline and strike are kept. `target` is `\"all\"`, `{\"id\": ...}` or `{\"author\": ...}`; `at` limits it to revisions in those body paragraphs. Settles revisions, so it writes none of its own in either change mode.",
+          "properties": {
+            "at": {
+              "items": {
+                "$ref": "#/$defs/ParagraphAddress"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "op": {
+              "enum": [
+                "convert_revisions_to_formatting"
+              ],
+              "type": "string"
+            },
+            "target": {
+              "$ref": "#/$defs/RevisionSelector"
+            }
+          },
+          "required": [
             "op",
             "target"
           ],

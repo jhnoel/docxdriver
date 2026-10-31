@@ -82,7 +82,7 @@ pub(crate) fn boundary(
     tracked: bool,
 ) -> Result<(String, Value), Outcome> {
     if tracked {
-        return Err(Outcome::blocked("section boundary edits require change_mode=direct; structural section revisions are unsupported"));
+        return Err(Outcome::blocked("set_section_boundary cannot be tracked: Word records no revision for adding or removing a section break; use a change_mode=direct plan"));
     }
     let p = super::typed::resolve_paragraph_by_para_id(x, pkg, source, at)?;
     if x.doc.parent(p) != x.body() {

@@ -191,6 +191,18 @@ pub(crate) fn run_typed_edit(
     }
     let before = state.xml.revision_checkpoint();
     let outcome = run_typed_edit_inner(state, &resolved, author, mode, index, source, seed, ctx);
+    // A direct edit leaves no revision: operations that only write the
+    // tracked form (formatting records, paragraph deletion) are settled
+    // here, so direct output is exactly the accepted tracked output.
+    let mut outcome = outcome;
+    if mode == crate::api::ChangeMode::Direct && outcome.status == crate::outcome::Status::Ok {
+        revisions::accept_new_revisions(&mut state.xml, before, author);
+        if let Some(Value::Object(result)) = outcome.result.as_mut() {
+            if result.get("tracked") == Some(&Value::Bool(true)) {
+                result.insert("tracked".into(), Value::Bool(false));
+            }
+        }
+    }
     state.xml.renumber_allocated_revision_ids(before);
     if matches!(op, EditOp::EditTable { .. } | EditOp::InsertTable { .. } | EditOp::DeleteParagraphs { .. } | EditOp::ReplaceParagraph { .. }) {
         state.table_positions = table_positions(&state.xml);
@@ -326,12 +338,12 @@ fn run_typed_edit_inner(
             })
         }
         EditOp::EditTable { at, action } => {
-            mutate(state, |pkg, xml, _source| table_structure::edit(pkg, xml, at, action, tracked))
+            mutate(state, |pkg, xml, _source| table_structure::edit(pkg, xml, at, action, tracked.then_some((author, ctx))))
         }
         EditOp::InsertTable { at, position, rows, columns, cells, .. } => {
             let at = para_id!(at);
             let cells = cells.as_deref().unwrap_or_default();
-            mutate(state, |pkg, xml, source| table_structure::insert(pkg, xml, source, &at, *position, *rows, *columns, cells, tracked, &plan_seed, index))
+            mutate(state, |pkg, xml, source| table_structure::insert(pkg, xml, source, &at, *position, *rows, *columns, cells, tracked.then_some((author, ctx)), &plan_seed, index))
         }
         EditOp::FormatTable { at, format } => mutate(state, |pkg, xml, _| tables::format_table(Some(pkg), xml, at, format, tracked, author, ctx)),
         EditOp::FormatRow { at, format } => mutate(state, |_, xml, _| tables::format_row(xml, at, format, tracked, author, ctx)),
@@ -479,6 +491,7 @@ fn run_typed_edit_inner(
             let args = typed::DeleteParagraphsArgs {
                 at: targets,
                 author: author.into(),
+                tracked,
             };
             mutate(state, |pkg, xml, source| {
                 typed::delete_paragraphs_typed(pkg, xml, &args, ctx, source)
@@ -505,6 +518,9 @@ fn run_typed_edit_inner(
                 header.map(|p| p.0),
                 footer.map(|p| p.0),
                 gutter.map(|p| p.0),
+                tracked,
+                author,
+                ctx,
             )
         }),
         EditOp::SetSectionLayout { section, section_handle, .. } => mutate(state, |pkg, xml, source| {
@@ -517,6 +533,11 @@ fn run_typed_edit_inner(
         EditOp::SetFirstPageMode { section, enabled } => mutate(state, |_pkg, xml, _| {
             layout::set_first_page_mode(xml, section.unwrap_or(1) as usize, *enabled, tracked, author, ctx)
         }),
+        // Word cannot track a document setting: refuse rather than apply it
+        // unmarked.
+        EditOp::SetEvenAndOddHeaders { .. } if tracked => Outcome::error(
+            "set_even_and_odd_headers cannot be tracked: it changes a document setting (w:evenAndOddHeaders in settings.xml), which Word records no revision for; run it in a change_mode=direct plan",
+        ),
         EditOp::SetEvenAndOddHeaders { even_and_odd } => mutate(state, |pkg, xml, _| {
             headers::set_even_and_odd_headers_typed(pkg, xml, *even_and_odd)
         }),
@@ -531,6 +552,7 @@ fn run_typed_edit_inner(
                 section.unwrap_or(1) as usize,
                 ChromeKind::resolve(*kind),
                 with,
+                tracked.then_some((author, ctx)),
             )
         }),
         EditOp::SetFooter {
@@ -544,6 +566,7 @@ fn run_typed_edit_inner(
                 section.unwrap_or(1) as usize,
                 ChromeKind::resolve(*kind),
                 with,
+                tracked.then_some((author, ctx)),
             )
         }),
         EditOp::ClearHeader { section, kind } => mutate(state, |pkg, xml, _| {
@@ -552,6 +575,7 @@ fn run_typed_edit_inner(
                 xml,
                 section.unwrap_or(1) as usize,
                 ChromeKind::resolve(*kind),
+                tracked.then_some((author, ctx)),
             )
         }),
         EditOp::ClearFooter { section, kind } => mutate(state, |pkg, xml, _| {
@@ -560,6 +584,7 @@ fn run_typed_edit_inner(
                 xml,
                 section.unwrap_or(1) as usize,
                 ChromeKind::resolve(*kind),
+                tracked.then_some((author, ctx)),
             )
         }),
         EditOp::CommentAdd {
@@ -612,7 +637,20 @@ fn run_typed_edit_inner(
             })
         }
         EditOp::BookmarkDelete { name } => mutate(state, |pkg, xml, _| bookmarks::delete(pkg, xml, name)),
-        EditOp::RevisionSettle { target, action } => match target {
+        EditOp::ConvertRevisionsToFormatting { target, at } => {
+            let mut paragraphs = None;
+            if let Some(at) = at {
+                let mut ids = Vec::new();
+                for address in at {
+                    ids.push(para_id!(address));
+                }
+                paragraphs = Some(ids);
+            }
+            mutate(state, |pkg, xml, source| revisions::convert_to_formatting(pkg, xml, source, target, paragraphs.as_deref()))
+        }
+        // The list cache writes numbering.xml at the end of the plan; flush
+        // and drop it so settling sees, and may prune, the current part.
+        EditOp::RevisionSettle { target, action } => match { state.flush_lists(); state.list_state = None; target } {
             RevisionTarget::All => mutate(state, |pkg, xml, _| {
                 revisions::accept_reject_all(pkg, xml, matches!(action, RevisionAction::Accept))
             }),

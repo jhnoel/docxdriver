@@ -149,6 +149,7 @@ mod tests {
             1,
             ChromeKind::Default,
             "<p>Acme Inc</p>",
+            None,
         )
         .unwrap();
         let map = chrome_map(&state.package, &state.xml);

@@ -37,7 +37,7 @@ fn main() {
         .collect();
     let plan = Plan { base: SourceHash::from_bytes(&bytes), author: "bench".into(), change_mode: ChangeMode::Track, ops: operations };
     let t = Instant::now();
-    let result = execute_plan(&bytes, &PlanRequest { plan, preview_key: None });
+    let result = execute_plan(&bytes, &PlanRequest { plan, preview_key: None, now: None });
     let ok = matches!(result, PlanResult::Previewed { .. });
     println!("paras={paras} ops={ops} previewed={ok} elapsed={:?}", t.elapsed());
 }

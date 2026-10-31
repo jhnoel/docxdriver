@@ -7,9 +7,11 @@
 //! `w:numPr` or the paragraph style's `w:basedOn` chain, counters chained by
 //! **abstractNumId** (two `w:num` instances sharing an abstract list continue
 //! one running count), `startOverride` restarting once per (numId, level)
-//! instance, and `lvlOverride` honoured as a full level replacement. Shared
-//! scope limits: raw `w:p` document order (no per-view recount around tracked
-//! paragraph marks), no `lvlRestart` beyond the reset-deeper default, no
+//! instance, and `lvlOverride` honoured as a full level replacement. The
+//! final and original views count the paragraphs accept-all and reject-all
+//! leave: a paragraph whose mark those settle away is not counted, and the
+//! original view numbers paragraphs by their pre-change properties. Scope
+//! limits: no `lvlRestart` beyond the reset-deeper default, no
 //! LISTNUM fields, no `numStyleLink` indirection. One deliberate deviation:
 //! every bullet renders as the canonical `•`, not the symbol-font glyph.
 
@@ -20,11 +22,35 @@ use xmloxide::tree::NodeId;
 use crate::document::DocxXml;
 use crate::package::Package;
 
+use super::render::RenderView;
+
+/// Whether settling `view`'s revisions takes `paragraph`'s mark away, so
+/// the paragraph is not one of that view's paragraphs: accept-all joins a
+/// paragraph with a deleted mark into the next, and reject-all does that
+/// with an inserted mark (or drops the paragraph when nothing joins it).
+pub(crate) fn settled_away(xml: &DocxXml, paragraph: NodeId, view: RenderView) -> bool {
+    match view {
+        RenderView::Markup => false,
+        RenderView::Final => {
+            xml.paragraph_mark_del(paragraph).is_some() && xml.paragraph_join_target(paragraph).is_some()
+        }
+        RenderView::Original => {
+            xml.paragraph_mark_ins(paragraph).is_some()
+                && (xml.paragraph_join_target(paragraph).is_some() || xml.rejected_insertion_vanishes(paragraph))
+        }
+    }
+}
+
 /// Numbering/styles paths siblings of the main document part (usually
 /// `word/document.xml`, but OPC discovers the real name via the package rels).
 struct PartPaths {
     numbering: String,
     styles: String,
+}
+
+/// The numbering part of the package's main document.
+pub(crate) fn numbering_part_name(package: &Package) -> String {
+    part_paths(package).numbering
 }
 
 fn part_paths(package: &Package) -> PartPaths {
@@ -71,6 +97,18 @@ pub struct RenderCtx {
 }
 
 impl RenderCtx {
+    /// List membership and labels as `view` shows them: the final and
+    /// original views number only the paragraphs accept-all and reject-all
+    /// leave, by the properties those leave.
+    pub fn for_view(mut self, package: &Package, xml: &DocxXml, view: RenderView) -> RenderCtx {
+        if view != RenderView::Markup {
+            let scope = xml.body().or_else(|| xml.doc.root_element());
+            self.lists = list_info(package, xml, scope, view);
+            self.markers = list_markers(package, xml, scope, view);
+        }
+        self
+    }
+
     pub fn note_dom_id(&self, kind: &str, id: &str) -> String {
         format!("docx-{}-{kind}-{id}", self.note_scope)
     }
@@ -149,8 +187,8 @@ impl RenderCtx {
             styles: super::styles::Styles::load(package),
             table_handles: crate::commands::table_positions(xml),
             math_limits: super::omml_mathml::Limits::load(package),
-            lists: list_info(package, xml, scope),
-            markers: list_markers(package, xml, scope),
+            lists: list_info(package, xml, scope, RenderView::Markup),
+            markers: list_markers(package, xml, scope, RenderView::Markup),
             notes,
             repairs,
             para_ids,
@@ -457,9 +495,10 @@ fn paragraph_numbering(
     xml: &DocxXml,
     tables: &NumberingTables,
     paragraph: NodeId,
+    view: RenderView,
 ) -> Option<(String, u32)> {
     if let Some(membership) = continuation_membership(xml, paragraph) { return Some(membership); }
-    let ppr = xml.doc.children(paragraph).find(|&n| xml.is_w(n, "pPr"))?;
+    let ppr = super::styles::property_bag(xml, paragraph, "pPr", view == RenderView::Original)?;
     if let Some(numpr) = xml.doc.children(ppr).find(|&n| xml.is_w(n, "numPr")) {
         let mut num_id = None;
         let mut ilvl = 0u32;
@@ -477,7 +516,7 @@ fn paragraph_numbering(
             return Some((num_id, ilvl));
         }
     }
-    let style_id = xml.paragraph_style(paragraph)?;
+    let style_id = xml.child_w(ppr, "pStyle").and_then(|style| xml.attr(style, "val"))?.to_string();
     tables.resolve_style(&style_id)
 }
 
@@ -485,6 +524,7 @@ fn list_markers(
     package: &Package,
     xml: &DocxXml,
     scope: Option<NodeId>,
+    view: RenderView,
 ) -> HashMap<NodeId, String> {
     let mut markers = HashMap::new();
     let Some(scope) = scope else { return markers };
@@ -509,7 +549,10 @@ fn list_markers(
         .map(|paragraph| paragraph.node)
         .collect();
     for paragraph in paragraphs {
-        let Some((num_id, level)) = paragraph_numbering(xml, &tables, paragraph) else {
+        if settled_away(xml, paragraph, view) {
+            continue;
+        }
+        let Some((num_id, level)) = paragraph_numbering(xml, &tables, paragraph, view) else {
             continue;
         };
         if continuation_membership(xml, paragraph).is_some() { continue; }
@@ -675,7 +718,7 @@ pub struct ListInfo {
     pub start: i64,
     pub continued: bool,
 }
-fn list_info(package: &Package, xml: &DocxXml, scope: Option<NodeId>) -> HashMap<NodeId, ListInfo> {
+fn list_info(package: &Package, xml: &DocxXml, scope: Option<NodeId>, view: RenderView) -> HashMap<NodeId, ListInfo> {
     let (abstracts, nums) = parse_numbering_part(package);
     let tables = NumberingTables {
         abstracts,
@@ -686,7 +729,10 @@ fn list_info(package: &Package, xml: &DocxXml, scope: Option<NodeId>) -> HashMap
     let mut out = HashMap::new();
     if let Some(scope) = scope {
         for p in xml.paragraphs_in(scope) {
-            if let Some((id, level)) = paragraph_numbering(xml, &tables, p.node) {
+            if settled_away(xml, p.node, view) {
+                continue;
+            }
+            if let Some((id, level)) = paragraph_numbering(xml, &tables, p.node, view) {
                 if let Some(def) = tables.effective_level(&id, level) {
                     let continuation = continuation_membership(xml, p.node).is_some();
                     if !continuation {
