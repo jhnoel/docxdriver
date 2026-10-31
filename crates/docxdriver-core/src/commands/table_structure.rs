@@ -550,7 +550,7 @@ pub fn insert(
     }
     match position {
         InsertPosition::Before => x.doc.insert_before(p, t),
-        InsertPosition::After => x.doc.insert_after(p, t),
+        InsertPosition::After => x.insert_after_in_order(p, t),
     };
     // Every cell paragraph gets a durable id now, so later operations in the
     // same plan can address the cells (as `$alias_rNcM` or by id).

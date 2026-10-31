@@ -72,7 +72,7 @@ export const PLAN_CAPABILITIES = {
     format_paragraph:
       'Apply paragraph formatting to the paragraph at `at`: `style`, `alignment` (left/center/right/justify), signed `indent_left`/`indent_right`, signed `first_line_indent` (negative for hanging, zero for an explicit zero offset), `space_before`/`space_after`, `line_spacing` (dict with `mode` multiple/exact/at_least and `value`), or `clear`. Omitted properties are untouched; clear removes direct settings and inherits styles/defaults, winning over set. Formatting changes are always tracked.',
     insert_paragraph:
-      'Insert a new paragraph before or after an anchor: paragraph id/alias (`at`) or body-level table number (`table:N` from markup); `with` is its text, `style` its style, and `as` names the new paragraph id (a `$name` alias).',
+      'Insert a new paragraph before or after an anchor: paragraph id/alias (`at`) or body-level table number (`table:N` from markup); `with` is its text, or a list of texts inserted as consecutive paragraphs in list order; `style` is the style of every new paragraph, and `as` names the new paragraph id (a `$name` alias), or with a list names the whole group `$name` and item N `$name_N`; a group expands to all its paragraphs in `set_list`/`delete_paragraphs`, anchors an insert after its last or before its first paragraph, and is rejected where one paragraph is expected. Several inserts at one anchor and position also keep plan order.',
     delete_paragraphs:
       'Delete the paragraphs listed in `at` (tracked deletion by default).',
     set_header:

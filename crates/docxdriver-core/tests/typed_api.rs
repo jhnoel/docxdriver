@@ -2557,6 +2557,82 @@ fn section_handles_survive_boundaries_and_merging_preserves_final_layout() {
 }
 
 #[test]
+fn inserts_after_one_anchor_keep_operation_order() {
+    let source=document(&[(SOURCE_ID,"First"),(SECOND_ID,"Second")]);
+    let ops:Vec<EditOp>=serde_json::from_value(serde_json::json!([
+        {"op":"insert_paragraph","at":SOURCE_ID,"position":"after","with":"One","as":"one"},
+        {"op":"insert_paragraph","at":SOURCE_ID,"position":"after","with":"Two"},
+        {"op":"insert_paragraph","at":"$one","position":"after","with":"One-b"},
+        {"op":"insert_table","at":SOURCE_ID,"position":"after","rows":1,"columns":1,"cells":[["Cell"]]},
+        {"op":"insert_paragraph","at":SOURCE_ID,"position":"after","with":"Three"},
+        {"op":"insert_paragraph","at":SECOND_ID,"position":"before","with":"Four"}
+    ])).unwrap();
+    let mut request=plan(&source,ops);request.change_mode=ChangeMode::Direct;let key=PreviewKey::new(&request);
+    let PlanResult::Committed{bytes,..}=execute_plan(&source,&PlanRequest{plan:request,preview_key:Some(key)})else{panic!("commit failed")};
+    let xml=document_xml(&bytes);
+    let order=["First","One","One-b","Two","Cell","Three","Four","Second"].map(|t|xml.find(&format!(">{t}<")).unwrap_or_else(||panic!("{t} missing: {xml}")));
+    assert!(order.windows(2).all(|w|w[0]<w[1]),"{xml}");
+}
+
+#[test]
+fn insert_paragraph_list_inserts_in_order_and_binds_item_aliases() {
+    let source=document(&[(SOURCE_ID,"First"),(SECOND_ID,"Second")]);
+    let ops:Vec<EditOp>=serde_json::from_value(serde_json::json!([
+        {"op":"insert_paragraph","at":SOURCE_ID,"position":"after","with":["A","<b>B</b>","C"],"as":"items"},
+        {"op":"insert_paragraph","at":SECOND_ID,"position":"before","with":["D","E"]},
+        {"op":"replace_text","at":"$items_2","select":"B","with":"Bee"}
+    ])).unwrap();
+    let request=plan(&source,ops);
+    let PlanResult::Previewed{report,..}=execute_plan(&source,&PlanRequest{plan:request.clone(),preview_key:None})else{panic!("review failed")};
+    assert_eq!(report.allocated_ids.len(),3,"{report:?}");
+    for n in 1..=3 {assert!(report.aliases.iter().any(|(name,_)|name==&format!("items_{n}")),"{report:?}");}
+    assert!(!report.aliases.iter().any(|(name,_)|name=="items"),"{report:?}");
+    let bytes=commit_plan(&source,request.ops);
+    let xml=document_xml(&bytes);
+    let order=["First","A","Bee","C","D","E","Second"].map(|t|xml.find(&format!(">{t}<")).unwrap_or_else(||panic!("{t} missing: {xml}")));
+    assert!(order.windows(2).all(|w|w[0]<w[1]),"{xml}");
+    assert_eq!(xml.matches("<w:p ").count(),7,"{xml}");
+
+    let empty:Result<Vec<EditOp>,_>=serde_json::from_value(serde_json::json!([{"op":"insert_paragraph","at":SOURCE_ID,"position":"after","with":[]}]));
+    let rejected=empty.map(|ops|execute_plan(&source,&PlanRequest{plan:plan(&source,ops),preview_key:None}));
+    assert!(!matches!(rejected,Ok(PlanResult::Previewed{..})),"{rejected:?}");
+    let wrong:Result<EditOp,_>=serde_json::from_value(serde_json::json!({"op":"insert_paragraph","at":SOURCE_ID,"position":"after","with":[1]}));
+    assert!(wrong.unwrap_err().to_string().contains("with must be a string or a list of strings"));
+}
+
+#[test]
+fn list_insert_alias_names_the_group() {
+    let source=document(&[(SOURCE_ID,"First"),(SECOND_ID,"Second")]);
+    let direct=|ops:serde_json::Value|{let mut p=plan(&source,serde_json::from_value(ops).unwrap());p.change_mode=ChangeMode::Direct;p};
+    let insert=serde_json::json!({"op":"insert_paragraph","at":SOURCE_ID,"position":"after","with":["A","B","C"],"as":"g"});
+
+    let request=direct(serde_json::json!([insert,
+        {"op":"insert_paragraph","at":"$g","position":"after","with":"After"},
+        {"op":"insert_paragraph","at":"$g","position":"before","with":"Before"},
+        {"op":"set_list","at":["$g"],"format":"bullet"}]));
+    let key=PreviewKey::new(&request);
+    let PlanResult::Committed{bytes,report,..}=execute_plan(&source,&PlanRequest{plan:request,preview_key:Some(key)})else{panic!("commit failed")};
+    assert_eq!(report.groups["g"].as_array().unwrap().len(),3,"{report:?}");
+    assert!(!report.aliases.contains_key("g"),"{report:?}");
+    let xml=document_xml(&bytes);
+    let order=["First","Before","A","B","C","After","Second"].map(|t|xml.find(&format!(">{t}<")).unwrap_or_else(||panic!("{t} missing: {xml}")));
+    assert!(order.windows(2).all(|w|w[0]<w[1]),"{xml}");
+    assert_eq!(xml.matches("<w:numPr>").count(),3,"{xml}");
+
+    let request=direct(serde_json::json!([insert,{"op":"delete_paragraphs","at":["$g"]}]));
+    let key=PreviewKey::new(&request);
+    let PlanResult::Committed{bytes,..}=execute_plan(&source,&PlanRequest{plan:request,preview_key:Some(key)})else{panic!("commit failed")};
+    let xml=document_xml(&bytes);
+    assert!(["A","B","C"].iter().all(|t|xml.contains(&format!("<w:delText>{t}<"))),"{xml}");
+
+    let request=direct(serde_json::json!([insert,{"op":"format_paragraph","at":"$g","alignment":"center"}]));
+    match execute_plan(&source,&PlanRequest{plan:request,preview_key:None}) {
+        PlanResult::Rejected{diagnostic,..}=>{assert_eq!(diagnostic.code,"group_alias");assert!(diagnostic.message.contains("$g_N"),"{diagnostic:?}");}
+        other=>panic!("expected group_alias: {other:?}"),
+    }
+}
+
+#[test]
 fn section_boundary_handles_follow_inserted_paragraph_aliases() {
     let source=document(&[(SOURCE_ID,"First"),(SECOND_ID,"Second")]);
     let ops:Vec<EditOp>=serde_json::from_value(serde_json::json!([

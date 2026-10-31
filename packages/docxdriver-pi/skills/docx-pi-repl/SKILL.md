@@ -149,6 +149,12 @@ Tracked changes:
 
 `InsertParagraph` also accepts `table:N` anchors from body-level
 `<table data-docx-table="N">` markup and may set `as_="$name"` for later ops.
+For several paragraphs pass a list, `with_=["One", "<b>Two</b>"]`: they land
+in list order. With `as_="name"`, `$name` is the group and item N is
+`$name_N`: `SetList(at=["$name"], format="bullet")` lists them all, an insert
+at `$name` goes after the last (or before the first), and single-paragraph ops
+need `$name_N`. Separate inserts at
+one anchor and position also keep plan order.
 
 Create and fill a table in one plan: `InsertTable(at, position="after",
 rows=2, columns=2, as_="t", cells=[["<b>Name</b>", "<b>Role</b>"], ["Ada"]])`.

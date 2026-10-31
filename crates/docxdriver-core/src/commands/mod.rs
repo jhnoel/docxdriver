@@ -234,7 +234,7 @@ fn run_typed_edit_inner(
     ctx: &ExecCtx,
 ) -> Outcome {
     use crate::api::{
-        ChromeKind, EditOp, InsertAnchor, LineSpacing, ParagraphAddress, RevisionAction,
+        ChromeKind, EditOp, InsertAnchor, LineSpacing, ParagraphAddress, ParagraphContent, RevisionAction,
         RevisionTarget,
     };
     let id = |at: &ParagraphAddress| match at {
@@ -429,20 +429,47 @@ fn run_typed_edit_inner(
                 InsertAnchor::Paragraph(addr) => (Some(para_id!(addr)), None),
                 InsertAnchor::Table(n) => (None, Some(*n)),
             };
-            let args = typed::InsertParagraphArgs {
-                at_para,
+            let args = |with: &str, slot: usize| typed::InsertParagraphArgs {
+                at_para: at_para.clone(),
                 at_table,
                 insert_before: matches!(position, crate::api::InsertPosition::Before),
-                with: with.clone(),
+                with: with.into(),
                 style: style.clone(),
                 tracked,
                 author: author.into(),
                 plan_seed,
                 op_index: index,
+                slot: slot as u64,
             };
-            mutate(state, |pkg, xml, source| {
-                typed::insert_paragraph_typed(pkg, xml, &args, ctx, source)
-            })
+            match with {
+                ParagraphContent::One(with) => mutate(state, |pkg, xml, source| {
+                    typed::insert_paragraph_typed(pkg, xml, &args(with, 0), ctx, source)
+                }),
+                // Each item goes in at the same anchor; inserts before it
+                // and `insert_after_in_order` both keep list order.
+                ParagraphContent::Many(items) => mutate(state, |pkg, xml, source| {
+                    let mut ids = Vec::with_capacity(items.len());
+                    let mut last = Value::Null;
+                    for (slot, with) in items.iter().enumerate() {
+                        let (_, result) = typed::insert_paragraph_typed(pkg, xml, &args(with, slot), ctx, source)?;
+                        ids.push(result["paraId"].clone());
+                        last = result;
+                    }
+                    let summary = format!(
+                        "inserted {} paragraphs {} {} ({})",
+                        ids.len(),
+                        if last["before"] == true { "before" } else { "after" },
+                        last["anchor"].as_str().unwrap_or_default(),
+                        if tracked { "tracked" } else { "direct" }
+                    );
+                    Ok((summary, serde_json::json!({
+                        "paraIds": ids,
+                        "anchor": last["anchor"],
+                        "before": last["before"],
+                        "tracked": tracked,
+                    })))
+                }),
+            }
         }
         EditOp::DeleteParagraphs { at } => {
             let targets = match at.iter().map(id).collect::<Result<Vec<_>, _>>() {

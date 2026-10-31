@@ -48,6 +48,9 @@ pub struct DocxXml {
     next_revision: std::sync::atomic::AtomicU64,
     /// IDs reserved by source revisions and previous operation allocations.
     revision_ids: Option<HashSet<String>>,
+    /// Block → the last block this plan inserted after it; see
+    /// `insert_after_in_order`.
+    after_cursor: HashMap<NodeId, NodeId>,
 }
 
 /// A projected paragraph: 1-based index plus its node.
@@ -225,7 +228,27 @@ impl DocxXml {
             doc,
             next_revision: std::sync::atomic::AtomicU64::new(0),
             revision_ids: None,
+            after_cursor: HashMap::new(),
         })
+    }
+
+    /// Insert `new` after `anchor`, but after anything earlier operations
+    /// already inserted after it (or after those insertions), so blocks
+    /// inserted after one anchor keep the plan's operation order instead of
+    /// stacking in reverse.
+    pub fn insert_after_in_order(&mut self, anchor: NodeId, new: NodeId) {
+        let parent = self.doc.parent(anchor);
+        let mut target = anchor;
+        // Each cursor points at a node created later than its key, so the
+        // chain cannot cycle. A node moved or removed since ends it.
+        while let Some(&next) = self.after_cursor.get(&target) {
+            if parent.is_none() || self.doc.parent(next) != parent {
+                break;
+            }
+            target = next;
+        }
+        self.doc.insert_after(target, new);
+        self.after_cursor.insert(anchor, new);
     }
 
     pub fn serialize(&self) -> Vec<u8> {

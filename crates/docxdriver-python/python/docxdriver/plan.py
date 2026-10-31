@@ -297,7 +297,7 @@ class InsertParagraph:
     position: str
     as_: str | None = None
     style: str | None = None
-    with_: str | None = None
+    with_: str | list[str] | None = None
     def to_dict(self):
         value = {"op": "insert_paragraph"}
         if self.at is not None:

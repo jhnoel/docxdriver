@@ -2595,6 +2595,7 @@ fn allocate_insert_para_id_typed(
     source_hash: Option<[u8; 32]>,
     plan_seed: &[u8; 32],
     op_index: usize,
+    slot: u64,
 ) -> Result<String, String> {
     let mut allocator = ParaIdAllocator::new();
     for node in xml.all_paragraphs() {
@@ -2609,7 +2610,7 @@ fn allocate_insert_para_id_typed(
     seed.push(b'|');
     seed.extend_from_slice(&(op_index as u64).to_le_bytes());
     seed.push(b'|');
-    seed.extend_from_slice(&0u64.to_le_bytes());
+    seed.extend_from_slice(&slot.to_le_bytes());
     allocator.allocate(&seed).map(format_para_id)
 }
 
@@ -2673,6 +2674,9 @@ pub struct InsertParagraphArgs {
     pub author: String,
     pub plan_seed: [u8; 32],
     pub op_index: usize,
+    /// Which paragraph of the operation this is: item N of a list `with`
+    /// takes id probe slot N (from 0).
+    pub slot: u64,
 }
 
 pub fn insert_paragraph_typed(
@@ -2730,9 +2734,9 @@ pub fn insert_paragraph_typed(
     if insert_before {
         xml.doc.insert_before(anchor, new_p);
     } else {
-        xml.doc.insert_after(anchor, new_p);
+        xml.insert_after_in_order(anchor, new_p);
     }
-    let new_id = allocate_insert_para_id_typed(xml, source_hash, &args.plan_seed, args.op_index)
+    let new_id = allocate_insert_para_id_typed(xml, source_hash, &args.plan_seed, args.op_index, args.slot)
         .map_err(Outcome::error)?;
     xml.doc.set_attribute(new_p, "w14:paraId", &new_id);
     xml.ensure_w14_declared();
@@ -2816,6 +2820,7 @@ pub fn insert_paragraph(
                 .to_owned(),
             plan_seed,
             op_index: command.get("opIndex").and_then(Value::as_u64).unwrap_or(0) as usize,
+            slot: 0,
         },
         ctx,
         source_hash,

@@ -590,6 +590,20 @@
       "pattern": "^(?:[A-F0-9]{8}|\\$[A-Za-z_][A-Za-z0-9_]*)$",
       "type": "string"
     },
+    "ParagraphContent": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      ],
+      "description": "`insert_paragraph`'s `with`: one paragraph's inline content, or a list of them inserted as consecutive paragraphs in list order."
+    },
     "Plan": {
       "additionalProperties": false,
       "properties": {
@@ -635,6 +649,11 @@
           "format": "uint",
           "minimum": 0.0,
           "type": "integer"
+        },
+        "groups": {
+          "additionalProperties": true,
+          "description": "Group aliases: a list `insert_paragraph`'s `as`, naming its new paragraph ids in order.",
+          "type": "object"
         },
         "ops": {
           "items": {
@@ -2030,6 +2049,7 @@
         },
         {
           "additionalProperties": false,
+          "description": "One paragraph, or with a list `with`, one per item in list order. With `as`, a single paragraph is `$<as>`; for a list, `$<as>` is the group (expanded in paragraph lists, its first or last paragraph as an insert anchor) and item N is `$<as>_N`.",
           "properties": {
             "as": {
               "default": null,
@@ -2058,8 +2078,12 @@
               ]
             },
             "with": {
-              "default": "",
-              "type": "string"
+              "allOf": [
+                {
+                  "$ref": "#/$defs/ParagraphContent"
+                }
+              ],
+              "default": ""
             }
           },
           "required": [

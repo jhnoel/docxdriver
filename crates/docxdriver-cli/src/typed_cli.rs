@@ -548,7 +548,7 @@ pub fn dispatch(cli: Cli) -> Result<ExitCode, String> {
                 Ok(EditOp::InsertParagraph {
                     at,
                     position,
-                    with: a.with_text,
+                    with: a.with_text.into(),
                     style: a.style,
                     alias: None,
                 })
