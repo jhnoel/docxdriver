@@ -179,6 +179,13 @@ fn render_list(
     ));
     if tag == "ol" {
         out.push_str(&format!(" start=\"{}\" type=\"{kind}\"", first.value));
+        // `type` only distinguishes five formats; name the others.
+        if kind == "1" && first.format != "decimal" {
+            out.push_str(&format!(
+                " data-docx-format=\"{}\"",
+                escape_attr(&first.format)
+            ));
+        }
     }
     out.push('>');
     let identity = first.id.clone();
@@ -345,7 +352,7 @@ fn render_paragraph_group(
             out.push_str(&format!(" data-docx-break-del=\"{}\"", escape_attr(id)));
         }
     }
-    let inherited_run_css = common_run_css(xml, ctx, group, view);
+    let inherited_run_css = common_run_css(xml, &ctx.styles, group, view);
     let css = super::styles::merge_paragraph_css(
         &ctx.styles
             .paragraph_css(xml, first, view == RenderView::Original),
@@ -401,9 +408,11 @@ fn render_paragraph_group(
 /// Declarations shared by every run in the paragraph group can live on the
 /// paragraph and flow through its inline content. Keep non-inherited or
 /// context-sensitive properties on their original runs.
-fn common_run_css(
+/// Run declarations every run of `group` shares, which the projection gives
+/// on the paragraph so its bare text carries them.
+pub(crate) fn common_run_css(
     xml: &DocxXml,
-    ctx: &RenderCtx,
+    styles: &super::styles::Styles,
     group: &[NodeId],
     view: RenderView,
 ) -> BTreeMap<String, String> {
@@ -419,9 +428,7 @@ fn common_run_css(
             .descendants(paragraph)
             .filter(|&node| xml.is_w(node, "r") && nearest_paragraph(xml, node) == Some(paragraph))
         {
-            let format = ctx
-                .styles
-                .run_format(xml, run, view == RenderView::Original);
+            let format = styles.run_format(xml, run, view == RenderView::Original);
             let mut declarations =
                 super::styles::declarations(&super::styles::inline_css(format)).unwrap_or_default();
             declarations.retain(|name, _| {

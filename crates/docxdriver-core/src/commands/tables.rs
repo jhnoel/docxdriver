@@ -719,6 +719,32 @@ pub fn inventory(x: &DocxXml) -> Value {
     Value::Array(tables(x).into_iter().enumerate().map(|(i,t)|{let at=format!("table:{}",i+1);let grid=x.child_w(t,"tblGrid").map(|g|x.doc.children(g).filter(|&n|x.is_w(n,"gridCol")).map(|n|x.attr(n,"w").and_then(|v|v.parse::<i64>().ok())).collect::<Vec<_>>()).unwrap_or_default();let rows=rows(x,t).into_iter().enumerate().map(|(ri,r)|{let ra=format!("{at}/row:{}",ri+1);let cells=cells(x,r).into_iter().enumerate().map(|(ci,c)|{let p=x.child_w(c,"tcPr");let span=p.and_then(|p|x.child_w(p,"gridSpan")).and_then(|n|x.attr(n,"val")).and_then(|v|v.parse::<usize>().ok()).unwrap_or(1);let merge=p.and_then(|p|x.child_w(p,"vMerge")).map(|n|x.attr(n,"val").unwrap_or("continue"));json!({"at":format!("{ra}/cell:{}",ci+1),"physical_index":ci+1,"grid_span":span,"vertical_merge":merge,"logical":merge!=Some("continue"),"properties":properties(x,c,"tcPr")})}).collect::<Vec<_>>();json!({"at":ra,"properties":properties(x,r,"trPr"),"cells":cells})}).collect::<Vec<_>>();json!({"at":at,"grid_twips":grid,"properties":properties(x,t,"tblPr"),"rows":rows})}).collect())
 }
 
+/// The inventory without what positions already give: row and cell handles
+/// and physical indexes follow from array order (`table:T/row:R/cell:C`, all
+/// one-based), `grid_span` defaults to 1, `logical` to true, and absent
+/// `vertical_merge`/empty `properties` are omitted.
+pub fn agent_inventory(x: &DocxXml) -> Value {
+    let mut tables = inventory(x);
+    for table in tables.as_array_mut().into_iter().flatten() {
+        for row in table["rows"].as_array_mut().into_iter().flatten() {
+            let row = row.as_object_mut().unwrap();
+            row.remove("at");
+            for cell in row["cells"].as_array_mut().into_iter().flatten() {
+                let cell = cell.as_object_mut().unwrap();
+                cell.remove("at");
+                cell.remove("physical_index");
+                if cell.get("grid_span") == Some(&json!(1)) {
+                    cell.remove("grid_span");
+                }
+                if cell.get("logical") == Some(&json!(true)) {
+                    cell.remove("logical");
+                }
+            }
+        }
+    }
+    super::prune_empty(tables)
+}
+
 /// Render supported direct table geometry and formatting. Source metadata remains
 /// in the read inventory; CSS communicates intent rather than pagination.
 pub(crate) fn css(x: &DocxXml, n: NodeId, tag: &str, original: bool) -> String {

@@ -14,17 +14,22 @@ JSON Schema and TypeScript types are generated from the Rust public model.
 addressable `paragraphs`, a source fingerprint, UTF-8 `source_map` regions, and
 an `assets` manifest. This helper requests `read_kind: "document_ui"`, which
 returns one `html` fragment; block entries contain byte ranges into that fragment.
-`projection_version` is 2. Paragraph IDs and `data-docx-*`
+`projection_version` is 4. Paragraph IDs and `data-docx-*`
 attributes retain document identity; generated labels and equation text are
 excluded from `selectable_text`.
 
 Default `executeRequest` document reads return one complete HTML fragment in
-`markup`, a per-document `css` map, and a `styles` catalog of named Word styles,
-along with a source fingerprint, revision view, and equation addresses/editability.
-Direct formatting is removed from the markup and replaced by `data-docx-css`
-references; each CSS-map entry maps one reference to its declarations. Apply the
-map when rendering the fragment. Named paragraph styles remain identified by
-`data-docx-style` and are described in `styles`.
+`markup` and a `styles` catalog of named Word styles, along with a source
+fingerprint, revision view, and equation addresses/editability. Direct
+formatting stays in inline `style` attributes. Named paragraph styles are
+identified by `data-docx-style` and resolved in `styles`; a paragraph without
+`data-docx-style` uses `default_style`. A paragraph's `style` lists only the
+declarations that differ from its named style, with `prop:unset` where the
+paragraph has no value for a style declaration, and a paragraph that matches its
+style has no `style`. To render, apply each paragraph's named style beneath its
+inline style; run styles are complete. `styles` resolves only the styles the markup
+uses; `other_styles` lists the remaining style IDs, and `read_kind: "styles"`
+returns every definition.
 They include the entire document: headers, footers, notes, tables, fields,
 revisions, images and MathML. They retain comment threads and source selectors
 (`at`, `select`, `occurrence`), asset manifests linking inline image URLs to
@@ -32,9 +37,26 @@ package parts, and exact selectable text for paragraphs with revisions or
 generated objects. They omit UI byte maps, the general UI stylesheet, duplicate
 ordinary paragraph text and duplicate equation content. Ordinals and
 `contenteditable` attributes are omitted from model HTML; paragraph IDs and
-meaningful metadata remain. Direct-formatting declarations are kept in the
-separate CSS map. Full-document reads are the default; compaction never selects
-sections.
+meaningful metadata remain. A list item's first paragraph takes its number from
+the item's `data-docx-marker` rather than repeating it in `data-docx-number`, and
+note links and bodies are identified by `data-docx-note`/`data-docx-note-id`
+rather than page-scoped DOM ids. The `tables` inventory gives rows and cells by position
+(`table:T/row:R/cell:C`, one-based, counting every physical cell); cells omit
+`grid_span` when it is 1 and `logical` when it is true. `tables` and `sections`
+omit null and empty fields. Full-document reads are the default; compaction
+never selects sections.
+
+Ordered lists whose numbering format `type` cannot express (anything other than
+decimal, letters or Roman numerals) name it in `data-docx-format`, for example
+`decimalZero`.
+
+Read markup is valid edit input: its inline styles are the CSS that `with` HTML
+and `create` accept, and `prop:unset` adds nothing. Table elements take no
+`style`; use `format_table`, `format_row` or `format_cell`. In `replace_paragraph`, bare text keeps
+the run formatting every run of the paragraph shares, which the read shows on
+the paragraph; override it inline, for example with `font-weight:normal`.
+Highlights read and write as their palette color in `background-color`. Plan
+reports show affected markup as a read does.
 
 ```ts
 import { init, readHtml, renderHtmlDocument, resolveHtmlSelection, mountHtmlProjection } from "docxdriver";
@@ -150,10 +172,6 @@ original/final views, and rejects a stale source. Artifacts are saved under
 The [parity matrix](../../docs/html-projection-parity.md) covers the frozen prior
 projection, all three revision views and 28 equation cases.
 
-Model reads share repeated direct-formatting declarations through the CSS map,
-while preserving their values and associations through `data-docx-css` attributes.
-When combining fragments from different model reads, scope each fragment's CSS
-map to its own container because reference keys are document-local.
 Image `src` values use short document-local aliases; each asset entry maps `url`
 to its canonical `asset_url` and original package `parts`. Asset payload reads
 retain canonical URLs. Comment threads keep one ID and exact source selectors;

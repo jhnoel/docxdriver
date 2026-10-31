@@ -96,7 +96,7 @@ fn html(doc: &Value) -> &str {
     doc["html"].as_str().unwrap()
 }
 fn assert_html(doc: &Value) {
-    assert_eq!(doc["projection_version"], 2);
+    assert_eq!(doc["projection_version"], 4);
     assert_eq!(doc["content_type"], "text/html");
     assert!(doc.get("markup").is_none());
     let parsed = xmloxide::html5::parse_html5_full(&format!(
@@ -876,7 +876,7 @@ fn mathml_accent_writes_preserve_explicit_semantics() {
 }
 
 #[test]
-fn agent_read_separates_css_and_resolves_named_paragraph_styles() {
+fn agent_read_omits_styles_paragraphs_inherit_and_resolves_named_paragraph_styles() {
     let input = create("<h1>Title</h1><p>Body</p>");
     let styles = r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId="Base"><w:rPr><w:color w:val="123456"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Heading1"><w:basedOn w:val="Base"/><w:rPr><w:sz w:val="32"/></w:rPr></w:style><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:rPr><w:sz w:val="24"/></w:rPr></w:style></w:styles>"#;
     let input = with_parts(&input, &[("word/styles.xml", styles.into())]);
@@ -887,12 +887,18 @@ fn agent_read_separates_css_and_resolves_named_paragraph_styles() {
         };
         let markup = result["markup"].as_str().unwrap();
         assert!(markup.contains("data-docx-style=\"Heading1\""));
-        assert!(markup.contains("data-docx-style=\"Normal\""));
+        // The default style is named once, not on every paragraph.
+        assert!(!markup.contains("data-docx-style=\"Normal\""));
+        assert_eq!(result["default_style"], "Normal");
+        assert!(result["styles"]["Normal"].as_str().unwrap().contains("font-size:12pt"));
         assert!(!markup.contains(" style="));
         assert!(!markup.contains("<style"));
         assert!(result["styles"]["Heading1"].as_str().unwrap().contains("color:#123456"));
         assert!(result["styles"]["Heading1"].as_str().unwrap().contains("font-size:16pt"));
-        assert!(!result["css"].as_object().unwrap().is_empty());
+        // Unused styles are listed by ID only.
+        assert!(result["styles"].get("Base").is_none());
+        assert_eq!(result["other_styles"], serde_json::json!(["Base"]));
+        assert!(result.get("css").is_none());
     }
 }
 

@@ -9,7 +9,7 @@ export interface HtmlParagraph {
 }
 export interface HtmlAsset { url: string; mime: string; size: number; data_url?: string }
 export interface HtmlProjection {
-  projection_version: 2;
+  projection_version: 4;
   content_type: 'text/html';
   html: string;
   css: string;

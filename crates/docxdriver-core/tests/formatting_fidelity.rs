@@ -702,9 +702,13 @@ fn highlight_palette_html_and_inheritance() {
 #[test]
 fn highlight_rejects_unknown_palette_and_rgb_shading() {
     assert!(serde_json::from_value::<EditOp>(json!({"op":"format_text","at":AT,"select":"selected","highlight":"#FFFF00"})).is_err());
-    for html in ["<p><mark data-highlight=\"purple\">bad</mark></p>", "<p><span style=\"background-color:#FFFF00\">bad</span></p>"] {
+    for html in ["<p><mark data-highlight=\"purple\">bad</mark></p>", "<p><span style=\"background-color:#FFFF01\">bad</span></p>"] {
         assert!(!matches!(command(None, Command::Create(CreateCommand { html: Some(html.into()), paragraphs: vec![] })), CommandResult::Completed { bytes: Some(_), .. }));
     }
+    // Reads write highlights as their palette color, which reads back as that highlight.
+    let created = command(None, Command::Create(CreateCommand { html: Some("<p><span style=\"background-color:#FFFF00\">marked</span></p>".into()), paragraphs: vec![] }));
+    let CommandResult::Completed { bytes: Some(bytes), .. } = created else { panic!("{created:?}") };
+    assert!(String::from_utf8(parts(&bytes)["word/document.xml"].clone()).unwrap().contains("<w:highlight w:val=\"yellow\"/>"));
 }
 
 #[test]

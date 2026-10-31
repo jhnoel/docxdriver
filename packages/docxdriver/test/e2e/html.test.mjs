@@ -10,10 +10,16 @@ import { init, executeRequest, readHtml, renderHtmlDocument, resolveHtmlSelectio
 const repo = fileURLToPath(new URL('../../../../', import.meta.url));
 const artifacts = resolve(repo, 'target/html-e2e');
 
+// A paragraph's inline style lists only how it differs from its named style,
+// so the style rules sit beneath it.
 function modelCssRules(model, scope = '.docxdriver') {
-  return Object.entries(model.css ?? {})
-    .map(([key, declarations]) => `${scope} [data-docx-css="${key}"]{${declarations}}`)
-    .join('\n');
+  const blocks = ':where(p,h1,h2,h3,h4,h5,h6)';
+  const styles = Object.entries(model.styles ?? {})
+    .map(([id, declarations]) => `${scope} ${blocks}[data-docx-style="${id}"]{${declarations}}`);
+  if (model.default_style && model.styles?.[model.default_style]) {
+    styles.push(`${scope} ${blocks}:not([data-docx-style]){${model.styles[model.default_style]}}`);
+  }
+  return styles.join('\n');
 }
 
 test('native DOCX → WASM HTML → Chromium selection → source-bound edit → DOCX', { timeout: 120_000 }, async () => {
@@ -273,8 +279,8 @@ test('model CSS maps preserve browser formatting and inline asset associations',
       const ui = readHtml(bytes, 'markup');
       const model = executeRequest(bytes, {Command:{command:{kind:'read',view:'markup'}}}).result;
       if (bytes === created.bytes) {
-        assert.ok(Object.keys(model.css).length > 0);
-        assert.match(model.markup, /data-docx-css=/);
+        assert.equal(model.css, undefined);
+        assert.match(model.markup, /<span style=/);
         assert.doesNotMatch(model.markup, /<style/);
       }
       const inspect = () => ({
@@ -282,10 +288,11 @@ test('model CSS maps preserve browser formatting and inline asset associations',
         images:[...document.querySelectorAll('img')].map(img=>({alt:img.alt,width:img.width,height:img.height})),
         mathNamespaces:[...document.querySelectorAll('math')].map(math=>math.namespaceURI),
       });
-      const css = `${ui.css}\n${modelCssRules(model)}`;
-      await page.setContent(`<style>${css}</style><main class="docxdriver">${ui.html}</main>`);
+      // The UI fragment carries complete inline styles; the model fragment needs
+      // its style catalog beneath its inline differences.
+      await page.setContent(`<style>${ui.css}</style><main class="docxdriver">${ui.html}</main>`);
       const expected = await page.evaluate(inspect);
-      await page.setContent(`<style>${css}</style><main class="docxdriver">${model.markup}</main>`);
+      await page.setContent(`<style>${ui.css}\n${modelCssRules(model)}</style><main class="docxdriver">${model.markup}</main>`);
       assert.deepEqual(await page.evaluate(inspect), expected);
       for (const asset of model.assets ?? []) {
         assert.ok(ui.assets.some(a=>a.url===asset.asset_url && JSON.stringify(a.parts)===JSON.stringify(asset.parts)));
@@ -299,23 +306,17 @@ test('model CSS maps preserve browser formatting and inline asset associations',
 });
 
 
-test('document-local CSS maps stay isolated when fragments share a page', async () => {
+test('model fragments from different documents keep their formatting on one page', async () => {
   await init(await readFile(new URL('../../wasm/docxdriver_bg.wasm', import.meta.url)));
   const readModel = color => {
     const created = executeRequest(undefined, {Command:{command:{kind:'create',html:Array.from({length:30}, (_,i)=>`<p style="color:${color};font-size:14pt;margin-top:10pt;margin-bottom:20pt">Paragraph ${i}</p>`).join('')}}});
     assert.ok(created.bytes);
     return executeRequest(created.bytes, {Command:{command:{kind:'read',view:'final'}}}).result;
   };
-  const mountModel = (model, scope) => {
-    const rules = Object.entries(model.css).map(([key, declarations]) =>
-      `[data-docx-scope="${scope}"] [data-docx-css="${key}"]{${declarations}}`).join('');
-    return `<div class="docxdriver" data-docx-scope="${scope}"><style>${rules}</style>${model.markup}</div>`;
-  };
+  const mountModel = model => `<div class="docxdriver">${model.markup}</div>`;
   const redModel = readModel('#ff0000'), blueModel = readModel('#0000ff');
-  assert.match(redModel.markup, /data-docx-css=/);
-  assert.notEqual(redModel.css.dx1, blueModel.css.dx1);
   assert.equal(JSON.stringify(readModel('#ff0000')), JSON.stringify(redModel));
-  const red = mountModel(redModel, 'red'), blue = mountModel(blueModel, 'blue');
+  const red = mountModel(redModel), blue = mountModel(blueModel);
   const browser = await chromium.launch({headless:true});
   try {
     const page = await browser.newPage();

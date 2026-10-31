@@ -397,6 +397,55 @@ fn inside_ppr(xml: &DocxXml, paragraph: NodeId, mut node: NodeId) -> bool {
     false
 }
 
+/// `pieces` on top of the direct run formatting every run of `paragraph`
+/// shares. Reads give that formatting on the paragraph and leave its text
+/// bare, so bare text in a replacement keeps it, as the read showed; a
+/// piece's own formatting (including an explicit `font-weight:normal` or
+/// `font-style:normal`) wins.
+fn with_shared_run_format(
+    xml: &DocxXml,
+    package: &Package,
+    paragraph: NodeId,
+    pieces: Vec<InsPiece>,
+) -> Vec<InsPiece> {
+    use crate::html::render::{common_run_css, RenderView};
+    let styles = crate::html::styles::Styles::load(package);
+    let baseline = styles.paragraph_run_css(xml, paragraph, false);
+    let shared: String = common_run_css(xml, &styles, &[paragraph], RenderView::Markup)
+        .into_iter()
+        .filter(|(name, value)| baseline.get(name) != Some(value))
+        .map(|(name, value)| format!("{name}:{value};"))
+        .collect();
+    if shared.is_empty() {
+        return pieces;
+    }
+    let Ok(base) = crate::html::styles::apply_inline_css(Fmt::default(), &shared) else {
+        return pieces;
+    };
+    pieces
+        .into_iter()
+        .map(|piece| match piece {
+            InsPiece::Text(text, mut fmt) => {
+                fmt.color = fmt.color.or(base.color);
+                fmt.font_size = fmt.font_size.or(base.font_size);
+                fmt.font_family = fmt.font_family.or(base.font_family);
+                // Bit 1 is an explicit "not bold", bit 2 "not italic".
+                for (bit, own, inherited) in [
+                    (1, &mut fmt.bold, base.bold),
+                    (2, &mut fmt.italic, base.italic),
+                ] {
+                    if !*own && fmt.resets & bit == 0 {
+                        *own = inherited;
+                        fmt.resets |= base.resets & bit;
+                    }
+                }
+                InsPiece::Text(text, fmt)
+            }
+            other => other,
+        })
+        .collect()
+}
+
 /// Common input validation for both typed ops.
 struct OpInput {
     at: String,
@@ -1148,6 +1197,7 @@ pub fn replace_paragraph_typed(
     };
     let (pieces, link_href) = parse_with(&input.with)?;
     let paragraph = resolve_paragraph_by_para_id(xml, package, source_hash, &input.at)?;
+    let pieces = with_shared_run_format(xml, package, paragraph, pieces);
     let address = input.at.to_uppercase();
 
     if let Some(label) = paragraph_blocker(xml, paragraph) {

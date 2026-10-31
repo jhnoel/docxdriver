@@ -216,21 +216,20 @@ context, authored plans or binary data.
 
 ## Inspecting document formatting
 
-Document reads keep CSS declarations out of `ReadResult.markup`. Paragraphs
-retain their exact DOCX style ID in `data-docx-style`, including headings and
-paragraphs using the document's default style. `result.styles` maps style IDs
-to resolved CSS (including inherited properties); `result.css` maps the short
-`data-docx-css` references to effective presentation declarations, including
-direct formatting. These references are local to each read.
+Paragraphs retain their exact DOCX style ID in `data-docx-style`, including
+headings; paragraphs without one use `result.default_style`. `result.styles`
+maps the style IDs the markup uses to resolved CSS (including inherited
+properties). Direct formatting is inline `style`: a paragraph's lists only what
+differs from its named style (`prop:unset` removes a style declaration), and
+run styles are complete.
 
-The default REPL display shows catalog counts, so definitions are read only
+The default REPL display shows the catalog count, so definitions are read only
 when requested:
 
 ```python
 result = docx_read("document.docx")
 print(result)
 print(result.styles["Heading1"])
-print(result.css)
 ```
 
 `docx_read("document.docx", kind="styles")` still returns the DOCX style

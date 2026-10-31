@@ -55,8 +55,9 @@ differential checks, and `npm --prefix packages/docxdriver run test:e2e` for Chr
 checks. To regenerate the baseline, supply a reader built from the pinned prior
 commit to `scripts/generate_projection_parity.py --baseline-reader PATH`.
 
-Compact model reads retain all source content. Repeated direct-formatting
-declarations share entries in the CSS map referenced by `data-docx-css`. HTML
+Compact model reads retain all source content. Direct formatting stays in
+inline `style`; a paragraph's lists only what differs from its named style, so
+pasted markup is edit input as it stands. HTML
 parsing supplies MathML namespaces, while standalone equation metadata keeps
 its namespace declaration. Comment selectors use `selection_space` (final view,
 Unicode scalar offsets); exact selection-text exceptions accompany ambiguous

@@ -644,9 +644,9 @@ class ReadResult:
     assets: list = None
     comments_error: str = None
     styles: dict = None
-    css: dict = None
+    default_style: str = None
     def __repr__(self):
-        return "ReadResult(markup=" + repr(self.markup) + ", styles=" + str(len(self.styles or {})) + " definitions, css=" + str(len(self.css or {})) + " rules; inspect .styles and .css, equations=" + repr(self.equations) + ", selection_space=" + repr(self.selection_space) + ", selections=" + repr(self.selections) + ", comments=" + repr(self.comments) + ", assets=" + repr(self.assets) + ", comments_error=" + repr(self.comments_error) + ")"
+        return "ReadResult(markup=" + repr(self.markup) + ", styles=" + str(len(self.styles or {})) + " definitions; inspect .styles, default_style=" + repr(self.default_style) + ", equations=" + repr(self.equations) + ", selection_space=" + repr(self.selection_space) + ", selections=" + repr(self.selections) + ", comments=" + repr(self.comments) + ", assets=" + repr(self.assets) + ", comments_error=" + repr(self.comments_error) + ")"
 
 @dataclass
 class Plan:
@@ -673,7 +673,7 @@ def docx_read(path: str, view: str = "markup", kind: str = "document"):
     if kind != "document":
         raise ValueError('kind must be one of document, comments, styles, revisions, bookmarks, assets')
     result = _docx_read(path, view)
-    return ReadResult(markup=result["markup"], styles=result.get("styles", {}), css=result.get("css", {}), equations=result.get("equations", []), selection_space=result.get("selection_space"), selections=result.get("selections"), comments=result.get("comments", []), assets=result.get("assets", []), comments_error=result.get("comments_error"))
+    return ReadResult(markup=result["markup"], styles=result.get("styles", {}), default_style=result.get("default_style"), equations=result.get("equations", []), selection_space=result.get("selection_space"), selections=result.get("selections"), comments=result.get("comments", []), assets=result.get("assets", []), comments_error=result.get("comments_error"))
 
 def docx_find(path: str, query: str, ignore_case: bool = False) -> list:
     return _docx_find(path, query, ignore_case)
@@ -997,10 +997,10 @@ class ReviewResult:
     edits: list
 
 class ReadResult:
-    def __init__(self, markup: str, equations: list | None = None, selection_space: dict | None = None, selections: dict | None = None, comments: list | None = None, assets: list | None = None, comments_error: str | None = None, styles: dict | None = None, css: dict | None = None): ...
+    def __init__(self, markup: str, equations: list | None = None, selection_space: dict | None = None, selections: dict | None = None, comments: list | None = None, assets: list | None = None, comments_error: str | None = None, styles: dict | None = None, default_style: str | None = None): ...
     markup: str
     styles: dict
-    css: dict
+    default_style: str | None
     equations: list
     selection_space: dict | None
     selections: dict | None
@@ -1541,11 +1541,13 @@ current \`markup\` view.
 inspect it and build operations in Python loops. Return the full ReadResult or
 print its full markup and semantic metadata when reading; prefer complete document
 context. Named DOCX style IDs appear in data-docx-style and map one-to-one to
-ReadResult.styles (resolved CSS keyed by style ID). Presentation rules appear
-in data-docx-css and map to ReadResult.css. Both catalogs are omitted from the
-default display; inspect result.styles or result.css to read their definitions;
-when authoring a fragment, use equivalent inline formatting rather than copying
-an unresolved class. Image aliases map to canonical assets in ReadResult.assets.
+ReadResult.styles (resolved CSS keyed by style ID); a paragraph without
+data-docx-style uses ReadResult.default_style. Direct formatting is inline
+style; a paragraph's style lists only what differs from its named style
+(prop:unset removes a style declaration). The style catalog is omitted from the
+default display; inspect result.styles to read its definitions. Markup copied
+from a read is valid with HTML, and in replace_paragraph bare text keeps the
+formatting all the paragraph's runs share. Image aliases map to canonical assets in ReadResult.assets.
 ReadResult.selection_space describes comment selectors; ReadResult.selections
 provides exact text for paragraphs where generated content or revisions make
 HTML text ambiguous:

@@ -67,6 +67,12 @@ pub fn declarations(css: &str) -> Result<BTreeMap<String, String>, String> {
         {
             return Err("unsupported CSS value".into());
         }
+        // Reads write `unset` where a paragraph has no value for one of its
+        // style's declarations. Direct formatting cannot remove a style value,
+        // so it carries nothing.
+        if value.eq_ignore_ascii_case("unset") {
+            continue;
+        }
         out.insert(name, value.to_string());
     }
     Ok(out)
@@ -95,6 +101,8 @@ pub fn apply_inline_css(mut fmt: Fmt, css: &str) -> Result<Fmt, String> {
     for (name, value) in declarations(css)? {
         match name.as_str() {
             "--docx-highlight" => fmt.highlight = Some(crate::api::HighlightColor::parse(&value)?),
+            // Reads write highlights as their palette color.
+            "background-color" => fmt.highlight = Some(crate::api::HighlightColor::from_css(&value)?),
             "font-weight" => {
                 fmt.resets |= 1;
                 fmt.bold = match value.as_str() {
@@ -438,6 +446,10 @@ impl Styles {
         {
             return Some(id.into());
         }
+        self.default_paragraph_style()
+    }
+    /// The paragraph style marked `w:default`, which unstyled paragraphs use.
+    pub fn default_paragraph_style(&self) -> Option<String> {
         let styles = self.xml.as_ref()?;
         styles
             .doc
@@ -484,6 +496,14 @@ impl Styles {
             collect_css(x, p, false, &mut map);
         }
         css_string(map)
+    }
+    /// What a run without properties of its own gets in paragraph `n`.
+    pub fn paragraph_run_css(&self, x: &DocxXml, n: NodeId, original: bool) -> BTreeMap<String, String> {
+        let mut map = BTreeMap::new();
+        self.defaults(true, &mut map);
+        self.chain(self.paragraph_style(x, n, original).as_deref(), true, &mut map);
+        declarations(&inline_css(apply_inline_css(Fmt::default(), &css_string(map)).unwrap_or_default()))
+            .unwrap_or_default()
     }
     /// Resolved style CSS, keyed by the exact OOXML style ID.
     pub fn catalog(&self) -> std::collections::BTreeMap<String, String> {

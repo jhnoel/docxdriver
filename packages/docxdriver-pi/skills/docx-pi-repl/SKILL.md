@@ -280,9 +280,11 @@ Comments include thread ID, body, replies, status and source anchor ranges:
 current text. `selection_space` declares final-view Unicode scalar offsets. Use
 provided selectors rather than estimating positions from HTML.
 
-Repeated styles may use ordinary CSS classes defined once in an embedded style
-block. All formatting values remain available. For authored replacement fragments,
-use equivalent inline formatting instead of copying an unresolved class.
+Direct formatting is inline `style`; a paragraph's `style` lists only what
+differs from its `data-docx-style` (or `result.default_style`). Markup copied
+from a read can go straight into an edit's `with`. In `replace_paragraph`, bare text keeps the formatting all the
+paragraph's runs share; write `font-weight:normal` (or similar) to drop it.
+`create` cannot resolve references; write inline style there.
 Images remain inline with dimensions, descriptions and source package paths.
 `assets` maps short `url` aliases to canonical `asset_url` values and package
 `parts`. Read `kind="assets"` only when binary payloads are needed. UI coordinates

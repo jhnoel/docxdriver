@@ -972,7 +972,7 @@ export function createPlanPythonHost(
           }
           push({ kind: 'document_read', status: 'ok' });
           return {
-            styles: output.result.styles ?? {}, css: output.result.css ?? {},
+            styles: output.result.styles ?? {}, default_style: output.result.default_style ?? null,
             markup: output.result.markup, equations: output.result.equations ?? [],
             selection_space: output.result.selection_space ?? null,
             selections: output.result.selections ?? null, comments: output.result.comments ?? [],

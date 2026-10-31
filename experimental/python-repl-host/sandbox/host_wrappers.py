@@ -69,9 +69,9 @@ class ReadResult:
     assets: list = None
     comments_error: str = None
     styles: dict = None
-    css: dict = None
+    default_style: str = None
     def __repr__(self):
-        return "ReadResult(markup=" + repr(self.markup) + ", styles=" + str(len(self.styles or {})) + " definitions, css=" + str(len(self.css or {})) + " rules; inspect .styles and .css, equations=" + repr(self.equations) + ", selection_space=" + repr(self.selection_space) + ", selections=" + repr(self.selections) + ", comments=" + repr(self.comments) + ", assets=" + repr(self.assets) + ", comments_error=" + repr(self.comments_error) + ")"
+        return "ReadResult(markup=" + repr(self.markup) + ", styles=" + str(len(self.styles or {})) + " definitions; inspect .styles, default_style=" + repr(self.default_style) + ", equations=" + repr(self.equations) + ", selection_space=" + repr(self.selection_space) + ", selections=" + repr(self.selections) + ", comments=" + repr(self.comments) + ", assets=" + repr(self.assets) + ", comments_error=" + repr(self.comments_error) + ")"
 
 def docx_create(path: str, html: str):
     return _docx_create(path, html)
@@ -85,7 +85,7 @@ def docx_read(path: str, view: str = "markup", kind: str = "document"):
     if kind != "document":
         raise ValueError('kind must be one of document, comments, styles, revisions, bookmarks, assets')
     result = _docx_read(path, view)
-    return ReadResult(markup=result["markup"], styles=result.get("styles", {}), css=result.get("css", {}), equations=result.get("equations", []), selection_space=result.get("selection_space"), selections=result.get("selections"), comments=result.get("comments", []), assets=result.get("assets", []), comments_error=result.get("comments_error"))
+    return ReadResult(markup=result["markup"], styles=result.get("styles", {}), default_style=result.get("default_style"), equations=result.get("equations", []), selection_space=result.get("selection_space"), selections=result.get("selections"), comments=result.get("comments", []), assets=result.get("assets", []), comments_error=result.get("comments_error"))
 
 def docx_find(path: str, query: str, ignore_case: bool = False) -> list:
     return _docx_find(path, query, ignore_case)

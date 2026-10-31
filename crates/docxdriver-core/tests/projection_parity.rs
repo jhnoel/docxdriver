@@ -33,6 +33,15 @@ fn name(d: &Document, n: NodeId) -> &str {
 fn attr<'a>(d: &'a Document, n: NodeId, a: &str, b: &str) -> Option<&'a str> {
     d.attribute(n, a).or_else(|| d.attribute(n, b))
 }
+/// Agent markup leaves the number of an item's first paragraph to its `<li>`.
+fn item_marker(d: &Document, n: NodeId) -> Option<&str> {
+    let li = d.parent(n).filter(|&p| name(d, p) == "li")?;
+    let first = d.children(li).find(|&c| d.node_name(c).is_some())?;
+    (first == n)
+        .then(|| d.attribute(li, "data-docx-marker"))
+        .flatten()
+        .filter(|m| !m.is_empty())
+}
 fn parse(markup: &str, modern: bool) -> Document {
     let mut s = markup.to_string();
     if modern {
@@ -91,7 +100,7 @@ fn collect(markup: &str, modern: bool) -> Value {
         if matches!(tag, "p" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6")
             && d.attribute(n, "id").is_some()
         {
-            paragraphs.push(json!({"id":d.attribute(n,"id"),"ord":attr(&d,n,"data-docx-ord","ord"),"tag":tag,"style":attr(&d,n,"data-docx-style","class").map(str::to_owned).or_else(|| tag.strip_prefix('h').filter(|v| v.len() == 1 && matches!(*v, "1" | "2" | "3" | "4" | "5" | "6")).map(|v| format!("Heading{v}"))),"number":attr(&d,n,"data-docx-number","num"),"break_ins":attr(&d,n,"data-docx-break-ins","break-ins"),"break_del":attr(&d,n,"data-docx-break-del","break-del"),"text":text(&d,n)}));
+            paragraphs.push(json!({"id":d.attribute(n,"id"),"ord":attr(&d,n,"data-docx-ord","ord"),"tag":tag,"style":attr(&d,n,"data-docx-style","class").map(str::to_owned).or_else(|| tag.strip_prefix('h').filter(|v| v.len() == 1 && matches!(*v, "1" | "2" | "3" | "4" | "5" | "6")).map(|v| format!("Heading{v}"))),"number":attr(&d,n,"data-docx-number","num").or_else(|| item_marker(&d,n)),"break_ins":attr(&d,n,"data-docx-break-ins","break-ins"),"break_del":attr(&d,n,"data-docx-break-del","break-del"),"text":text(&d,n)}));
         }
         if tag == "a"
             && !d
@@ -218,9 +227,8 @@ fn compact_default_preserves_the_entire_document_in_every_view() {
         for field in ["html", "source_map", "blocks", "paragraphs"] {
             assert!(model.get(field).is_none(), "model response repeats {field}");
         }
-        assert!(model["css"].is_object());
+        assert!(model.get("css").is_none());
         assert!(model["styles"].is_object());
-        assert!(!model["markup"].as_str().unwrap().contains(" style="));
         assert!(!model["markup"].as_str().unwrap().contains("<style"));
         let mut expected = collect(ui["html"].as_str().unwrap(), true);
         let mut actual = collect(model["markup"].as_str().unwrap(), true);

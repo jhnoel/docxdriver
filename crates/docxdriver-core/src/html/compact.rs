@@ -79,7 +79,7 @@ pub fn model_html(html: &str) -> String {
         from = pos;
     }
     out.push_str(&html[from..]);
-    factor_styles(&out)
+    out
 }
 
 #[cfg(test)]
@@ -103,6 +103,27 @@ mod tests {
 /// Attribute ranges from generated start tags, respecting quoted values.
 /// Text and apparent attributes inside field instructions are never rewritten.
 fn attributes(html: &str) -> Vec<(usize, usize, String, String, bool)> {
+    tags(html)
+        .into_iter()
+        .flat_map(|tag| {
+            let has_class = tag.attrs.iter().any(|a| a.2 == "class");
+            tag.attrs
+                .into_iter()
+                .map(move |(s, e, n, v)| (s, e, n, v, has_class))
+        })
+        .collect()
+}
+
+/// A generated start tag: its name, the byte range of the whole tag, and
+/// each attribute's (start, end, name, raw value).
+struct Tag {
+    name: String,
+    start: usize,
+    end: usize,
+    attrs: Vec<(usize, usize, String, String)>,
+}
+
+fn tags(html: &str) -> Vec<Tag> {
     let b = html.as_bytes();
     let mut p = 0;
     let mut result = Vec::new();
@@ -111,10 +132,12 @@ fn attributes(html: &str) -> Vec<(usize, usize, String, String, bool)> {
             p += 1;
             continue;
         }
+        let tag_start = p;
         p += 1;
         while p < b.len() && !b[p].is_ascii_whitespace() && b[p] != b'>' {
             p += 1;
         }
+        let tag_name = html[tag_start + 1..p].trim_end_matches('/').to_string();
         let mut tag_attrs = Vec::new();
         while p < b.len() && b[p] != b'>' {
             let start = p;
@@ -163,15 +186,15 @@ fn attributes(html: &str) -> Vec<(usize, usize, String, String, bool)> {
             }
             tag_attrs.push((start, p, name.to_string(), value.to_string()));
         }
-        let has_class = tag_attrs.iter().any(|a| a.2 == "class");
-        result.extend(
-            tag_attrs
-                .into_iter()
-                .map(|(s, e, n, v)| (s, e, n, v, has_class)),
-        );
         if p < b.len() {
             p += 1;
         }
+        result.push(Tag {
+            name: tag_name,
+            start: tag_start,
+            end: p,
+            attrs: tag_attrs,
+        });
     }
     result
 }
@@ -217,96 +240,9 @@ pub(crate) fn asset_aliases(html: &str, assets: &mut [serde_json::Value]) -> Str
     rewrite(html, edits)
 }
 
-/// Keep small or unique styles inline; share repeated declarations only when
-/// the definition plus all class references is substantially smaller.
-fn factor_styles(html: &str) -> String {
-    use std::collections::BTreeMap;
-    let attrs = attributes(html);
-    let mut counts = BTreeMap::<String, usize>::new();
-    for (_, _, name, value, has_class) in &attrs {
-        if name == "style" && !has_class {
-            *counts.entry(value.clone()).or_default() += 1;
-        }
-    }
-    let mut shared = BTreeMap::new();
-    let mut css = String::new();
-    let mut rules = Vec::new();
-    for (style, count) in counts {
-        let class = format!("dxs{}", shared.len() + 1);
-        let fragment = format!("<x style=\"{style}\"/>");
-        let Ok(doc) = xmloxide::tree::Document::parse_str(&fragment) else {
-            continue;
-        };
-        let Some(node) = doc.children(doc.root()).next() else {
-            continue;
-        };
-        let Some(decoded) = doc.attribute(node, "style") else {
-            continue;
-        };
-        let decoded = decoded.replace('<', "\\3c ");
-        let rule = format!(".docxdriver .{class}{{{decoded}}}");
-        let before = count * (style.len() + 9);
-        let after = count * (class.len() + 9) + rule.len() + 130;
-        if count > 1 && after * 5 < before * 4 {
-            css.push_str(&rule);
-            rules.push((class.clone(), decoded));
-            shared.insert(style, class);
-        }
-    }
-    if shared.is_empty() {
-        return html.into();
-    }
-    use sha2::{Digest, Sha256};
-    let scope = format!(
-        "dxscope{}",
-        &hex::encode(Sha256::digest(css.as_bytes()))[..24]
-    );
-    let css = rules
-        .into_iter()
-        .map(|(class, declaration)| format!(".{scope} .{class}{{{declaration}}}"))
-        .collect::<String>();
-    let edits = attrs
-        .into_iter()
-        .filter_map(|(s, e, n, v, has_class)| {
-            if n != "style" || has_class {
-                return None;
-            }
-            shared
-                .get(&v)
-                .map(|class| (s, e, format!(" class=\"{class}\"")))
-        })
-        .collect();
-    format!(
-        "<div class=\"docxdriver {scope}\"><style data-docx-styles=\"true\">{css}</style>{}</div>",
-        rewrite(html, edits)
-    )
-}
-
 #[cfg(test)]
-mod factoring_tests {
+mod alias_tests {
     use super::*;
-    #[test]
-    fn repeated_styles_preserve_values_and_quoted_instruction_literals() {
-        let style =
-            "font-family:&quot;A &amp; B&quot;;font-size:12pt;color:#123456;text-align:left";
-        let input = format!(
-            "{}<span data-docx-field='REF style=\"literal\"'>literal</span>",
-            (0..20)
-                .map(|i| format!("<p id=\"{i}\" style=\"{style}\">😀 {i}</p>"))
-                .collect::<String>()
-        );
-        let out = model_html(&input);
-        assert!(out.len() < input.len());
-        assert!(out
-            .contains(".dxs1{font-family:\"A & B\";font-size:12pt;color:#123456;text-align:left}"));
-        assert_eq!(out.matches("class=\"dxs1\"").count(), 20);
-        assert!(out.contains("data-docx-field='REF style=\"literal\"'"));
-        assert!(out.contains("😀 19"));
-        assert_eq!(
-            model_html("<p style=\"color:red\">one</p>"),
-            "<p style=\"color:red\">one</p>"
-        );
-    }
     #[test]
     fn image_aliases_only_rewrite_src_attributes() {
         let input = "<p>assets/hash.png<img src=\"assets/hash.png\" alt=\"assets/hash.png\"></p>";
@@ -322,38 +258,231 @@ mod factoring_tests {
     }
 }
 
-/// Agent reads keep all presentation declarations out of the markup. Rule keys
-/// are separate from DOCX style IDs: direct formatting is not a named style.
-pub fn agent_html(html: &str) -> (String, std::collections::BTreeMap<String, String>) {
-    let mut rules = std::collections::BTreeMap::new();
-    let mut keys = std::collections::BTreeMap::<String, String>::new();
-    let edits = attributes(html).into_iter().filter_map(|(s, e, name, value, _)| {
-        if name != "style" { return None; }
-        let key = if let Some(key) = keys.get(&value) { key.clone() } else {
-            let key = format!("dx{}", keys.len() + 1);
-            let fragment = format!("<x style=\"{value}\"/>");
-            let doc = xmloxide::tree::Document::parse_str(&fragment).ok()?;
-            let node = doc.children(doc.root()).next()?;
-            rules.insert(key.clone(), doc.attribute(node, "style")?.to_string());
-            keys.insert(value, key.clone());
-            key
+/// Agent reads drop what the rest of the read already states:
+/// - a paragraph's `style` lists only declarations that differ from its
+///   named style in `styles` (`prop:unset` where the paragraph has no value
+///   for a style declaration), and is omitted when nothing differs;
+/// - `data-docx-style` is omitted when it names `default_style`;
+/// - `data-docx-number` is omitted when it repeats the enclosing
+///   `<li data-docx-marker>`;
+/// - note links and note bodies drop their page-scoped DOM ids, which
+///   `data-docx-note`/`data-docx-note-id` already identify.
+///
+/// Run and other element styles stay complete, so the markup is edit input
+/// as it stands.
+pub fn agent_html(
+    html: &str,
+    styles: &std::collections::BTreeMap<String, String>,
+    default_style: Option<&str>,
+) -> String {
+    let default_attr = default_style.map(super::escape_attr);
+    let mut edits = Vec::new();
+    let mut previous: Option<Tag> = None;
+    for tag in tags(html) {
+        let get = |name: &str| {
+            tag.attrs
+                .iter()
+                .find(|a| a.2 == name)
+                .map(|a| a.3.as_str())
         };
-        Some((s, e, format!(" data-docx-css=\"{key}\"")))
-    }).collect();
-    // With styles removed, model_html cannot introduce an embedded style block.
-    (model_html(&rewrite(html, edits)), rules)
+        let paragraph = matches!(
+            tag.name.as_str(),
+            "p" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6"
+        );
+        let base = if paragraph {
+            match get("data-docx-style") {
+                Some(id) => decode_attr(id).and_then(|id| styles.get(&id)),
+                None => default_style.and_then(|id| styles.get(id)),
+            }
+        } else {
+            None
+        };
+        // Attributes of the start tag that immediately precedes this one.
+        let adjacent = |tag_name: &str, attr: &str| {
+            previous
+                .as_ref()
+                .filter(|p| p.end == tag.start && p.name == tag_name)
+                .and_then(|p| p.attrs.iter().find(|a| a.2 == attr))
+                .map(|a| a.3.clone())
+        };
+        for (s, e, name, value) in &tag.attrs {
+            let drop = match name.as_str() {
+                "style" => {
+                    let (Some(base), Some(decoded)) = (base, decode_attr(value)) else {
+                        continue;
+                    };
+                    let delta = css_delta(&decoded, base);
+                    if !delta.is_empty() {
+                        edits.push((*s, *e, format!(" style=\"{}\"", super::escape_attr(&delta))));
+                        continue;
+                    }
+                    true
+                }
+                "data-docx-style" => paragraph && default_attr.as_deref() == Some(value),
+                "data-docx-number" => {
+                    tag.name == "p" && adjacent("li", "data-docx-marker").as_ref() == Some(value)
+                }
+                "href" => {
+                    tag.name == "a"
+                        && value.starts_with("#docx-")
+                        && adjacent("sup", "data-docx-note").is_some()
+                }
+                "id" => {
+                    tag.name == "div"
+                        && value.starts_with("docx-")
+                        && get("data-docx-note-body").is_some()
+                }
+                _ => false,
+            };
+            if drop {
+                edits.push((*s, *e, String::new()));
+            }
+        }
+        previous = Some(tag);
+    }
+    model_html(&rewrite(html, edits))
+}
+
+/// One view of the document read: its agent markup, the resolved style
+/// catalog, and the default paragraph style.
+pub struct AgentRead {
+    pub markup: String,
+    pub catalog: std::collections::BTreeMap<String, String>,
+    pub default_style: Option<String>,
+}
+
+/// The agent read of `html`, one rendered view of `package`.
+pub fn agent_read(html: &str, package: &crate::package::Package) -> AgentRead {
+    let styles = super::styles::Styles::load(package);
+    let catalog = styles.catalog();
+    let default_style = styles.default_paragraph_style();
+    let markup = agent_html(html, &catalog, default_style.as_deref());
+    AgentRead {
+        markup,
+        catalog,
+        default_style,
+    }
+}
+
+/// The decoded `data-docx-style` IDs that `html` names.
+pub fn style_ids(html: &str) -> std::collections::BTreeSet<String> {
+    attributes(html)
+        .into_iter()
+        .filter(|a| a.2 == "data-docx-style")
+        .filter_map(|a| decode_attr(&a.3))
+        .collect()
+}
+
+/// An attribute value with its character references resolved.
+fn decode_attr(value: &str) -> Option<String> {
+    let fragment = format!("<x v=\"{value}\"/>");
+    let doc = xmloxide::tree::Document::parse_str(&fragment).ok()?;
+    let node = doc.children(doc.root()).next()?;
+    doc.attribute(node, "v").map(str::to_string)
+}
+
+/// `prop:value;` pairs, splitting only on separators outside quotes.
+fn css_pairs(css: &str) -> std::collections::BTreeMap<String, String> {
+    let mut out = std::collections::BTreeMap::new();
+    let mut quote = None;
+    let mut from = 0;
+    for (i, c) in css.char_indices().chain([(css.len(), ';')]) {
+        match (quote, c) {
+            (Some(q), c) if c == q => quote = None,
+            (None, '"' | '\'') => quote = Some(c),
+            (None, ';') => {
+                if let Some((k, v)) = css[from..i].split_once(':') {
+                    out.insert(k.to_string(), v.to_string());
+                }
+                from = i + 1;
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+/// Declarations of `effective` that `base` does not already give. A base
+/// declaration absent from `effective` is reset with `unset`, so
+/// `base` overlaid with the result is exactly `effective`.
+fn css_delta(effective: &str, base: &str) -> String {
+    let effective = css_pairs(effective);
+    let base = css_pairs(base);
+    let mut delta: std::collections::BTreeMap<&str, &str> = effective
+        .iter()
+        .filter(|(k, v)| base.get(*k) != Some(v))
+        .map(|(k, v)| (k.as_str(), v.as_str()))
+        .collect();
+    for k in base.keys() {
+        if !effective.contains_key(k) {
+            delta.insert(k, "unset");
+        }
+    }
+    delta.into_iter().map(|(k, v)| format!("{k}:{v};")).collect()
 }
 
 #[cfg(test)]
 mod agent_tests {
     #[test]
-    fn separates_css_and_preserves_style_identity_and_literals() {
-        let (html, css) = super::agent_html("<h1 data-docx-style=\"Heading1\" style=\"font-family:&quot;A &amp; B&quot;\">Title</h1><p style=\"font-family:&quot;A &amp; B&quot;\">Body</p><span data-docx-field='REF style=\"literal\"'>x</span>");
-        assert_eq!(css.len(), 1);
-        assert_eq!(css["dx1"], "font-family:\"A & B\"");
-        assert!(html.contains("data-docx-style=\"Heading1\""));
-        assert_eq!(html.matches("data-docx-css=\"dx1\"").count(), 2);
+    fn keeps_run_styles_inline_and_preserves_style_identity_and_literals() {
+        let html = super::agent_html("<h1 data-docx-style=\"Heading1\" style=\"font-family:&quot;A &amp; B&quot;\">Title</h1><span style=\"font-family:&quot;A &amp; B&quot;\">Body</span><span data-docx-field='REF style=\"literal\"'>x</span>", &Default::default(), None);
+        assert!(html.contains("<h1 data-docx-style=\"Heading1\" style=\"font-family:&quot;A &amp; B&quot;\">Title"), "{html}");
+        assert!(html.contains("<span style=\"font-family:&quot;A &amp; B&quot;\">Body"), "{html}");
         assert!(html.contains("data-docx-field='REF style=\"literal\"'"));
         assert!(!html.contains("<style"));
+    }
+
+    #[test]
+    fn paragraph_rules_are_differences_from_the_named_style() {
+        let styles = [
+            ("Normal", "color:#000000;font-size:12pt;line-height:1;"),
+            ("Quote", "font-family:\"A;B\";font-style:italic;"),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
+        let html = super::agent_html(
+            concat!(
+                "<p id=\"A\" data-docx-style=\"Normal\" style=\"color:#000000;font-size:12pt;line-height:1;\">same</p>",
+                "<p id=\"B\" data-docx-style=\"Normal\" style=\"color:#000000;font-size:12pt;line-height:2;\">double</p>",
+                "<p id=\"C\" style=\"font-size:12pt;line-height:1;\">no colour</p>",
+                "<p id=\"D\" data-docx-style=\"Quote\" style=\"font-family:&quot;A;B&quot;;font-style:italic;\"><span style=\"color:#000000;\">run</span></p>",
+            ),
+            &styles,
+            Some("Normal"),
+        );
+        assert_eq!(
+            html,
+            concat!(
+                "<p id=\"A\">same</p>",
+                "<p id=\"B\" style=\"line-height:2;\">double</p>",
+                "<p id=\"C\" style=\"color:unset;\">no colour</p>",
+                // Runs have no named style: their styles stay complete.
+                "<p id=\"D\" data-docx-style=\"Quote\"><span style=\"color:#000000;\">run</span></p>",
+            )
+        );
+    }
+
+    #[test]
+    fn repeated_list_numbers_and_note_dom_ids_are_dropped() {
+        let html = super::agent_html(
+            concat!(
+                "<ol data-docx-list=\"1\" data-docx-level=\"0\" start=\"1\" type=\"1\"><li data-docx-marker=\"1.\"><p id=\"A\" data-docx-number=\"1.\">x",
+                "<sup data-docx-note=\"footnote\" data-docx-note-id=\"7\"><a href=\"#docx-0a-footnote-7\">1</a></sup></p>",
+                "<p id=\"B\" data-docx-number=\"9.\">kept</p><a href=\"#docx-literal\">link</a></li></ol>",
+                "<aside data-docx-notes=\"footnote\"><div id=\"docx-0a-footnote-7\" data-docx-note-body=\"footnote\" data-docx-note-id=\"7\"><p>n</p></div></aside>",
+            ),
+            &Default::default(),
+            None,
+        );
+        assert_eq!(
+            html,
+            concat!(
+                "<ol data-docx-list=\"1\" data-docx-level=\"0\" start=\"1\" type=\"1\"><li data-docx-marker=\"1.\"><p id=\"A\">x",
+                "<sup data-docx-note=\"footnote\" data-docx-note-id=\"7\"><a>1</a></sup></p>",
+                "<p id=\"B\" data-docx-number=\"9.\">kept</p><a href=\"#docx-literal\">link</a></li></ol>",
+                "<aside data-docx-notes=\"footnote\"><div data-docx-note-body=\"footnote\" data-docx-note-id=\"7\"><p>n</p></div></aside>",
+            )
+        );
     }
 }

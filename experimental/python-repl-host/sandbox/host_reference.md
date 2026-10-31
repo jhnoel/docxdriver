@@ -36,11 +36,11 @@ current `markup` view.
 inspect it and build operations in Python loops. Return the full ReadResult or
 print its full markup and semantic metadata when reading; prefer complete document
 context. Named DOCX style IDs appear in data-docx-style and map one-to-one to
-ReadResult.styles (resolved CSS keyed by style ID). Presentation rules appear
-in data-docx-css and map to ReadResult.css. Both catalogs are omitted from the
-default display; inspect result.styles or result.css to read their definitions;
-when authoring a fragment, use equivalent inline formatting rather than copying
-an unresolved class. Image aliases map to canonical assets in ReadResult.assets.
+ReadResult.styles (resolved CSS keyed by style ID); a paragraph without
+data-docx-style uses ReadResult.default_style. Direct formatting is inline
+style; a paragraph's style lists only what differs from its named style. The
+style catalog is omitted from the default display; inspect result.styles to
+read its definitions. Markup copied from a read is valid fragment input. Image aliases map to canonical assets in ReadResult.assets.
 ReadResult.selection_space describes comment selectors; ReadResult.selections
 provides exact text for paragraphs where generated content or revisions make
 HTML text ambiguous:

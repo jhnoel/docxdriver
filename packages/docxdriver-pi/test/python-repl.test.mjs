@@ -344,11 +344,10 @@ test('document style catalogs are inspectable but omitted from ReadResult displa
   const { PYTHON_PRELUDE, PYTHON_TYPE_STUBS } = await import('../dist/python-plan-prelude.js');
   const runtime = await PythonRepl.create(PYTHON_PRELUDE, PYTHON_TYPE_STUBS);
   open.add(runtime);
-  const result = await runtime.execute('r = ReadResult(markup="<p>Body</p>", styles={"Normal":"font-size:12pt"}, css={"dx1":"color:red"})\nprint(r)\nprint(r.styles["Normal"])\nprint(r.css["dx1"])', {});
+  const result = await runtime.execute('r = ReadResult(markup="<p>Body</p>", styles={"Normal":"font-size:12pt"})\nprint(r)\nprint(r.styles["Normal"])', {});
   assert.equal(result.ok, true);
   const lines = result.stdout.trim().split('\n');
-  assert.match(lines[0], /styles=1 definitions, css=1 rules/);
-  assert.doesNotMatch(lines[0], /font-size|color:red/);
+  assert.match(lines[0], /styles=1 definitions; inspect \.styles/);
+  assert.doesNotMatch(lines[0], /font-size/);
   assert.equal(lines[1], 'font-size:12pt');
-  assert.equal(lines[2], 'color:red');
 });

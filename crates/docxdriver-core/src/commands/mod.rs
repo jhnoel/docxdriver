@@ -653,6 +653,30 @@ pub(crate) fn affected_para_ids(report: &Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// `value` without object fields that are null, `{}` or `[]`; agent reads
+/// treat an absent field as empty. OOXML `properties` bags are kept as they
+/// are inside, where an empty element is still a source fact.
+pub(crate) fn prune_empty(value: Value) -> Value {
+    match value {
+        Value::Object(map) => Value::Object(
+            map.into_iter()
+                .map(|(k, v)| {
+                    let v = if k == "properties" { v } else { prune_empty(v) };
+                    (k, v)
+                })
+                .filter(|(_, v)| match v {
+                    Value::Null => false,
+                    Value::Object(m) => !m.is_empty(),
+                    Value::Array(a) => !a.is_empty(),
+                    _ => true,
+                })
+                .collect(),
+        ),
+        Value::Array(items) => Value::Array(items.into_iter().map(prune_empty).collect()),
+        other => other,
+    }
+}
+
 /// The markup block carrying each requested `w14:paraId` in the current
 /// in-memory state — the "current affected markup" diagnostic. One render
 /// serves every id, so a plan pays for a single document render however many
@@ -682,6 +706,9 @@ pub(crate) fn affected_markup(
             }
         }
     }
+    let styles = crate::html::styles::Styles::load(&state.package);
+    let catalog = styles.catalog();
+    let default_style = styles.default_paragraph_style();
     let mut rendered: HashMap<usize, String> = HashMap::new();
     for para_id in para_ids {
         let index = block_of.get(para_id.as_str()).copied().or_else(|| {
@@ -695,7 +722,11 @@ pub(crate) fn affected_markup(
         if let Some(index) = index {
             let markup = rendered.entry(index).or_insert_with(|| {
                 let block = &body.blocks[index];
-                crate::html::compact::model_html(&body.html[block.start..block.end])
+                crate::html::compact::agent_html(
+                    &body.html[block.start..block.end],
+                    &catalog,
+                    default_style.as_deref(),
+                )
             });
             found.insert(para_id.clone(), markup.clone());
         }

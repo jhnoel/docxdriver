@@ -108,7 +108,7 @@ impl Lower<'_> {
                         | "background"
                 ) {
                     return Err(format!(
-                        "unsupported table formatting attribute {} on <{name}>",
+                        "unsupported table formatting attribute {} on <{name}>; set table formatting with format_table, format_row or format_cell",
                         a.name
                     ));
                 }

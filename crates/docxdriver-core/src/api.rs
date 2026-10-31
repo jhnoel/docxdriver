@@ -91,6 +91,20 @@ impl HighlightColor {
         "none" => Ok(Self::None),
         _ => Err(format!("unknown highlight palette value {value:?}")),
     }}
+    /// The palette entry whose CSS color is `value`, as reads write it.
+    pub fn from_css(value: &str) -> Result<Self, String> {
+        const ALL: [HighlightColor; 17] = [
+            HighlightColor::Black, HighlightColor::Blue, HighlightColor::Cyan,
+            HighlightColor::Green, HighlightColor::Magenta, HighlightColor::Red,
+            HighlightColor::Yellow, HighlightColor::White, HighlightColor::DarkBlue,
+            HighlightColor::DarkCyan, HighlightColor::DarkGreen, HighlightColor::DarkMagenta,
+            HighlightColor::DarkRed, HighlightColor::DarkYellow, HighlightColor::DarkGray,
+            HighlightColor::LightGray, HighlightColor::None,
+        ];
+        ALL.into_iter()
+            .find(|color| color.css().eq_ignore_ascii_case(value))
+            .ok_or_else(|| format!("background-color {value:?} is not a Word highlight color; use one of the highlight palette's colors"))
+    }
 }
 
 /// Table widths use auto, points, or percent (0 < value <= 100 for percent).
@@ -2493,14 +2507,30 @@ fn typed_read(input: Option<&[u8]>, kind: &str, view: Option<&str>) -> crate::ou
                 let map = value.as_object_mut().unwrap();
                 map.insert("kind".into(), serde_json::json!("document"));
                 map.insert("view".into(), serde_json::json!(view.unwrap_or("markup")));
-                map.insert("projection_version".into(), serde_json::json!(2));
+                map.insert("projection_version".into(), serde_json::json!(4));
                 map.insert("content_type".into(), serde_json::json!("text/html"));
-                let (markup, css) = crate::html::compact::agent_html(&rendered.html);
+                let crate::html::compact::AgentRead {
+                    markup,
+                    mut catalog,
+                    default_style,
+                } = crate::html::compact::agent_read(&rendered.html, &state.package);
+                // Declarations only for styles the markup uses; `read_kind:
+                // "styles"` has every definition.
+                let mut used = crate::html::compact::style_ids(&markup);
+                used.extend(default_style.clone());
+                let other_styles: Vec<String> =
+                    catalog.keys().filter(|id| !used.contains(*id)).cloned().collect();
+                catalog.retain(|id, _| used.contains(id));
                 map.insert("markup".into(), serde_json::json!(markup));
-                map.insert("css".into(), serde_json::json!(css));
-                map.insert("tables".into(), crate::commands::tables::inventory(&state.xml));
-                map.insert("sections".into(), crate::commands::sections::inventory(&state.package,&state.xml,&paragraph_ids,view==Some("original")));
-                map.insert("styles".into(), serde_json::json!(crate::html::styles::Styles::load(&state.package).catalog()));
+                map.insert("tables".into(), crate::commands::tables::agent_inventory(&state.xml));
+                map.insert("sections".into(), crate::commands::prune_empty(crate::commands::sections::inventory(&state.package,&state.xml,&paragraph_ids,view==Some("original"))));
+                map.insert("styles".into(), serde_json::json!(catalog));
+                if let Some(id) = default_style {
+                    map.insert("default_style".into(), serde_json::json!(id));
+                }
+                if !other_styles.is_empty() {
+                    map.insert("other_styles".into(), serde_json::json!(other_styles));
+                }
                 if !equations.is_empty() {
                     map.insert("equations".into(), serde_json::json!(equations));
                 }
@@ -2597,7 +2627,7 @@ fn typed_read(input: Option<&[u8]>, kind: &str, view: Option<&str>) -> crate::ou
                 map.remove("comments");
                 map.insert("blocks".into(), Value::Array(blocks));
                 map.insert("source_map".into(),serde_json::json!({"html_offset_unit":"utf8_byte","text_offset_unit":"unicode_scalar","regions":source_map}));
-                map.insert("projection_version".into(), serde_json::json!(2));
+                map.insert("projection_version".into(), serde_json::json!(4));
                 map.insert("content_type".into(), serde_json::json!("text/html"));
                 map.insert("css".into(), serde_json::json!(crate::html::styles::CSS));
                 map.insert(
