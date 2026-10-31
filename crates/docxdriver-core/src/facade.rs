@@ -156,7 +156,9 @@ impl<'a> Document<'a> {
     }
 
     /// Applies a reviewed plan, returning the new document's bytes. Its
-    /// revisions and comments carry the current UTC time.
+    /// revisions and comments carry the current UTC time, read by the
+    /// `clock` feature; without it this is a `missing_now` error, and
+    /// [`Document::commit_at`] takes the time instead.
     pub fn commit(&self, plan: &Plan, key: &PreviewKey) -> Result<Vec<u8>, Diagnostic> {
         self.commit_at(plan, key, None)
     }

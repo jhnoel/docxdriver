@@ -12,6 +12,11 @@ categories = ["text-processing", "parser-implementations"]
 # only; tests, examples and the schema generator stay in the repository.
 include = ["/src/**/*.rs", "!/src/bin/**", "/src/integrity/wml-model.json", "/assets/blank.docx", "/README.md", "/LICENSE"]
 
+[features]
+# The current UTC time as the default commit stamp. Off, the core reads no
+# clock and a commit must be given `now`; hosts with a clock enable it.
+clock = []
+
 [dependencies]
 xmloxide = { version = "0.4.3", default-features = false }
 zip = { version = "5", default-features = false, features = ["deflate"] }
@@ -27,3 +32,5 @@ schemars = "0.8"
 quick-xml = "0.42.0"
 
 [dev-dependencies]
+# The tests commit without fixing `now`.
+docxdriver-core = { path = ".", features = ["clock"] }

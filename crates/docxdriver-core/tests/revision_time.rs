@@ -87,6 +87,8 @@ fn a_malformed_time_is_refused() {
         "2026-10-31 12:34:56",
         "2026-10-31T12:34:56.123Z",
         "2026-10-31T12:34:56+00:00",
+        "2026-13-45T25:61:61Z",
+        "2025-02-29T12:00:00Z",
     ] {
         let request = PlanRequest {
             plan: plan.clone(),
