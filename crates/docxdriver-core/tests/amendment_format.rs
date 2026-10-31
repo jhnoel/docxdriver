@@ -141,6 +141,7 @@ fn a_tracked_replacement_becomes_struck_then_underlined_text() {
             [
                 plain("Rent is due in "),
                 struck("thirty"),
+                plain(" "),
                 under("sixty"),
                 plain(" days.")
             ],
@@ -164,6 +165,7 @@ fn insertions_and_deletions_inside_a_paragraph() {
         runs(&xml, "Rent"),
         [
             struck("Rent"),
+            plain(" "),
             under("Monthly rent"),
             plain(" is due"),
             struck(" in thirty days"),
@@ -233,6 +235,7 @@ fn existing_run_formatting_is_kept() {
         [
             plain("The tenant shall pay "),
             struck("all"),
+            plain(" "),
             under("any"),
             plain(" fees on time.")
         ]
@@ -284,6 +287,7 @@ fn other_authors_revisions_are_left_unless_targeted() {
         [
             plain("Rent is due in "),
             struck("thirty"),
+            plain(" "),
             under("sixty"),
             plain(" days.")
         ]
@@ -322,6 +326,7 @@ fn at_limits_the_conversion_to_its_paragraphs() {
         [
             plain("Rent is due in "),
             struck("thirty"),
+            plain(" "),
             under("sixty"),
             plain(" days.")
         ]
@@ -420,5 +425,102 @@ fn rows_headers_and_formatting_changes_convert_too() {
             && header.contains("<w:strike/>")
             && header.contains("<w:u w:val=\"single\"/>"),
         "{header}"
+    );
+}
+
+/// Converts one tracked `revise_text` of `text` (`select` -> `with`) and
+/// returns the paragraph's runs.
+fn converted(text: &str, select: &str, with: &str) -> Vec<(String, bool, bool)> {
+    let base = create(Source::Html(format!("<p>{text}</p>"))).unwrap();
+    let at = id_of(&base, &text[..text.len().min(6)]);
+    let ops = format!(
+        r#"[{{"op":"revise_text","at":"{at}","edits":[{{"select":"{select}","with":"{with}"}}]}}]"#
+    );
+    let tracked = run(&base, "track", "Ann", &ops).unwrap();
+    let xml = document_xml(&convert(&tracked, "track", r#""all""#));
+    assert_eq!(revision_count(&xml), 0, "{xml}");
+    // The document's only paragraph.
+    runs(&xml, "")
+}
+
+// A replaced word's deletion and insertion share one surrounding space,
+// so converted they ran together ("attachedsecured"). Amendment practice
+// writes the deleted text, a space, then the added text.
+#[test]
+fn a_replacement_has_a_plain_space_between_struck_and_underlined_text() {
+    assert_eq!(
+        converted("a body attached to the base", "attached", "secured"),
+        [
+            plain("a body "),
+            struck("attached"),
+            plain(" "),
+            under("secured"),
+            plain(" to the base")
+        ]
+    );
+    assert_eq!(
+        converted(
+            "a body configured for the base",
+            "configured for",
+            "adapted to"
+        ),
+        [
+            plain("a body "),
+            struck("configured for"),
+            plain(" "),
+            under("adapted to"),
+            plain(" the base")
+        ]
+    );
+    // Untouched punctuation stays plain after the insertion.
+    assert_eq!(
+        converted("an example, the base", "example", "instance"),
+        [
+            plain("an "),
+            struck("example"),
+            plain(" "),
+            under("instance"),
+            plain(", the base")
+        ]
+    );
+    // At the start and the end of a paragraph.
+    assert_eq!(
+        converted("Rent is due monthly", "Rent", "Payment"),
+        [
+            struck("Rent"),
+            plain(" "),
+            under("Payment"),
+            plain(" is due monthly")
+        ]
+    );
+    assert_eq!(
+        converted("Rent is due monthly", "monthly", "weekly"),
+        [
+            plain("Rent is due "),
+            struck("monthly"),
+            plain(" "),
+            under("weekly")
+        ]
+    );
+    // A pure insertion or deletion gets no extra space.
+    assert_eq!(
+        converted(
+            "a body attached to the base",
+            "body attached",
+            "body firmly attached"
+        ),
+        [
+            plain("a body "),
+            under("firmly "),
+            plain("attached to the base")
+        ]
+    );
+    assert_eq!(
+        converted("a body firmly attached to the base", "firmly ", ""),
+        [
+            plain("a body "),
+            struck("firmly "),
+            plain("attached to the base")
+        ]
     );
 }

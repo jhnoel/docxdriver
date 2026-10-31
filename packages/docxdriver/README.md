@@ -285,7 +285,14 @@ redlines below), then convert:
 `target` is `"all"`, `{"id": "<revision id>"}` or `{"author": "<name>"}`;
 `at` (paragraph ids) limits it to revisions in those body paragraphs, and
 without `at` headers and footers convert too. A deletion's text comes back
-before the insertion that replaced it, as the markup shows it. Inserted and
+before the insertion that replaced it, as the markup shows it. Where
+struck and underlined text meet with a word character on both sides (a
+replaced word: the redline shares one surrounding space between the
+deletion and the insertion), one plain space goes between them, so
+"a body attached" with *attached* replaced by *secured* reads
+"a body ~~attached~~ <u>secured</u>", as amendment practice writes it. No
+space is added next to whitespace or untouched punctuation, or for a pure
+insertion or deletion. Inserted and
 deleted paragraphs and table rows stay, their text underlined or struck;
 text deleted inside a converted insertion goes (it was never in the
 source). Formatting, table and section property changes have no amendment

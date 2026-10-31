@@ -1028,6 +1028,7 @@ fn convert_in(
         .filter(|e| xml.doc.ancestors(e.node).skip(1).any(|a| xml.is_rev_ins(a) && chosen.contains(&a)))
         .map(|e| e.node)
         .collect();
+    let gaps = replacement_gaps(xml, &entries, &doubly_new);
     let mut moves = std::collections::BTreeSet::new();
     let note = |done: &mut Converted, xml: &DocxXml, node: NodeId| {
         if let Some(id) = xml.attr(node, "id") {
@@ -1103,9 +1104,75 @@ fn convert_in(
             done.formatting += 1;
         }
     }
+    for (left, right) in gaps {
+        insert_plain_space(xml, left, right);
+    }
     for id in moves {
         strip_move_range_markers_in(xml, root, Some(&id));
     }
+}
+
+/// Text of `node`'s live and deleted text leaves, in order.
+fn wrapper_text(xml: &DocxXml, node: NodeId) -> String {
+    xml.doc
+        .descendants(node)
+        .filter(|&n| xml.is_w(n, "t") || xml.is_w(n, "delText"))
+        .map(|n| xml.doc.text_content(n))
+        .collect()
+}
+
+/// The boundaries where a converted deletion and a converted insertion
+/// meet with a word character on both sides: the engine's redline of a
+/// replaced word shares one surrounding space between them, so converted
+/// they would run together ("attachedsecured"). Each is (last run of the
+/// first, first run of the second); a plain space goes between them.
+fn replacement_gaps(xml: &DocxXml, entries: &[RevisionEntry], removed: &std::collections::HashSet<NodeId>) -> Vec<(NodeId, NodeId)> {
+    let content: std::collections::HashSet<NodeId> = entries
+        .iter()
+        .filter(|e| !e.is_paragraph_mark && !e.is_row && matches!(e.kind, "ins" | "del" | "moveFrom" | "moveTo"))
+        .map(|e| e.node)
+        .filter(|node| !removed.contains(node))
+        .collect();
+    let mut gaps = Vec::new();
+    for &left in &content {
+        let Some(right) = xml.doc.next_sibling(left).filter(|n| content.contains(n)) else { continue };
+        if xml.is_rev_ins(left) == xml.is_rev_ins(right) {
+            continue;
+        }
+        let (before, after) = (wrapper_text(xml, left), wrapper_text(xml, right));
+        let word = |c: Option<char>| c.is_some_and(char::is_alphanumeric);
+        if !word(before.chars().last()) || !word(after.chars().next()) {
+            continue;
+        }
+        let runs = |n: NodeId| xml.doc.descendants(n).filter(|&r| xml.is_w(r, "r")).collect::<Vec<_>>();
+        if let (Some(&last), Some(&first)) = (runs(left).last(), runs(right).first()) {
+            gaps.push((last, first));
+        }
+    }
+    gaps
+}
+
+/// One plain space between converted runs `left` and `right`: `left`'s
+/// run properties without the underline or strike conversion gave it.
+fn insert_plain_space(xml: &mut DocxXml, left: NodeId, right: NodeId) {
+    let run = xml.doc.create_element("w:r");
+    if let Some(rpr) = xml.child_w(left, "rPr") {
+        let copy = xml.doc.clone_node(rpr, true);
+        for child in xml.doc.children(copy).collect::<Vec<_>>() {
+            if ["u", "strike", "dstrike", "rPrChange"].iter().any(|name| xml.is_w(child, name)) {
+                xml.doc.remove_node(child);
+            }
+        }
+        if xml.doc.children(copy).any(|c| xml.doc.is_element(c)) {
+            xml.doc.append_child(run, copy);
+        }
+    }
+    let text = xml.doc.create_element("w:t");
+    xml.doc.set_attribute(text, "xml:space", "preserve");
+    let space = xml.doc.create_text(" ");
+    xml.doc.append_child(text, space);
+    xml.doc.append_child(run, text);
+    xml.doc.insert_before(right, run);
 }
 
 fn unwrap(xml: &mut DocxXml, wrapper: NodeId) {
