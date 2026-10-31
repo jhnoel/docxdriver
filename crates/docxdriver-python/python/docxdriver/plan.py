@@ -142,6 +142,18 @@ class CommentSetStatus:
         return value
 
 @dataclass
+class ConvertRevisionsToFormatting:
+    target: str | dict
+    at: list | None = None
+    def to_dict(self):
+        value = {"op": "convert_revisions_to_formatting"}
+        if self.target is not None:
+            value["target"] = self.target
+        if self.at is not None:
+            value["at"] = self.at
+        return value
+
+@dataclass
 class DeleteEquation:
     at: str
     equation: int | None = None

@@ -125,6 +125,17 @@ Set a comment's status to `open` or `resolved` by decimal `comment_id`.
 | `comment_id` | `str` | yes |
 | `status` | `str` | yes |
 
+### ConvertRevisionsToFormatting
+
+`ConvertRevisionsToFormatting(target: str | dict, at: list | None = None)`
+
+Convert tracked changes to amendment formatting (37 CFR 1.121): inserted text stays underlined, deleted text comes back struck through, and no revision is left. `target` is `all`, `{"id": "<revision id>"}` or `{"author": "<name>"}`; optional `at` limits it to revisions in those paragraphs. Inserted or deleted paragraphs and table rows stay (text underlined or struck); text deleted inside a converted insertion goes; formatting, table and section property changes are accepted; existing underline and strike are kept. Make ordinary tracked edits first, then convert. Writes no revision in either change mode; other authors' revisions convert only when targeted.
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `target` | `str | dict` | yes |
+| `at` | `list | None` | no |
+
 ### DeleteEquation
 
 `DeleteEquation(at: str, equation: int | None = None)`

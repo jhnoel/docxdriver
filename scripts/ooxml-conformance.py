@@ -447,6 +447,13 @@ def scenarios(read):
             {'op': 'delete_paragraphs', 'at': [at]},
             {'op': 'revision_settle', 'target': 'all', 'action': 'accept'}]),
     ]
+    # Tracked edits converted to amendment formatting (underline / strike).
+    out.append(('convert_revisions_to_formatting', 'track', [
+        {'op': 'replace_text', 'at': at, 'select': first, 'with': first + ' amended', 'occurrence': 1},
+        {'op': 'insert_paragraph', 'at': at, 'position': 'after', 'with': 'Added paragraph'},
+        {'op': 'delete_paragraphs', 'at': [other]},
+        {'op': 'convert_revisions_to_formatting', 'target': 'all'}]))
+    out.append(('convert_revisions_to_formatting', 'direct', [{'op': 'convert_revisions_to_formatting', 'target': 'all'}]))
     out.append(('revision_settle', 'track', [
         {'op': 'replace_text', 'at': at, 'select': first, 'with': 'Tracked', 'occurrence': 1},
         {'op': 'revision_settle', 'target': 'all', 'action': 'reject'}]))

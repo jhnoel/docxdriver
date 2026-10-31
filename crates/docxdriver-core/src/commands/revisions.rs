@@ -913,3 +913,241 @@ fn pad_short_row(xml: &mut DocxXml, row: NodeId) {
     }
     new_paragraph
 }*/
+
+/// What `convert_to_formatting` did, by revision kind.
+#[derive(Default)]
+struct Converted {
+    ids: Vec<String>,
+    inserted: usize,
+    deleted: usize,
+    marks: usize,
+    rows: usize,
+    formatting: usize,
+}
+
+/// `convert_revisions_to_formatting`: settle the selected revisions into
+/// amendment formatting (37 CFR 1.121). Inserted text stays, underlined;
+/// deleted text comes back, struck through; text deleted inside a
+/// converted insertion goes (it was never in the source). Paragraph marks
+/// and table rows stay, unmarked. Property revisions are accepted. Writes
+/// no revision. Body and, without `at`, headers and footers.
+pub fn convert_to_formatting(
+    package: &mut Package,
+    xml: &mut DocxXml,
+    source: Option<[u8; 32]>,
+    selector: &crate::api::RevisionSelector,
+    at: Option<&[String]>,
+) -> Result<(String, Value), Outcome> {
+    let paragraphs = match at {
+        Some(ids) => {
+            let mut nodes = std::collections::HashSet::new();
+            for id in ids {
+                nodes.insert(super::typed::resolve_paragraph_by_para_id(xml, package, source, id)?);
+            }
+            Some(nodes)
+        }
+        None => None,
+    };
+    let mut done = Converted::default();
+    convert_in(xml, selector, paragraphs.as_ref(), &mut done);
+    if paragraphs.is_none() {
+        for part_name in crate::html::chrome::chrome_part_names(package, xml) {
+            let Some(mut part_xml) = package.get(&part_name).and_then(|bytes| DocxXml::parse(bytes).ok()) else {
+                continue;
+            };
+            let before = done.ids.len();
+            convert_in(&mut part_xml, selector, None, &mut done);
+            if done.ids.len() > before {
+                package.set(&part_name, part_xml.serialize());
+            }
+        }
+    }
+    let count = done.ids.len();
+    let mut parts = Vec::new();
+    for (n, what) in [
+        (done.inserted, "insertions underlined"),
+        (done.deleted, "deletions struck through"),
+        (done.marks, "paragraph marks kept"),
+        (done.rows, "table rows kept"),
+        (done.formatting, "formatting changes accepted"),
+    ] {
+        if n > 0 {
+            parts.push(format!("{n} {what}"));
+        }
+    }
+    let summary = if count == 0 {
+        "no matching revisions to convert".to_string()
+    } else {
+        format!("converted {} to amendment formatting ({})", plural(count, "revision", "revisions"), parts.join(", "))
+    };
+    Ok((
+        summary,
+        json!({
+            "converted": count,
+            "revisions": done.ids,
+            "inserted": done.inserted,
+            "deleted": done.deleted,
+            "paragraph_marks": done.marks,
+            "rows": done.rows,
+            "formatting_accepted": done.formatting,
+        }),
+    ))
+}
+
+fn selected(xml: &DocxXml, node: NodeId, selector: &crate::api::RevisionSelector) -> bool {
+    use crate::api::RevisionSelector;
+    match selector {
+        RevisionSelector::All => true,
+        RevisionSelector::Id(id) => xml.attr(node, "id") == Some(id.as_str()),
+        RevisionSelector::Author(author) => xml.attr(node, "author") == Some(author.as_str()),
+    }
+}
+
+fn convert_in(
+    xml: &mut DocxXml,
+    selector: &crate::api::RevisionSelector,
+    paragraphs: Option<&std::collections::HashSet<NodeId>>,
+    done: &mut Converted,
+) {
+    let Some(root) = xml.body().or_else(|| xml.doc.root_element()) else { return };
+    let in_scope = |xml: &DocxXml, entry: &RevisionEntry| match paragraphs {
+        None => true,
+        Some(set) if entry.is_row => xml.doc.descendants(entry.paragraph).any(|p| set.contains(&p)),
+        Some(set) => set.contains(&entry.paragraph),
+    };
+    let entries: Vec<RevisionEntry> = collect_revisions_in(xml, root, None)
+        .into_iter()
+        .filter(|e| selected(xml, e.node, selector) && in_scope(xml, e))
+        .collect();
+    let chosen: std::collections::HashSet<NodeId> = entries.iter().map(|e| e.node).collect();
+    // Deletions inside an insertion converted here: the text was never in
+    // the source, so it goes rather than showing struck.
+    let doubly_new: std::collections::HashSet<NodeId> = entries
+        .iter()
+        .filter(|e| !e.is_paragraph_mark && !e.is_row && matches!(e.kind, "del" | "moveFrom"))
+        .filter(|e| xml.doc.ancestors(e.node).skip(1).any(|a| xml.is_rev_ins(a) && chosen.contains(&a)))
+        .map(|e| e.node)
+        .collect();
+    let mut moves = std::collections::BTreeSet::new();
+    let note = |done: &mut Converted, xml: &DocxXml, node: NodeId| {
+        if let Some(id) = xml.attr(node, "id") {
+            done.ids.push(id.to_string());
+        }
+    };
+    // Content: insertions first, then deletions; a deletion inside a
+    // converted insertion takes its text away.
+    for entry in entries.iter().filter(|e| !e.is_paragraph_mark && !e.is_row && ins_like(e.kind)) {
+        note(done, xml, entry.node);
+        if matches!(entry.kind, "moveTo") {
+            moves.insert(xml.attr(entry.node, "id").unwrap_or("").to_string());
+        }
+        format_runs(xml, entry.node, "u");
+        unwrap(xml, entry.node);
+        done.inserted += 1;
+    }
+    for entry in entries.iter().filter(|e| !e.is_paragraph_mark && !e.is_row && matches!(e.kind, "del" | "moveFrom")) {
+        note(done, xml, entry.node);
+        if entry.kind == "moveFrom" {
+            moves.insert(xml.attr(entry.node, "id").unwrap_or("").to_string());
+        }
+        if doubly_new.contains(&entry.node) {
+            remove_content(xml, entry.node);
+        } else {
+            for child in xml.doc.children(entry.node).collect::<Vec<_>>() {
+                mark_deleted_leaves(xml, child, false);
+            }
+            format_runs(xml, entry.node, "strike");
+            unwrap(xml, entry.node);
+        }
+        done.deleted += 1;
+    }
+    for entry in entries.iter().filter(|e| e.is_paragraph_mark) {
+        note(done, xml, entry.node);
+        xml.doc.remove_node(entry.node);
+        done.marks += 1;
+    }
+    for entry in entries.iter().filter(|e| e.is_row) {
+        note(done, xml, entry.node);
+        let trpr = xml.doc.parent(entry.node);
+        xml.doc.remove_node(entry.node);
+        if let Some(trpr) = trpr {
+            if xml.doc.children(trpr).all(|c| !xml.doc.is_element(c)) && xml.doc.attributes(trpr).is_empty() {
+                xml.doc.remove_node(trpr);
+            }
+        }
+        done.rows += 1;
+    }
+    for entry in entries.iter().filter(|e| !matches!(e.kind, "ins" | "del" | "moveFrom" | "moveTo")) {
+        note(done, xml, entry.node);
+        resolve_property_change(xml, entry.node, true);
+        done.formatting += 1;
+    }
+    // Table, row, cell and section records are not paragraph-anchored.
+    if paragraphs.is_none() {
+        loop {
+            let record = xml.doc.descendants(root).find(|&n| {
+                xml.doc.is_element(n)
+                    && (kind_of(xml, n).is_some_and(|k| !matches!(k, "ins" | "del" | "moveFrom" | "moveTo"))
+                        || ((xml.is_w(n, "cellIns") || xml.is_w(n, "cellDel") || xml.is_w(n, "cellMerge"))
+                            && xml.doc.parent(n).is_some_and(|p| xml.is_w(p, "tcPr"))))
+                    && selected(xml, n, selector)
+            });
+            let Some(record) = record else { break };
+            note(done, xml, record);
+            if kind_of(xml, record).is_some() {
+                resolve_property_change(xml, record, true);
+            } else {
+                // A cell insertion or deletion keeps its cell, like a row.
+                xml.doc.remove_node(record);
+            }
+            done.formatting += 1;
+        }
+    }
+    for id in moves {
+        strip_move_range_markers_in(xml, root, Some(&id));
+    }
+}
+
+fn unwrap(xml: &mut DocxXml, wrapper: NodeId) {
+    for child in xml.doc.children(wrapper).collect::<Vec<_>>() {
+        xml.doc.detach(child);
+        xml.doc.insert_before(wrapper, child);
+    }
+    xml.doc.remove_node(wrapper);
+}
+
+/// Underline (`u`) or strike (`strike`) every run in `wrapper` whose
+/// nearest revision wrapper it is, keeping any underline or strike the
+/// run already has.
+fn format_runs(xml: &mut DocxXml, wrapper: NodeId, property: &str) {
+    let runs: Vec<NodeId> = xml
+        .doc
+        .descendants(wrapper)
+        .filter(|&n| {
+            xml.is_w(n, "r")
+                && xml.doc.ancestors(n).skip(1).find(|&a| a == wrapper || xml.is_rev_ins(a) || xml.is_rev_del(a)) == Some(wrapper)
+        })
+        .collect();
+    let off = |xml: &DocxXml, node: NodeId| matches!(xml.attr(node, "val"), Some("0" | "false" | "off" | "none"));
+    for run in runs {
+        let rpr = match xml.child_w(run, "rPr") {
+            Some(rpr) => rpr,
+            None => {
+                let rpr = xml.doc.create_element("w:rPr");
+                xml.doc.prepend_child(run, rpr);
+                rpr
+            }
+        };
+        if property == "strike" {
+            let has = ["strike", "dstrike"].iter().any(|name| xml.child_w(rpr, name).is_some_and(|n| !off(xml, n)));
+            if !has {
+                let node = super::layout::ensure_rpr_child(xml, rpr, "strike");
+                xml.doc.remove_attribute(node, "w:val");
+                xml.doc.remove_attribute(node, "val");
+            }
+        } else if !xml.child_w(rpr, "u").is_some_and(|n| !off(xml, n)) {
+            let node = super::layout::ensure_rpr_child(xml, rpr, "u");
+            super::layout::set_attr(xml, node, "w:val", "single");
+        }
+    }
+}

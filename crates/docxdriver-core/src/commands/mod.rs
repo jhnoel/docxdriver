@@ -637,6 +637,17 @@ fn run_typed_edit_inner(
             })
         }
         EditOp::BookmarkDelete { name } => mutate(state, |pkg, xml, _| bookmarks::delete(pkg, xml, name)),
+        EditOp::ConvertRevisionsToFormatting { target, at } => {
+            let mut paragraphs = None;
+            if let Some(at) = at {
+                let mut ids = Vec::new();
+                for address in at {
+                    ids.push(para_id!(address));
+                }
+                paragraphs = Some(ids);
+            }
+            mutate(state, |pkg, xml, source| revisions::convert_to_formatting(pkg, xml, source, target, paragraphs.as_deref()))
+        }
         // The list cache writes numbering.xml at the end of the plan; flush
         // and drop it so settling sees, and may prune, the current part.
         EditOp::RevisionSettle { target, action } => match { state.flush_lists(); state.list_state = None; target } {

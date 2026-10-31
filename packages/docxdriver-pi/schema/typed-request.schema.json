@@ -857,6 +857,40 @@
       ],
       "type": "string"
     },
+    "RevisionSelector": {
+      "oneOf": [
+        {
+          "const": "all",
+          "type": "string"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[0-9]+$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "author": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "author"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "RevisionTarget": {
       "pattern": "^(?:all|[0-9]+)$",
       "type": "string"
@@ -2856,6 +2890,35 @@
           },
           "required": [
             "action",
+            "op",
+            "target"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Turn tracked changes into amendment formatting (37 CFR 1.121): an insertion's text stays, underlined; a deletion's text comes back, struck through; no revision is left. A deleted paragraph mark stays (the paragraph's struck text keeps its own line); an inserted paragraph stays with its text underlined; inserted and deleted table rows stay, their text underlined or struck. Formatting, table and section property changes have no amendment form and are accepted. Moves convert as deletion (source) and insertion (destination). Existing underline and strike are kept. `target` is `\"all\"`, `{\"id\": ...}` or `{\"author\": ...}`; `at` limits it to revisions in those body paragraphs. Settles revisions, so it writes none of its own in either change mode.",
+          "properties": {
+            "at": {
+              "items": {
+                "$ref": "#/$defs/ParagraphAddress"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "op": {
+              "enum": [
+                "convert_revisions_to_formatting"
+              ],
+              "type": "string"
+            },
+            "target": {
+              "$ref": "#/$defs/RevisionSelector"
+            }
+          },
+          "required": [
             "op",
             "target"
           ],

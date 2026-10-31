@@ -49,6 +49,7 @@ export const PLAN_CAPABILITIES = {
     'bookmark_move',
     'bookmark_delete',
     'revision_settle',
+    'convert_revisions_to_formatting',
   ],
   docs: {
     format_table: 'Format the table at a source-bound table:N handle or inserted $alias. format accepts width (unit auto, points/value, percent/value), column_widths (positive points, exactly matching the grid), layout (fixed/autofit), alignment, borders, cell_spacing, padding and an existing table style ID. Omitted values preserve source properties; clear removes supported direct settings and wins over set. Grid dimensions cannot be cleared. Tracked plans snapshot table and grid properties; settle a pending property change before editing that bag again.',
@@ -110,5 +111,7 @@ export const PLAN_CAPABILITIES = {
       "Remove the body bookmark `name`: its start and end markers only; the text is untouched.",
     revision_settle:
       'Accept or reject tracked changes: `target` is a decimal revision id from `docx_read(path, kind="revisions")` or `all`; `action` is `accept` or `reject`. Prefer the `AcceptRevision(target)` / `RejectRevision(target)` shorthands. Settling `all` also settles tracked changes made by earlier operations in the same plan, and later selectors address the settled text.',
+    convert_revisions_to_formatting:
+      'Convert tracked changes to amendment formatting (37 CFR 1.121): inserted text stays underlined, deleted text comes back struck through, and no revision is left. `target` is `all`, `{"id": "<revision id>"}` or `{"author": "<name>"}`; optional `at` limits it to revisions in those paragraphs. Inserted or deleted paragraphs and table rows stay (text underlined or struck); text deleted inside a converted insertion goes; formatting, table and section property changes are accepted; existing underline and strike are kept. Make ordinary tracked edits first, then convert. Writes no revision in either change mode; other revisions of other authors convert only when targeted.',
   },
 };

@@ -161,6 +161,18 @@ class CommentSetStatus:
         return value
 
 @dataclass
+class ConvertRevisionsToFormatting:
+    target: str | dict
+    at: list | None = None
+    def to_dict(self):
+        value = {"op": "convert_revisions_to_formatting"}
+        if self.target is not None:
+            value["target"] = self.target
+        if self.at is not None:
+            value["at"] = self.at
+        return value
+
+@dataclass
 class DeleteEquation:
     at: str
     equation: int | None = None
@@ -776,6 +788,12 @@ class CommentSetStatus:
     status: str
     def to_dict(self) -> dict: ...
 
+class ConvertRevisionsToFormatting:
+    def __init__(self, target: str | dict, at: list | None = None): ...
+    target: str | dict
+    at: list | None
+    def to_dict(self) -> dict: ...
+
 class DeleteEquation:
     def __init__(self, at: str, equation: int | None = None): ...
     at: str
@@ -1159,6 +1177,17 @@ Set a comment's status to \`open\` or \`resolved\` by decimal \`comment_id\`.
 | --- | --- | --- |
 | \`comment_id\` | \`str\` | yes |
 | \`status\` | \`str\` | yes |
+
+### ConvertRevisionsToFormatting
+
+\`ConvertRevisionsToFormatting(target: str | dict, at: list | None = None)\`
+
+Convert tracked changes to amendment formatting (37 CFR 1.121): inserted text stays underlined, deleted text comes back struck through, and no revision is left. \`target\` is \`all\`, \`{"id": "<revision id>"}\` or \`{"author": "<name>"}\`; optional \`at\` limits it to revisions in those paragraphs. Inserted or deleted paragraphs and table rows stay (text underlined or struck); text deleted inside a converted insertion goes; formatting, table and section property changes are accepted; existing underline and strike are kept. Make ordinary tracked edits first, then convert. Writes no revision in either change mode; other revisions of other authors convert only when targeted.
+
+| Field | Type | Required |
+| --- | --- | --- |
+| \`target\` | \`str | dict\` | yes |
+| \`at\` | \`list | None\` | no |
 
 ### DeleteEquation
 

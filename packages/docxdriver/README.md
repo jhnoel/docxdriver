@@ -266,6 +266,30 @@ second precision). `PlanRequest.now` / `CommandRequest.now`
 server read it from `DOCXDRIVER_NOW`, and the WASM binding uses the
 host's clock when it is omitted.
 
+### Amendment formatting
+
+`convert_revisions_to_formatting` turns tracked changes into the amendment
+convention of 37 CFR 1.121: inserted text underlined, deleted text struck
+through, no revision left. Make ordinary tracked edits (the word-level
+redlines below), then convert:
+
+```json
+{"op": "convert_revisions_to_formatting", "target": "all"}
+```
+
+`target` is `"all"`, `{"id": "<revision id>"}` or `{"author": "<name>"}`;
+`at` (paragraph ids) limits it to revisions in those body paragraphs, and
+without `at` headers and footers convert too. A deletion's text comes back
+before the insertion that replaced it, as the markup shows it. Inserted and
+deleted paragraphs and table rows stay, their text underlined or struck;
+text deleted inside a converted insertion goes (it was never in the
+source). Formatting, table and section property changes have no amendment
+form and are accepted. Moves convert as a deletion and an insertion.
+Existing underline and strike are kept. It settles revisions, so it writes
+none of its own in either change mode, and converting twice changes
+nothing. The report says how many insertions, deletions, paragraph marks,
+rows and formatting changes it converted.
+
 ### Word-level redlines
 
 Tracked plain-text replacements automatically compute word-level redlines in

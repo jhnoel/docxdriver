@@ -545,6 +545,59 @@ impl<'de> Deserialize<'de> for RevisionTarget {
     }
 }
 
+/// Which revisions `convert_revisions_to_formatting` converts: `"all"`,
+/// `{"id": "<decimal revision id>"}` or `{"author": "<name>"}`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RevisionSelector {
+    All,
+    Id(String),
+    Author(String),
+}
+impl Serialize for RevisionSelector {
+    fn serialize<S>(&self, s: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            Self::All => s.serialize_str("all"),
+            Self::Id(id) => serde_json::json!({ "id": id }).serialize(s),
+            Self::Author(author) => serde_json::json!({ "author": author }).serialize(s),
+        }
+    }
+}
+impl<'de> Deserialize<'de> for RevisionSelector {
+    fn deserialize<D>(d: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let error = || serde::de::Error::custom("target must be \"all\", {\"id\": \"<decimal revision id>\"} or {\"author\": \"<name>\"}");
+        match Value::deserialize(d)? {
+            Value::String(all) if all == "all" => Ok(Self::All),
+            Value::Object(object) if object.len() == 1 => match object.into_iter().next() {
+                Some((key, Value::String(id))) if key == "id" && !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()) => Ok(Self::Id(id)),
+                Some((key, Value::String(author))) if key == "author" && !author.is_empty() => Ok(Self::Author(author)),
+                _ => Err(error()),
+            },
+            _ => Err(error()),
+        }
+    }
+}
+impl JsonSchema for RevisionSelector {
+    fn schema_name() -> String {
+        "RevisionSelector".into()
+    }
+    fn json_schema(_generator: &mut schemars::gen::SchemaGenerator) -> Schema {
+        serde_json::from_value(serde_json::json!({
+            "oneOf": [
+                {"type": "string", "const": "all"},
+                {"type": "object", "additionalProperties": false, "required": ["id"], "properties": {"id": {"type": "string", "pattern": "^[0-9]+$"}}},
+                {"type": "object", "additionalProperties": false, "required": ["author"], "properties": {"author": {"type": "string", "minLength": 1}}}
+            ]
+        }))
+        .unwrap()
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[serde(tag = "mode", content = "value", rename_all = "snake_case")]
@@ -880,6 +933,23 @@ pub enum EditOp {
     RevisionSettle {
         target: RevisionTarget,
         action: RevisionAction,
+    },
+    /// Turn tracked changes into amendment formatting (37 CFR 1.121): an
+    /// insertion's text stays, underlined; a deletion's text comes back,
+    /// struck through; no revision is left. A deleted paragraph mark stays
+    /// (the paragraph's struck text keeps its own line); an inserted
+    /// paragraph stays with its text underlined; inserted and deleted table
+    /// rows stay, their text underlined or struck. Formatting, table and
+    /// section property changes have no amendment form and are accepted.
+    /// Moves convert as deletion (source) and insertion (destination).
+    /// Existing underline and strike are kept. `target` is `"all"`,
+    /// `{"id": ...}` or `{"author": ...}`; `at` limits it to revisions in
+    /// those body paragraphs. Settles revisions, so it writes none of its
+    /// own in either change mode.
+    ConvertRevisionsToFormatting {
+        target: RevisionSelector,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        at: Option<Vec<ParagraphAddress>>,
     },
 }
 
@@ -1806,6 +1876,11 @@ fn normalize_op(op: &mut EditOp) -> Result<(), String> {
             ..
         }
         | EditOp::SetEvenAndOddHeaders { .. } => {}
+        EditOp::ConvertRevisionsToFormatting { at, .. } => {
+            if at.as_ref().is_some_and(Vec::is_empty) {
+                return Err("at must name at least one paragraph when given".into());
+            }
+        }
         EditOp::SetFirstPageMode { section, .. }
         | EditOp::SetHeader { section, .. }
         | EditOp::SetFooter { section, .. }
@@ -2364,7 +2439,7 @@ fn explain_selector_drift(
         .iter()
         .enumerate()
         .filter(|(i, earlier)| {
-            matches!(earlier, EditOp::RevisionSettle { .. })
+            matches!(earlier, EditOp::RevisionSettle { .. } | EditOp::ConvertRevisionsToFormatting { .. })
                 || affected_ids[*i].iter().any(|touched| touched.eq_ignore_ascii_case(&id))
         })
         .map(|(i, earlier)| format!("ops[{i}] {}", operation_name(earlier)))
@@ -2445,6 +2520,7 @@ fn operation_name(op: &EditOp) -> &'static str {
         EditOp::BookmarkMove { .. } => "bookmark_move",
         EditOp::BookmarkDelete { .. } => "bookmark_delete",
         EditOp::RevisionSettle { .. } => "revision_settle",
+        EditOp::ConvertRevisionsToFormatting { .. } => "convert_revisions_to_formatting",
     }
 }
 fn group_map(groups: &BTreeMap<String, Vec<String>>) -> Map<String, Value> {
@@ -2529,6 +2605,7 @@ fn resolve_typed_aliases(
             }
         }
         EditOp::DeleteParagraphs { at } | EditOp::SetList { at, .. } => resolve_list(at)?,
+        EditOp::ConvertRevisionsToFormatting { at: Some(at), .. } => resolve_list(at)?,
         EditOp::SetSectionLayout { section_handle:Some(handle),.. } => {
             if let Some(alias)=handle.strip_prefix("section:$") {
                 let Some(Value::String(id))=aliases.get(alias) else { return Err(diag("unknown_alias",format!("unknown section paragraph alias ${alias}"),None)); };

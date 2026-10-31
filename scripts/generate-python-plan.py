@@ -53,7 +53,7 @@ PYTHON_KEYWORDS = {
 REF_TYPES = {
     'ParagraphAddress': 'str', 'InsertAnchor': 'str', 'ChromeKind': 'str',
     'InsertPosition': 'str', 'ChangeMode': 'str', 'CommentStatus': 'str',
-    'RevisionAction': 'str', 'RevisionTarget': 'str', 'TextEdit': 'dict',
+    'RevisionAction': 'str', 'RevisionTarget': 'str', 'RevisionSelector': 'str | dict', 'TextEdit': 'dict',
     'PreviewKey': 'str', 'SourceHash': 'str', 'Points': 'float',
     'LineSpacing': 'dict', 'Span': 'dict', 'Diagnostic': 'dict',
     'HighlightColor': 'str', 'SignedPoints': 'float', 'TableEdit': 'dict',

@@ -54,6 +54,7 @@ const REF_TYPES = {
   CommentStatus: 'str',
   RevisionAction: 'str',
   RevisionTarget: 'str',
+  RevisionSelector: 'str | dict',
   TextEdit: 'dict',
   PreviewKey: 'str',
   SourceHash: 'str',
