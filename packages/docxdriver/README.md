@@ -264,7 +264,12 @@ Revisions and comments carry the time of the commit (`w:date`, UTC,
 second precision). `PlanRequest.now` / `CommandRequest.now`
 (`YYYY-MM-DDTHH:MM:SSZ`) fixes it for byte-stable output; the CLI and MCP
 server read it from `DOCXDRIVER_NOW`, and the WASM binding uses the
-host's clock when it is omitted.
+host's clock when it is omitted. `docxdriver-core` itself reads no clock:
+embedded directly, a commit without `now` is rejected (`missing_now`)
+unless the crate's `clock` feature is on (the CLI, MCP server and Python
+binding enable it). A review without `now` stamps a fixed placeholder in
+its discarded dry run. A `now` that is not a real UTC second is
+`invalid_now`.
 
 ### Amendment formatting
 

@@ -2042,7 +2042,14 @@ pub fn execute_plan(input: &[u8], request: &PlanRequest) -> PlanResult {
             };
         }
     }
-    let now = match revision_time(request.now.as_deref()) {
+    // A review's bytes are discarded, so its stamp is a fixed placeholder
+    // unless the caller gives one; a commit needs the real time.
+    let committing = request.preview_key.is_some();
+    let now = match (committing, request.now.as_deref()) {
+        (false, None) => Ok(PREVIEW_TIME.to_string()),
+        (_, given) => revision_time(given),
+    };
+    let now = match now {
         Ok(now) => now,
         Err(diagnostic) => {
             return PlanResult::Rejected { source: Some(source), plan: Some(plan.clone()), diagnostic, report: None };
@@ -2075,43 +2082,77 @@ pub fn execute_plan(input: &[u8], request: &PlanRequest) -> PlanResult {
         }
     }
 }
-/// The time a commit stamps: `given` when valid, else the current UTC time.
+/// The stamp a review without `now` writes into its discarded dry run.
+const PREVIEW_TIME: &str = "2000-01-01T00:00:00Z";
+
+/// The time a commit stamps. The core has no clock: `given` when it is a
+/// valid UTC time, else the current time from the `clock` feature, else a
+/// `missing_now` error. Hosts pass `now` (the CLI, MCP server and Python
+/// binding enable `clock`; the WASM binding passes the JS clock).
 pub fn revision_time(given: Option<&str>) -> Result<String, Diagnostic> {
     match given {
-        Some(value) => {
-            let valid = value.len() == 20
-                && value.bytes().enumerate().all(|(i, b)| match i {
-                    4 | 7 => b == b'-',
-                    10 => b == b'T',
-                    13 | 16 => b == b':',
-                    19 => b == b'Z',
-                    _ => b.is_ascii_digit(),
-                });
-            if valid {
-                Ok(value.to_string())
-            } else {
-                Err(diag("invalid_now", format!("now must be a UTC time YYYY-MM-DDTHH:MM:SSZ, got {value:?}"), Some("now".into())))
-            }
-        }
-        None => Ok(current_utc()),
+        Some(value) if valid_utc(value) => Ok(value.to_string()),
+        Some(value) => Err(diag("invalid_now", format!("now must be a UTC time YYYY-MM-DDTHH:MM:SSZ, got {value:?}"), Some("now".into()))),
+        None => host_now().ok_or_else(|| {
+            diag(
+                "missing_now",
+                "a commit needs the time to stamp on its revisions: pass now (UTC, YYYY-MM-DDTHH:MM:SSZ), or build docxdriver-core with the clock feature",
+                Some("now".into()),
+            )
+        }),
     }
 }
 
-/// The current UTC time, second precision, as Word writes `w:date`.
-fn current_utc() -> String {
-    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+/// `YYYY-MM-DDTHH:MM:SSZ` naming a real UTC second (xsd:dateTime as Word
+/// writes `w:date`).
+fn valid_utc(value: &str) -> bool {
+    let b = value.as_bytes();
+    let shaped = b.len() == 20
+        && b.iter().enumerate().all(|(i, &c)| match i {
+            4 | 7 => c == b'-',
+            10 => c == b'T',
+            13 | 16 => c == b':',
+            19 => c == b'Z',
+            _ => c.is_ascii_digit(),
+        });
+    if !shaped {
+        return false;
+    }
+    let field = |range: std::ops::Range<usize>| value[range].parse::<u32>().unwrap_or(u32::MAX);
+    let (year, month, day) = (field(0..4), field(5..7), field(8..10));
+    let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+    let days = match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if leap => 29,
+        2 => 28,
+        _ => return false,
+    };
+    (1..=days).contains(&day) && field(11..13) < 24 && field(14..16) < 60 && field(17..19) < 60
+}
+
+#[cfg(feature = "clock")]
+fn host_now() -> Option<String> {
+    Some(now_utc())
+}
+#[cfg(not(feature = "clock"))]
+fn host_now() -> Option<String> {
+    None
+}
+
+/// The current UTC time, second precision, as Word writes `w:date`. The
+/// only clock read in the crate, behind the `clock` feature.
+#[cfg(feature = "clock")]
+pub fn now_utc() -> String {
     let seconds = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
-    // No clock without a host: the WASM binding passes the host's time.
-    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
-    let seconds = 0i64;
     format_utc(seconds)
 }
 
 /// `seconds` since the Unix epoch as `YYYY-MM-DDTHH:MM:SSZ`.
-fn format_utc(seconds: i64) -> String {
+pub fn format_utc(seconds: i64) -> String {
     let (days, rest) = (seconds.div_euclid(86_400), seconds.rem_euclid(86_400));
     // Civil date from days (Howard Hinnant's algorithm).
     let z = days + 719_468;
@@ -2133,6 +2174,17 @@ mod clock_tests {
         assert_eq!(super::format_utc(0), "1970-01-01T00:00:00Z");
         assert_eq!(super::format_utc(951_782_400), "2000-02-29T00:00:00Z");
         assert_eq!(super::format_utc(1_793_450_096), "2026-10-31T12:34:56Z");
+    }
+
+    #[test]
+    fn only_real_utc_seconds_are_valid() {
+        for good in ["2026-10-31T12:34:56Z", "2024-02-29T00:00:00Z", "2000-12-31T23:59:59Z"] {
+            assert!(super::valid_utc(good), "{good}");
+        }
+        for bad in ["2026-13-01T00:00:00Z", "2026-00-10T00:00:00Z", "2026-04-31T00:00:00Z", "2025-02-29T00:00:00Z",
+                    "2026-10-31T24:00:00Z", "2026-10-31T12:60:00Z", "2026-10-31T12:00:60Z", "2026-10-31 12:34:56"] {
+            assert!(!super::valid_utc(bad), "{bad}");
+        }
     }
 }
 

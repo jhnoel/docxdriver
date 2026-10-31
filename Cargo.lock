@@ -429,6 +429,7 @@ dependencies = [
 name = "docxdriver-core"
 version = "0.4.4"
 dependencies = [
+ "docxdriver-core",
  "hex",
  "latex2mathml",
  "quick-xml",
