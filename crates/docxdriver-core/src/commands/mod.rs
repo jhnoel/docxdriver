@@ -425,7 +425,7 @@ fn run_typed_edit_inner(
             let mut addresses = Vec::new();
             for address in at { addresses.push(para_id!(address)); }
             let cache=state.list_state.get_or_insert_with(||lists::ListState::new(&state.xml));
-            match lists::set_list_cached(&mut state.package,&mut state.xml,state.source_hash,&addresses,*num_id,format.as_deref(),*level,*start,*remove,levels.as_deref(),author,ctx,cache) {
+            match lists::set_list_cached(&mut state.package,&mut state.xml,state.source_hash,&addresses,*num_id,format.as_deref(),*level,*start,*remove,levels.as_deref(),author,ctx,mode!=crate::api::ChangeMode::Direct,cache) {
                 Ok((summary,result))=>{state.mutated=true;Outcome::ok(summary,result)},
                 Err(outcome)=>outcome,
             }
