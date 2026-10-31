@@ -15,7 +15,9 @@ fn run(bytes: &[u8], mode: &str, author: &str, ops: &str) -> Result<Vec<u8>, Str
     let json = format!(r#"{{"author":"{author}","change_mode":"{mode}","ops":{ops}}}"#);
     let plan = doc.plan(&json).map_err(|d| d.message)?;
     let review = doc.review(&plan).map_err(|d| d.message)?;
-    doc.commit(&plan, &review.key).map_err(|d| d.message)
+    // A fixed revision time, so two runs of one plan are comparable.
+    doc.commit_at(&plan, &review.key, Some("2026-01-01T00:00:00Z"))
+        .map_err(|d| d.message)
 }
 
 fn settle(bytes: &[u8], accept: bool) -> Vec<u8> {
@@ -125,7 +127,13 @@ fn canonical(bytes: &[u8], input: &[u8]) -> BTreeMap<String, String> {
     let mut out = BTreeMap::new();
     for (name, xml) in parts(bytes) {
         // The declaration's line break is serializer style, not content.
-        let mut text = xml.replacen("?>\n<", "?><", 1).trim_end().to_string();
+        // The XML declaration is serializer style, not content.
+        let start = if xml.starts_with("<?xml") {
+            xml.find("?>").map_or(0, |at| at + 2)
+        } else {
+            0
+        };
+        let mut text = xml[start..].trim().to_string();
         for id in para_ids(&xml) {
             if known.contains(&id) {
                 continue;
@@ -620,9 +628,9 @@ fn rejecting_an_insertion_after_the_last_paragraph_restores_the_input() {
 enum Track {
     /// Revisions only: accept-all gives the direct output, reject-all the input.
     Exact,
-    /// As `Exact`, but reject-all keeps definitions or empty stories the op
-    /// added (list definitions, a new header part); its views still equal
-    /// the input's.
+    /// As `Exact`, but reject-all keeps the empty story the op added (a new
+    /// header part: Word cannot track its reference); its views and text
+    /// still equal the input's.
     KeepsAdditions,
     /// Accept-all leaves an empty story where the direct edit removes its
     /// reference (same rendering in the first section); reject-all gives the
@@ -639,7 +647,7 @@ enum Track {
 
 fn expectation(op: &str) -> Track {
     match op {
-        "set_list" | "set_header_first" => Track::KeepsAdditions,
+        "set_header_first" => Track::KeepsAdditions,
         "set_footer_page" => Track::ComplexField,
         "clear_header" | "clear_footer" => Track::EmptiesStory,
         "set_even_and_odd_headers"
@@ -1134,4 +1142,80 @@ fn an_inserted_paragraph_continues_the_anchor_like_enter() {
         !properties.contains("pPrChange") && !properties.contains("Bob"),
         "{properties}"
     );
+}
+
+// Reject-all kept the list definitions a rejected set_list added.
+#[test]
+fn rejecting_a_list_change_takes_back_its_definitions() {
+    let base = fixture();
+    let supplier = first_id(&base, "Supplier");
+    let either = first_id(&base, "Either party");
+    // An input that already holds an unreferenced definition keeps it.
+    let orphan = run(
+        &base,
+        "direct",
+        "setup",
+        &format!(r#"[{{"op":"set_list","at":["{either}"],"format":"upperRoman"}}]"#),
+    )
+    .unwrap();
+    let orphan = run(
+        &orphan,
+        "direct",
+        "setup",
+        &format!(r#"[{{"op":"set_list","at":["{either}"],"remove":true}}]"#),
+    )
+    .unwrap();
+    // Serializer style (the XML declaration) is not content.
+    let body = |xml: String| match xml.find("<w:numbering") {
+        Some(at) => xml[at..].trim_end().to_string(),
+        None => xml,
+    };
+    for input in [base.clone(), orphan] {
+        let numbering = body(part(&input, "word/numbering.xml"));
+        for ops in [
+            format!(r#"[{{"op":"set_list","at":["{supplier}"],"format":"bullet"}}]"#),
+            format!(
+                r#"[{{"op":"set_list","at":["{supplier}"],"levels":[{{"format":"decimal","label":"%1)"}}]}}]"#
+            ),
+            format!(r#"[{{"op":"set_list","at":["{supplier}"],"num_id":1}}]"#),
+        ] {
+            let tracked = run(&input, "track", AUTHOR, &ops).unwrap();
+            assert_ne!(part(&tracked, "word/numbering.xml"), "", "{ops}");
+            let rejected = settle(&tracked, false);
+            assert_eq!(
+                body(part(&rejected, "word/numbering.xml")),
+                numbering,
+                "{ops}"
+            );
+            // One revision at a time, too.
+            let mut bytes = tracked.clone();
+            while let Some(id) = Document::open(&bytes)
+                .revisions()
+                .unwrap()
+                .iter()
+                .find(|r| r["author"] == AUTHOR)
+                .and_then(|r| r["id"].as_str().map(str::to_owned))
+            {
+                bytes = run(
+                    &bytes,
+                    "direct",
+                    "settler",
+                    &format!(r#"[{{"op":"revision_settle","target":"{id}","action":"reject"}}]"#),
+                )
+                .unwrap();
+            }
+            assert_eq!(
+                body(part(&bytes, "word/numbering.xml")),
+                numbering,
+                "{ops} one by one"
+            );
+            // Accepting keeps them.
+            let accepted = settle(&tracked, true);
+            assert_eq!(
+                part(&accepted, "word/numbering.xml"),
+                part(&tracked, "word/numbering.xml"),
+                "{ops}"
+            );
+        }
+    }
 }

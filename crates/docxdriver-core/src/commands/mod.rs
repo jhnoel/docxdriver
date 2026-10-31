@@ -637,7 +637,9 @@ fn run_typed_edit_inner(
             })
         }
         EditOp::BookmarkDelete { name } => mutate(state, |pkg, xml, _| bookmarks::delete(pkg, xml, name)),
-        EditOp::RevisionSettle { target, action } => match target {
+        // The list cache writes numbering.xml at the end of the plan; flush
+        // and drop it so settling sees, and may prune, the current part.
+        EditOp::RevisionSettle { target, action } => match { state.flush_lists(); state.list_state = None; target } {
             RevisionTarget::All => mutate(state, |pkg, xml, _| {
                 revisions::accept_reject_all(pkg, xml, matches!(action, RevisionAction::Accept))
             }),

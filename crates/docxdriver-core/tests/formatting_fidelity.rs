@@ -1088,7 +1088,8 @@ fn cached_list_definitions_support_cross_operation_continue_restart_and_settleme
     assert!(html.contains("4.") && html.contains("5.") && html.contains("9.") && html.contains("10."),"{html}");
     let rejected=settle(&changed,RevisionAction::Reject);
     assert!(!String::from_utf8(parts(&rejected)["word/document.xml"].clone()).unwrap().contains("w:numPr"));
-    assert_eq!(parts(&changed)["word/numbering.xml"],parts(&rejected)["word/numbering.xml"]);
+    // Rejecting takes back the list instances nothing refers to any more.
+    assert!(!String::from_utf8(parts(&rejected)["word/numbering.xml"].clone()).unwrap().contains("<w:num "));
     let accepted=settle(&changed,RevisionAction::Accept);
     assert!(!String::from_utf8(parts(&accepted)["word/document.xml"].clone()).unwrap().contains("w:pPrChange"));
     assert!(read(&accepted,"final").to_string().contains("10."));
@@ -1103,12 +1104,18 @@ fn section_page_number_start_respects_the_sdk_signed_integer_range() {
 }
 
 #[test]
-fn cached_list_definitions_survive_in_plan_rejection_and_error_reports_are_flushed() {
+fn cached_list_definitions_go_with_in_plan_rejection_and_error_reports_are_flushed() {
     let input=create("<p>A</p><p>B</p>");let d=xml(&input);
     let ids=d.descendants(d.root()).filter(|&n|local(&d,n)=="p").map(|n|d.attribute(n,"w14:paraId").or_else(||d.attribute(n,"paraId")).unwrap().to_owned()).collect::<Vec<_>>();
     let op=|v|serde_json::from_value::<EditOp>(v).unwrap();
-    let changed=commit(&input,vec![op(json!({"op":"set_list","at":[ids[0]],"format":"decimal","start":4})),op(json!({"op":"revision_settle","target":"all","action":"reject"})),op(json!({"op":"set_list","at":[ids[1]],"num_id":1}))]);
-    let raw=String::from_utf8(parts(&changed)["word/document.xml"].clone()).unwrap();assert_eq!(raw.matches("<w:numPr>").count(),1);assert!(read(&changed,"final").to_string().contains("4."));
+    // Rejecting a list change in the plan takes back its definition, so a
+    // later op cannot continue the rejected list...
+    let plan=Plan{base:SourceHash::from_bytes(&input),author:"cache".into(),change_mode:ChangeMode::Track,ops:vec![op(json!({"op":"set_list","at":[ids[0]],"format":"decimal","start":4})),op(json!({"op":"revision_settle","target":"all","action":"reject"})),op(json!({"op":"set_list","at":[ids[1]],"num_id":1}))]};
+    let PlanResult::Rejected{diagnostic,..}=execute_plan(&input,&PlanRequest{plan,preview_key:None, now: None})else{panic!("expected the rejected list to be gone")};
+    assert!(diagnostic.message.contains("num_id does not exist"),"{diagnostic:?}");
+    // ...while a definition still referenced stays usable after a reject.
+    let changed=commit(&input,vec![op(json!({"op":"set_list","at":[ids[0]],"format":"decimal","start":4})),op(json!({"op":"revision_settle","target":"all","action":"accept"})),op(json!({"op":"revision_settle","target":"all","action":"reject"})),op(json!({"op":"set_list","at":[ids[1]],"num_id":1}))]);
+    let raw=String::from_utf8(parts(&changed)["word/document.xml"].clone()).unwrap();assert_eq!(raw.matches("<w:numPr>").count(),2);assert!(read(&changed,"final").to_string().contains("4."));
     let plan=Plan{base:SourceHash::from_bytes(&input),author:"cache".into(),change_mode:ChangeMode::Track,ops:vec![op(json!({"op":"set_list","at":[ids[0]],"start":4})),op(json!({"op":"format_paragraph","at":"$unknown","alignment":"center"}))]};
     let PlanResult::Rejected{report:Some(report),..}=execute_plan(&input,&PlanRequest{plan,preview_key:None, now: None})else{panic!("expected rejected report")};
     assert_eq!(report.completed,1);assert!(json!(report.ops[0].affected).to_string().contains("4."));

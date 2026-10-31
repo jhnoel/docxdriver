@@ -247,13 +247,13 @@ never re-authored or settled, except by `revision_settle`.
 | `insert_paragraph` | inserted content and paragraph mark; reject-all removes the paragraph. Without `style` the new paragraph takes the anchor's paragraph properties (Word's Enter), so it continues a list | inserted |
 | `delete_paragraphs` | deleted content and paragraph mark; accept-all leaves the next paragraph's id and properties. A mark that cannot join forward (last paragraph, before a table, section end) stays, and the previous paragraph's mark is deleted instead, as in Word | removed (the tracked edit, accepted) |
 | `format_text` | `w:rPrChange` | applied |
-| `format_paragraph`, `set_list` | `w:pPrChange` (new list definitions stay after reject-all) | applied |
+| `format_paragraph`, `set_list` | `w:pPrChange`; rejecting a list change removes the list definitions it added | applied |
 | `format_table`, `format_row`, `format_cell` | `w:tblPrChange`, `w:trPrChange`, `w:tcPrChange` | applied |
 | `insert_table` | inserted rows (`w:trPr/w:ins`) and content; refused as the last block of a cell | inserted |
 | `edit_table` `insert_rows` / `delete_rows` / `delete` | row insertion / deletion (`w:trPr/w:ins` / `w:del`) | applied |
 | `edit_table` `insert_columns` / `delete_columns` / `merge_cells` / `split_cell` | refused (Word does not track them) | applied |
 | `replace_equation`, `delete_equation` | `w:del` / `w:ins` | applied |
-| `set_header`, `set_footer` | old content deleted, new inserted; simple fields become complex field runs; a new story stays (empty) after reject-all; `kind: first` tracks `titlePg`; `kind: even` refused while even/odd headers are off | replaced |
+| `set_header`, `set_footer` | old content deleted, new inserted; simple fields become complex field runs; a new story stays (empty) after reject-all, since a header or footer reference has no revision form (direct mode is exact); `kind: first` tracks `titlePg`; `kind: even` refused while even/odd headers are off | replaced |
 | `clear_header`, `clear_footer` | content deleted, the empty story stays referenced; refused after section 1 | reference removed |
 | `set_page_margins`, `set_section_layout`, `set_first_page_mode` | `w:sectPrChange` | applied |
 | `set_section_boundary`, `set_even_and_odd_headers` | refused (no Word revision exists) | applied |

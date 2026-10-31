@@ -693,8 +693,8 @@ pub enum EditOp {
         clear: Vec<String>,
     },
     /// Assign selected paragraphs to a new or existing list. `remove` explicitly
-    /// suppresses inherited numbering; new definitions remain after rejection.
-    /// Tracked: w:pPrChange (new list definitions stay after reject-all). Direct: applied, no revision.
+    /// suppresses inherited numbering.
+    /// Tracked: w:pPrChange; rejecting it also removes the list definitions it added once nothing refers to them (definitions the input already left unreferenced stay). Direct: applied, no revision.
     SetList {
         #[serde(default)]
         levels: Option<Vec<ListLevel>>,

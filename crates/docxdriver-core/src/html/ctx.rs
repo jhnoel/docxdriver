@@ -48,6 +48,11 @@ struct PartPaths {
     styles: String,
 }
 
+/// The numbering part of the package's main document.
+pub(crate) fn numbering_part_name(package: &Package) -> String {
+    part_paths(package).numbering
+}
+
 fn part_paths(package: &Package) -> PartPaths {
     let main = package.document_part_name();
     let (dir, _) = main.rsplit_once('/').unwrap_or(("", main.as_str()));

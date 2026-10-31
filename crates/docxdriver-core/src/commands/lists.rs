@@ -1,5 +1,7 @@
-//! Explicit list membership. Definitions are append-only, so tracked rejection
-//! can restore prior references without invalidating another paragraph's list.
+//! Explicit list membership. Edits only append definitions, so tracked
+//! rejection can restore prior references without invalidating another
+//! paragraph's list; reject-all then drops the definitions nothing refers
+//! to any more (`drop_orphaned_lists`).
 use super::{
     layout::{ensure_ppr, ensure_ppr_child},
     typed::resolve_paragraph_by_para_id,
@@ -528,4 +530,79 @@ pub(crate) fn set_list_cached(
         "updated list membership".into(),
         json!({"num_id":assigned,"paragraphs":at,"tracked":true}),
     ))
+}
+
+/// Every `w:numId` value the document refers to: the main document part
+/// (from the working `xml`, pending property snapshots included) and every
+/// other WordprocessingML part (headers, footers, notes, comments, styles).
+pub(crate) fn referenced_num_ids(package: &Package, xml: &DocxXml) -> std::collections::HashSet<String> {
+    let mut ids = std::collections::HashSet::new();
+    let mut collect = |x: &DocxXml| {
+        let root = x.doc.root();
+        for node in x.doc.descendants(root) {
+            if x.is_w(node, "numId") {
+                if let Some(value) = x.attr(node, "val") {
+                    ids.insert(value.to_string());
+                }
+            }
+        }
+    };
+    collect(xml);
+    let main = package.document_part_name();
+    let numbering = crate::html::ctx::numbering_part_name(package);
+    for (name, bytes) in package.parts() {
+        if name == main || name == numbering || !name.starts_with("word/") || !name.ends_with(".xml") {
+            continue;
+        }
+        if let Ok(part) = DocxXml::parse(bytes) {
+            collect(&part);
+        }
+    }
+    ids
+}
+
+/// Remove the list instances (`w:num`) named in `orphaned`, and each
+/// abstract definition left with no instance that is not linked to a
+/// numbering style: reject-all takes back the definitions a rejected list
+/// change added. Only instances that were referenced before settling and
+/// are not after it are passed in; definitions the input already left
+/// unreferenced stay. Returns how many elements were removed.
+pub(crate) fn drop_orphaned_lists(package: &mut Package, orphaned: &std::collections::HashSet<String>) -> usize {
+    if orphaned.is_empty() {
+        return 0;
+    }
+    let part = crate::html::ctx::numbering_part_name(package);
+    let Some(mut numbering) = package.get(&part).and_then(|bytes| DocxXml::parse(bytes).ok()) else {
+        return 0;
+    };
+    let Some(root) = numbering.doc.root_element() else { return 0 };
+    let mut removed = 0;
+    let mut abstracts = std::collections::HashSet::new();
+    for num in numbering.doc.children(root).filter(|&n| numbering.is_w(n, "num")).collect::<Vec<_>>() {
+        if numbering.attr(num, "numId").is_some_and(|id| orphaned.contains(id)) {
+            if let Some(abstract_id) = numbering.child_w(num, "abstractNumId").and_then(|n| numbering.attr(n, "val")) {
+                abstracts.insert(abstract_id.to_string());
+            }
+            numbering.doc.remove_node(num);
+            removed += 1;
+        }
+    }
+    let still_used: std::collections::HashSet<String> = numbering
+        .doc
+        .children(root)
+        .filter(|&n| numbering.is_w(n, "num"))
+        .filter_map(|n| numbering.child_w(n, "abstractNumId").and_then(|a| numbering.attr(a, "val")).map(str::to_owned))
+        .collect();
+    for definition in numbering.doc.children(root).filter(|&n| numbering.is_w(n, "abstractNum")).collect::<Vec<_>>() {
+        let Some(id) = numbering.attr(definition, "abstractNumId").map(str::to_owned) else { continue };
+        let linked = numbering.child_w(definition, "styleLink").is_some() || numbering.child_w(definition, "numStyleLink").is_some();
+        if abstracts.contains(&id) && !still_used.contains(&id) && !linked {
+            numbering.doc.remove_node(definition);
+            removed += 1;
+        }
+    }
+    if removed > 0 {
+        package.set(&part, numbering.serialize());
+    }
+    removed
 }

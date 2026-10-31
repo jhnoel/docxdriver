@@ -569,7 +569,31 @@ fn is_new_revision(xml: &DocxXml, node: NodeId, author: &str) -> bool {
         && xml.doc.ancestors(node).any(|a| a == xml.doc.root())
 }
 
+/// Reject takes back the list definitions a rejected change added: list
+/// instances referenced before settling and by nothing after it go (see
+/// `lists::drop_orphaned_lists`). Word leaves them; they are invisible, and
+/// leaving them made reject-all differ from the input.
+fn drop_rejected_lists(package: &mut Package, xml: &DocxXml, before: &std::collections::HashSet<String>) {
+    let after = super::lists::referenced_num_ids(package, xml);
+    let orphaned: std::collections::HashSet<String> = before.difference(&after).cloned().collect();
+    super::lists::drop_orphaned_lists(package, &orphaned);
+}
+
 pub fn accept_reject_one_typed(
+    package: &mut Package,
+    xml: &mut DocxXml,
+    revision_id: &str,
+    accept: bool,
+) -> Result<(String, Value), Outcome> {
+    let referenced = (!accept).then(|| super::lists::referenced_num_ids(package, xml));
+    let result = accept_reject_one_inner(package, xml, revision_id, accept);
+    if let (Ok(_), Some(before)) = (&result, referenced) {
+        drop_rejected_lists(package, xml, &before);
+    }
+    result
+}
+
+fn accept_reject_one_inner(
     package: &mut Package,
     xml: &mut DocxXml,
     revision_id: &str,
@@ -627,6 +651,7 @@ pub fn accept_reject_all(
     xml: &mut DocxXml,
     accept: bool,
 ) -> Result<(String, Value), Outcome> {
+    let referenced = (!accept).then(|| super::lists::referenced_num_ids(package, xml));
     let mut count = accept_reject_all_in_xml(xml, accept)?;
     for part_name in crate::html::chrome::chrome_part_names(package, xml) {
         let Some(bytes) = package.get(&part_name) else {
@@ -640,6 +665,9 @@ pub fn accept_reject_all(
             package.set(&part_name, part_xml.serialize());
             count += n;
         }
+    }
+    if let Some(before) = referenced {
+        drop_rejected_lists(package, xml, &before);
     }
     let verb = if accept { "accepted" } else { "rejected" };
     Ok((
