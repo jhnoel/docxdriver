@@ -12,7 +12,7 @@ name = "docxdriver"
 path = "src/main.rs"
 
 [dependencies]
-docxdriver-core = { path = "../docxdriver-core", version = "0.4.4", features = ["clock"] }
+docxdriver-core = { path = "../docxdriver-core", version = "0.5.0", features = ["clock"] }
 clap = { version = "4", features = ["derive", "env"] }
 serde = "1"
 serde_json = "1"
