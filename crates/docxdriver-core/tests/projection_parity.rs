@@ -6,6 +6,25 @@ use std::collections::BTreeMap;
 use xmloxide::tree::{Document, NodeId, NodeKind};
 const INPUT: &[u8] = include_bytes!("fixtures/projection-parity/parity.docx");
 const PRIOR: &str = include_str!("fixtures/projection-parity/prior-projection.json");
+/// Deliberate departures from the prior engine. A paragraph joined in the
+/// final or original view takes the identity of the paragraph whose mark
+/// survives settlement (the later one), as accept-all and reject-all leave
+/// it; the prior engine showed the first paragraph's id and position.
+fn settled_identity(view: &str, before: &mut Value) {
+    let joins: &[(&str, &str, &str)] = match view {
+        "final" => &[("77777777", "1EDE45A3", "10")],
+        "original" => &[("4B101413", "11543C1E", "12")],
+        _ => &[],
+    };
+    for paragraph in before["paragraphs"].as_array_mut().unwrap() {
+        for (old, new, ord) in joins {
+            if paragraph["id"] == *old {
+                paragraph["id"] = json!(new);
+                paragraph["ord"] = json!(ord);
+            }
+        }
+    }
+}
 fn read(view: &str) -> Value {
     match execute_command(
         Some(INPUT),
@@ -306,7 +325,8 @@ fn prior_projection_semantics_survive_all_revision_views() {
                 "unresolvable block paragraph: {id}"
             );
         }
-        let before = collect(old["markup"].as_str().unwrap(), false);
+        let mut before = collect(old["markup"].as_str().unwrap(), false);
+        settled_identity(view, &mut before);
         let after = collect(new["html"].as_str().unwrap(), true);
         for feature in [
             "paragraphs",

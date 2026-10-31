@@ -191,6 +191,18 @@ pub(crate) fn run_typed_edit(
     }
     let before = state.xml.revision_checkpoint();
     let outcome = run_typed_edit_inner(state, &resolved, author, mode, index, source, seed, ctx);
+    // A direct edit leaves no revision: operations that only write the
+    // tracked form (formatting records, paragraph deletion) are settled
+    // here, so direct output is exactly the accepted tracked output.
+    let mut outcome = outcome;
+    if mode == crate::api::ChangeMode::Direct && outcome.status == crate::outcome::Status::Ok {
+        revisions::accept_new_revisions(&mut state.xml, before, author);
+        if let Some(Value::Object(result)) = outcome.result.as_mut() {
+            if result.get("tracked") == Some(&Value::Bool(true)) {
+                result.insert("tracked".into(), Value::Bool(false));
+            }
+        }
+    }
     state.xml.renumber_allocated_revision_ids(before);
     if matches!(op, EditOp::EditTable { .. } | EditOp::InsertTable { .. } | EditOp::DeleteParagraphs { .. } | EditOp::ReplaceParagraph { .. }) {
         state.table_positions = table_positions(&state.xml);
@@ -479,6 +491,7 @@ fn run_typed_edit_inner(
             let args = typed::DeleteParagraphsArgs {
                 at: targets,
                 author: author.into(),
+                tracked,
             };
             mutate(state, |pkg, xml, source| {
                 typed::delete_paragraphs_typed(pkg, xml, &args, ctx, source)

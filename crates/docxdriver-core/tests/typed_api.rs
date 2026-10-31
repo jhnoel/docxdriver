@@ -2370,7 +2370,7 @@ fn created_structure_follows_schema_sequence_order() {
         assert!(sect.contains(attr), "pgMar lacks {attr}: {sect}");
     }
 
-    let formatted = commit_plan(
+    let formatted = commit_mode(
         &bytes,
         vec![EditOp::FormatParagraph {
             at: ParagraphAddress::id(SOURCE_ID),
@@ -2384,6 +2384,7 @@ fn created_structure_follows_schema_sequence_order() {
             line_spacing: None,
             clear: vec![],
         }],
+        ChangeMode::Track,
     );
     let xml = document_xml(&formatted);
     let ppr = &xml[xml.find("<w:pPr>").unwrap()..xml.find("</w:pPr>").unwrap()];
@@ -2400,7 +2401,7 @@ fn signed_paragraph_indentation_is_selective_and_rejectable() {
     let source = package_with_body(&body);
     for offset in [-18.0, 0.0, 12.0] {
         let op: EditOp = serde_json::from_value(serde_json::json!({"op":"format_paragraph", "at":SOURCE_ID,"indent_left":-6,"indent_right":-3,"first_line_indent":offset})).unwrap();
-        let result = commit_plan(&source, vec![op]);
+        let result = commit_mode(&source, vec![op], ChangeMode::Track);
         let xml = document_xml(&result);
         let direct = xml.split("<w:pPrChange").next().unwrap();
         assert!(direct.contains("w:left=\"-120\""), "{xml}");
@@ -2432,7 +2433,7 @@ fn multilevel_list_definitions_have_isolated_formatting_and_restarts() {
             {"format":"lowerRoman","label":"%1.%2.%3","restart_after":1,"marker_font":"Arial","indent_left":-6}
         ]
     })).unwrap();
-    let result = commit_plan(&source, vec![operation]);
+    let result = commit_mode(&source, vec![operation], ChangeMode::Track);
     let mut zip = zip::ZipArchive::new(std::io::Cursor::new(&result)).unwrap();
     let mut numbering = String::new();
     std::io::Read::read_to_string(&mut zip.by_name("word/numbering.xml").unwrap(), &mut numbering).unwrap();
@@ -2485,7 +2486,7 @@ fn comment_reply_is_anchored_beside_its_parent_and_deleted_with_the_thread() {
 #[test]
 fn revision_ids_are_unique_per_element() {
     let source = document(&[(SOURCE_ID, "first paragraph"), (SECOND_ID, "second paragraph")]);
-    let deleted = commit_plan(&source, ops(serde_json::json!([{"op": "delete_paragraphs", "at": [SOURCE_ID]}])));
+    let deleted = commit_mode(&source, ops(serde_json::json!([{"op": "delete_paragraphs", "at": [SOURCE_ID]}])), ChangeMode::Track);
     let document = document_xml(&deleted);
     let ids = ids_of(&document, "del");
     assert!(ids.len() > 1, "expected a run deletion and a paragraph-mark deletion: {document}");
@@ -2498,11 +2499,12 @@ fn run_properties_are_written_in_sequence_order() {
     let body = format!(
         "<w:p w14:paraId=\"{SOURCE_ID}\"><w:r><w:rPr><w:i/><w:lang w:val=\"en-US\"/></w:rPr><w:t>text</w:t></w:r></w:p>"
     );
-    let formatted = commit_plan(
+    let formatted = commit_mode(
         &package_with_body(&format!(
             "<?xml version=\"1.0\" encoding=\"UTF-8\"?><w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:w14=\"http://schemas.microsoft.com/office/word/2010/wordml\"><w:body>{body}</w:body></w:document>"
         )),
         ops(serde_json::json!([{"op": "format_text", "at": SOURCE_ID, "select": "text", "bold": true, "font_size": 14, "strike": true, "underline": true}])),
+        ChangeMode::Track,
     );
     let document = document_xml(&formatted);
     let rpr = &document[document.find("<w:rPr>").expect("run properties")..];
@@ -2623,7 +2625,9 @@ fn list_insert_alias_names_the_group() {
     let key=PreviewKey::new(&request);
     let PlanResult::Committed{bytes,..}=execute_plan(&source,&PlanRequest{plan:request,preview_key:Some(key)})else{panic!("commit failed")};
     let xml=document_xml(&bytes);
-    assert!(["A","B","C"].iter().all(|t|xml.contains(&format!("<w:delText>{t}<"))),"{xml}");
+    // A direct deletion removes the paragraphs; nothing is left tracked.
+    assert!(["A","B","C"].iter().all(|t|!xml.contains(&format!(">{t}<"))),"{xml}");
+    assert!(!xml.contains("<w:del ") && xml.contains(">First<") && xml.contains(">Second<"),"{xml}");
 
     let request=direct(serde_json::json!([insert,{"op":"format_paragraph","at":"$g","alignment":"center"}]));
     match execute_plan(&source,&PlanRequest{plan:request,preview_key:None}) {

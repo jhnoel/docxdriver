@@ -2535,6 +2535,7 @@ pub fn format_paragraph(
                 .and_then(Value::as_str)
                 .unwrap_or(DEFAULT_AUTHOR)
                 .to_owned(),
+            tracked: true,
         },
         ctx,
         source_hash,
@@ -2857,44 +2858,12 @@ fn is_top_level_body_paragraph(xml: &DocxXml, node: NodeId) -> bool {
     false
 }
 
-/// Body-level milestone elements that can sit between paragraphs and are not
-/// blocks themselves.
-const BODY_MILESTONES: &[&str] = &[
-    "bookmarkStart",
-    "bookmarkEnd",
-    "commentRangeStart",
-    "commentRangeEnd",
-    "commentReference",
-    "permStart",
-    "permEnd",
-    "proofErr",
-    "moveFromRangeStart",
-    "moveFromRangeEnd",
-    "moveToRangeStart",
-    "moveToRangeEnd",
-];
-
 /// Whether the block immediately following `paragraph` is a mergeable
 /// paragraph (its terminating break can be marked deleted so accepting the
 /// deletion joins the two paragraphs). Tables, section properties, and other
 /// non-paragraph blocks are not mergeable; milestone elements are skipped.
 fn next_block_is_mergeable_paragraph(xml: &DocxXml, paragraph: NodeId) -> bool {
-    let mut cursor = xml.doc.next_sibling(paragraph);
-    while let Some(node) = cursor {
-        if !xml.doc.is_element(node) {
-            cursor = xml.doc.next_sibling(node);
-            continue;
-        }
-        if xml.is_w(node, "p") {
-            return true;
-        }
-        if BODY_MILESTONES.iter().any(|local| xml.is_w(node, local)) {
-            cursor = xml.doc.next_sibling(node);
-            continue;
-        }
-        return false;
-    }
-    false
+    xml.paragraph_join_target(paragraph).is_some()
 }
 
 /// Whether `paragraph` is wholly `author`'s pending insertion (its mark and
@@ -3034,6 +3003,9 @@ fn wrap_live_content_in_del(
 pub struct DeleteParagraphsArgs {
     pub at: Vec<String>,
     pub author: String,
+    /// False in direct mode: the deletion is written tracked and settled
+    /// by the caller, and the summary says what the caller leaves.
+    pub tracked: bool,
 }
 
 pub fn delete_paragraphs_typed(
@@ -3087,8 +3059,11 @@ pub fn delete_paragraphs_typed(
         let rev_id = xml.next_revision_id();
         wrap_live_content_in_del(xml, *node, rev_id, &author, &ctx.now)
             .map_err(|e| blocked_at(address, e))?;
-        // A paragraph mark that is already a tracked deletion stays as it is.
-        if next_block_is_mergeable_paragraph(xml, *node) && xml.paragraph_mark_del(*node).is_none() {
+        // A paragraph mark that is already a tracked deletion stays as it is,
+        // and so does one that ends a section: joining it would take the
+        // section break with it.
+        let ends_section = xml.child_w(*node, "pPr").is_some_and(|ppr| xml.child_w(ppr, "sectPr").is_some());
+        if !ends_section && next_block_is_mergeable_paragraph(xml, *node) && xml.paragraph_mark_del(*node).is_none() {
             xml.add_paragraph_mark_marker(*node, "del", rev_id, &author, &ctx.now);
             break_marks += 1;
         }
@@ -3096,13 +3071,17 @@ pub fn delete_paragraphs_typed(
 
     let ids: Vec<String> = targets.iter().map(|(_, id)| id.clone()).collect();
     let marked = ids.len() - removed;
-    let mut summary = format!(
-        "marked {} paragraph{} for tracked deletion ({} break{})",
-        marked,
-        if marked == 1 { "" } else { "s" },
-        break_marks,
-        if break_marks == 1 { "" } else { "s" }
-    );
+    let mut summary = if args.tracked {
+        format!(
+            "marked {} paragraph{} for tracked deletion ({} break{})",
+            marked,
+            if marked == 1 { "" } else { "s" },
+            break_marks,
+            if break_marks == 1 { "" } else { "s" }
+        )
+    } else {
+        format!("deleted {} paragraph{}", marked, if marked == 1 { "" } else { "s" })
+    };
     if removed > 0 {
         summary.push_str(&format!(
             "; removed {removed} own pending paragraph{}",
@@ -3112,8 +3091,8 @@ pub fn delete_paragraphs_typed(
     let result = json!({
         "paragraphs": ids,
         "breaks": break_marks,
-        "revisions": marked,
-        "tracked": true,
+        "revisions": if args.tracked { marked } else { 0 },
+        "tracked": args.tracked,
     });
     Ok((summary, result))
 }
@@ -3147,6 +3126,7 @@ pub fn delete_paragraphs(
                 .and_then(Value::as_str)
                 .unwrap_or(DEFAULT_AUTHOR)
                 .to_owned(),
+            tracked: true,
         },
         ctx,
         source_hash,
@@ -3307,6 +3287,7 @@ pub fn comment_add(
                 .and_then(Value::as_str)
                 .unwrap_or(DEFAULT_AUTHOR)
                 .to_owned(),
+            tracked: true,
         },
         ctx,
         source_hash,

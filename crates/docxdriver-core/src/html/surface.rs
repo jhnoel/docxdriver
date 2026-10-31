@@ -59,7 +59,7 @@ pub fn render_document(
     let chrome = chrome_map(package, xml);
     let mut notes = NoteBodies::load(package, view, source_hash);
     assign_note_labels(xml, &mut notes, view);
-    let ctx = RenderCtx::build_with_notes(package, xml, notes, source_hash);
+    let ctx = RenderCtx::build_with_notes(package, xml, notes, source_hash).for_view(package, xml, view);
     let mut repairs = ctx.repairs;
 
     let Some(body) = xml.body() else {
@@ -350,7 +350,7 @@ fn render_chrome_inner(
     let Some(root) = part_xml.doc.root_element() else {
         return (String::new(), Vec::new(), true, 0);
     };
-    let ctx = RenderCtx::build_for_part(package, &part_xml, part, source_hash);
+    let ctx = RenderCtx::build_for_part(package, &part_xml, part, source_hash).for_view(package, &part_xml, view);
     let rendered = render_blocks(&part_xml, &ctx, view, root);
     let blank = is_blank_chrome(&rendered.html);
     let paragraphs: Vec<NodeId> = rendered
@@ -433,7 +433,7 @@ fn load_note_part(
     let Some(root) = xml.doc.root_element() else {
         return;
     };
-    let ctx = RenderCtx::build_for_part(package, &xml, part, source_hash);
+    let ctx = RenderCtx::build_for_part(package, &xml, part, source_hash).for_view(package, &xml, view);
     for note in xml.doc.children(root).collect::<Vec<_>>() {
         if !xml.is_w(note, item_tag) || xml.attr(note, "type").is_some() {
             continue;

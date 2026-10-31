@@ -344,19 +344,22 @@ fn resolve_entry(xml: &mut DocxXml, entry: &RevisionEntry, accept: bool) -> Resu
         // (mark ins) or an accepted merge (mark del); otherwise only the
         // marker is dropped and the break stands.
         let join = accept != ins_like(entry.kind);
+        // A rejected insertion with nothing to join leaves no empty
+        // paragraph behind: its content has already gone with its wrappers.
+        // (Only once that content is settled: rejecting the mark alone never
+        // takes pending content of another revision with it.)
+        let vanishes = !accept
+            && xml.rejected_insertion_vanishes(entry.paragraph)
+            && xml.doc.children(entry.paragraph).all(|child| !xml.doc.is_element(child) || xml.is_w(child, "pPr"));
         xml.doc.remove_node(entry.node);
+        if vanishes {
+            xml.doc.remove_node(entry.paragraph);
+            return Ok(());
+        }
         if join {
-            // Pull the next paragraph's run content into this one and drop it.
-            let next = {
-                let mut sibling = xml.doc.next_sibling(entry.paragraph);
-                while let Some(node) = sibling {
-                    if xml.is_w(node, "p") {
-                        break;
-                    }
-                    sibling = xml.doc.next_sibling(node);
-                }
-                sibling
-            };
+            // Join into the next paragraph; a table, the section properties
+            // or the end of the story stop the join, and the mark just goes.
+            let next = xml.paragraph_join_target(entry.paragraph);
             // The joined paragraph ends at the next paragraph's mark, so that
             // mark's pPr and identity win, as in Word: this paragraph's
             // content moves to the front of the next one and this one goes.
@@ -401,6 +404,92 @@ fn resolve_entry(xml: &mut DocxXml, entry: &RevisionEntry, accept: bool) -> Resu
         (true, false) | (false, true) => remove_content(xml, entry.node),
     }
     Ok(())
+}
+
+/// Accept the revisions an operation has just written: attached revision
+/// elements by `author` created after the arena watermark `before`.
+/// Operations that only know the tracked form run that way in direct mode
+/// and end here, so their direct output is their accepted tracked output
+/// by construction. Revisions already in the part, and those of other
+/// authors, are never touched. Returns how many were settled.
+pub(crate) fn accept_new_revisions(xml: &mut DocxXml, before: usize, author: &str) -> usize {
+    let fresh: Vec<NodeId> = (before + 1..=xml.doc.node_count())
+        .filter_map(|raw| u32::try_from(raw).ok().and_then(NodeId::from_raw))
+        .filter(|&node| is_new_revision(xml, node, author))
+        .collect();
+    let paragraph_of = |xml: &DocxXml, node: NodeId| xml.doc.ancestors(node).find(|&a| xml.is_w(a, "p"));
+    let is_mark = |xml: &DocxXml, node: NodeId| {
+        matches!(kind_of(xml, node), Some("ins" | "del" | "moveFrom" | "moveTo"))
+            && paragraph_of(xml, node).is_some_and(|p| inside_ppr(xml, node, p))
+    };
+    let mut count = 0;
+    // Content first; marks then join paragraphs, last first; records last.
+    for &node in &fresh {
+        let attached = xml.doc.ancestors(node).any(|a| a == xml.doc.root());
+        if !attached || is_mark(xml, node) || !matches!(kind_of(xml, node), Some("ins" | "del" | "moveFrom" | "moveTo")) {
+            continue;
+        }
+        if xml.doc.ancestors(node).skip(1).any(|a| xml.is_w(a, "trPr")) {
+            continue;
+        }
+        if ins_like(kind_of(xml, node).unwrap_or("ins")) {
+            for child in xml.doc.children(node).collect::<Vec<_>>() {
+                xml.doc.detach(child);
+                xml.doc.insert_before(node, child);
+            }
+            xml.doc.remove_node(node);
+        } else {
+            remove_content(xml, node);
+        }
+        count += 1;
+    }
+    let mut marks: Vec<(NodeId, NodeId)> = fresh
+        .iter()
+        .copied()
+        .filter(|&node| xml.doc.ancestors(node).any(|a| a == xml.doc.root()) && is_mark(xml, node))
+        .filter_map(|node| paragraph_of(xml, node).map(|p| (node, p)))
+        .collect();
+    if marks.len() > 1 {
+        let order: std::collections::HashMap<NodeId, usize> =
+            xml.all_paragraphs().into_iter().enumerate().map(|(i, p)| (p, i)).collect();
+        marks.sort_by_key(|(_, p)| std::cmp::Reverse(order.get(p).copied().unwrap_or(0)));
+    }
+    for (node, paragraph) in marks {
+        let entry = RevisionEntry {
+            id: String::new(),
+            kind: kind_of(xml, node).unwrap_or("ins"),
+            author: author.into(),
+            date: String::new(),
+            paragraph_index: 0,
+            locator: String::new(),
+            text: String::new(),
+            node,
+            is_paragraph_mark: true,
+            paragraph,
+            part: None,
+        };
+        if resolve_entry(xml, &entry, true).is_ok() {
+            count += 1;
+        }
+    }
+    for &node in &fresh {
+        let attached = xml.doc.ancestors(node).any(|a| a == xml.doc.root());
+        if attached && kind_of(xml, node).is_some_and(|k| !matches!(k, "ins" | "del" | "moveFrom" | "moveTo")) {
+            resolve_property_change(xml, node, true);
+            count += 1;
+        }
+    }
+    count
+}
+
+/// A revision element by `author`, attached, whose id is not one the part
+/// had before the operation (a split or copy of an existing revision keeps
+/// the old id until renumbering, and is not new).
+fn is_new_revision(xml: &DocxXml, node: NodeId, author: &str) -> bool {
+    kind_of(xml, node).is_some()
+        && xml.attr(node, "author") == Some(author)
+        && !xml.attr(node, "id").is_some_and(|id| xml.is_prior_revision_id(id))
+        && xml.doc.ancestors(node).any(|a| a == xml.doc.root())
 }
 
 pub fn accept_reject_one_typed(

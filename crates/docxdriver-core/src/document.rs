@@ -181,6 +181,23 @@ pub struct ParaIdIndex {
 
 /// Every element family carrying a revision w:id; they share one sequence.
 /// The trailing move range markers pair a start and end under one id.
+/// Body-level milestone elements that can sit between paragraphs and are not
+/// blocks themselves.
+pub const BODY_MILESTONES: &[&str] = &[
+    "bookmarkStart",
+    "bookmarkEnd",
+    "commentRangeStart",
+    "commentRangeEnd",
+    "commentReference",
+    "permStart",
+    "permEnd",
+    "proofErr",
+    "moveFromRangeStart",
+    "moveFromRangeEnd",
+    "moveToRangeStart",
+    "moveToRangeEnd",
+];
+
 const REVISION_ID_TAGS: &[&str] = &[
     "ins", "del", "cellIns", "cellDel", "cellMerge", "moveFrom", "moveTo", "rPrChange",
     "pPrChange", "tblPrChange", "trPrChange", "tcPrChange", "sectPrChange", "tblGridChange",
@@ -611,6 +628,82 @@ impl DocxXml {
             .or_else(|| self.child_w(rpr, "moveFrom"))
     }
 
+    /// The paragraph a removed paragraph mark joins `paragraph` into: the
+    /// next block, past milestones only, when it is a paragraph. A table, a
+    /// section's properties or the end of the story stop the join.
+    pub fn paragraph_join_target(&self, paragraph: NodeId) -> Option<NodeId> {
+        let mut cursor = self.doc.next_sibling(paragraph);
+        while let Some(node) = cursor {
+            if !self.doc.is_element(node) || BODY_MILESTONES.iter().any(|local| self.is_w(node, local)) {
+                cursor = self.doc.next_sibling(node);
+                continue;
+            }
+            return self.is_w(node, "p").then_some(node);
+        }
+        None
+    }
+
+    /// Whether rejecting `paragraph`'s inserted mark removes the paragraph
+    /// outright: nothing joins it (it is the last paragraph before a table,
+    /// the section properties or the end of its story), everything in it is
+    /// inserted, and its story stays well formed without it — a body still
+    /// ends in a paragraph, any other story still ends in a block after it.
+    /// Rejecting such an insertion otherwise leaves an empty paragraph the
+    /// source never had.
+    /// A run of such paragraphs at the end of a story goes together: one
+    /// whose join target vanishes has nothing to join either.
+    pub fn rejected_insertion_vanishes(&self, paragraph: NodeId) -> bool {
+        // Walk the run of joined insertions to its end; every one must be
+        // inserted outright, and the story must survive losing them.
+        let mut current = paragraph;
+        loop {
+            if self.paragraph_mark_ins(current).is_none() || !self.wholly_inserted(current) {
+                return false;
+            }
+            match self.paragraph_join_target(current) {
+                Some(next) => current = next,
+                None => break,
+            }
+        }
+        self.story_survives_without(paragraph) && self.story_survives_without(current)
+    }
+
+    /// Whether every child of `paragraph` but its properties is inserted.
+    fn wholly_inserted(&self, paragraph: NodeId) -> bool {
+        self.doc
+            .children(paragraph)
+            .filter(|&child| self.doc.is_element(child))
+            .all(|child| self.is_w(child, "pPr") || self.is_rev_ins(child))
+    }
+
+    /// Whether `paragraph`'s story stays well formed without it: a body
+    /// still ends in a paragraph, any other story still ends in a block
+    /// after it.
+    fn story_survives_without(&self, paragraph: NodeId) -> bool {
+        let Some(parent) = self.doc.parent(paragraph) else {
+            return false;
+        };
+        let element = |node: &NodeId| self.doc.is_element(*node) && !BODY_MILESTONES.iter().any(|local| self.is_w(*node, local));
+        if self.is_w(parent, "body") {
+            let mut previous = self.doc.prev_sibling(paragraph);
+            while let Some(node) = previous {
+                if element(&node) {
+                    return self.is_w(node, "p");
+                }
+                previous = self.doc.prev_sibling(node);
+            }
+            return false;
+        }
+        let mut next = self.doc.next_sibling(paragraph);
+        while let Some(node) = next {
+            if element(&node) {
+                return self.is_w(node, "p") || self.is_w(node, "tbl");
+            }
+            next = self.doc.next_sibling(node);
+        }
+        false
+    }
+
     /// Add a paragraph-mark revision marker (w:pPr/w:rPr/w:ins|w:del), creating
     /// pPr/rPr as needed. `kind` is "ins" or "del".
     pub fn add_paragraph_mark_marker(
@@ -767,6 +860,13 @@ impl DocxXml {
                 .filter_map(|node| self.attr(node, "id").map(str::to_owned)).collect());
         }
         self.doc.node_count()
+    }
+
+    /// Whether `id` belonged to a revision before the current operation
+    /// (between [`DocxXml::revision_checkpoint`] and the renumbering that
+    /// follows it): a clone of an existing revision still carries its id.
+    pub fn is_prior_revision_id(&self, id: &str) -> bool {
+        self.revision_ids.as_ref().is_some_and(|ids| ids.contains(id))
     }
 
     /// Give newly allocated, attached revision elements unique IDs. Source

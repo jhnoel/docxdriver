@@ -690,7 +690,7 @@ fn collect_css(x: &DocxXml, p: NodeId, run: bool, map: &mut BTreeMap<String, Str
     }
 }
 
-fn property_bag(x: &DocxXml, n: NodeId, name: &str, original: bool) -> Option<NodeId> {
+pub(crate) fn property_bag(x: &DocxXml, n: NodeId, name: &str, original: bool) -> Option<NodeId> {
     let p = x.child_w(n, name)?;
     if original {
         if let Some(change) = x.child_w(p, &format!("{name}Change")) {
