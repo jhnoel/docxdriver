@@ -2866,6 +2866,34 @@ fn next_block_is_mergeable_paragraph(xml: &DocxXml, paragraph: NodeId) -> bool {
     xml.paragraph_join_target(paragraph).is_some()
 }
 
+/// The paragraph whose mark a deletion of `tail` takes when `tail`'s own
+/// mark cannot join forward: the nearest earlier paragraph, past
+/// milestones and paragraphs this deletion joins forward anyway. None when
+/// that is a table, the start of the story, a paragraph ending a section
+/// (joining it would remove the break) or one whose mark already carries a
+/// revision.
+fn previous_joinable(xml: &DocxXml, tail: NodeId, targets: &std::collections::HashSet<NodeId>) -> Option<NodeId> {
+    let ends_section = |node: NodeId| xml.child_w(node, "pPr").is_some_and(|ppr| xml.child_w(ppr, "sectPr").is_some());
+    let mut cursor = xml.doc.prev_sibling(tail);
+    while let Some(node) = cursor {
+        cursor = xml.doc.prev_sibling(node);
+        if !xml.doc.is_element(node) || crate::document::BODY_MILESTONES.iter().any(|local| xml.is_w(node, local)) {
+            continue;
+        }
+        if !xml.is_w(node, "p") || ends_section(node) {
+            return None;
+        }
+        if targets.contains(&node) && xml.paragraph_mark_del(node).is_some() {
+            continue;
+        }
+        if xml.paragraph_mark_ins(node).is_some() || xml.paragraph_mark_del(node).is_some() {
+            return None;
+        }
+        return Some(node);
+    }
+    None
+}
+
 /// Whether `paragraph` is wholly `author`'s pending insertion (its mark and
 /// all its text) with nothing else to preserve: no section break, no
 /// milestones, and another paragraph beside it.
@@ -3048,6 +3076,7 @@ pub fn delete_paragraphs_typed(
 
     let mut break_marks = 0usize;
     let mut removed = 0usize;
+    let mut tails: Vec<NodeId> = Vec::new();
     for (node, address) in &targets {
         // The author's own pending paragraph goes outright, as in Word.
         if is_own_inserted_paragraph(xml, *node, author) {
@@ -3066,6 +3095,31 @@ pub fn delete_paragraphs_typed(
         if !ends_section && next_block_is_mergeable_paragraph(xml, *node) && xml.paragraph_mark_del(*node).is_none() {
             xml.add_paragraph_mark_marker(*node, "del", rev_id, &author, &ctx.now);
             break_marks += 1;
+        } else if xml.paragraph_mark_del(*node).is_none() {
+            tails.push(*node);
+        }
+    }
+    // A mark that cannot join forward (the last of the body, before a table,
+    // ending a section) stays; as in Word, the deletion takes the previous
+    // paragraph's mark instead, and the survivor gets that paragraph's
+    // properties (its own recorded in a pPrChange) while keeping its section
+    // properties. Accepting joins the previous paragraph into it: no empty
+    // paragraph is left. Where no previous paragraph can join, it stays.
+    let target_nodes: std::collections::HashSet<NodeId> = targets.iter().map(|(node, _)| *node).collect();
+    let mut kept_empty = 0usize;
+    for tail in tails {
+        match previous_joinable(xml, tail, &target_nodes) {
+            Some(previous) => {
+                let id = xml.next_revision_id();
+                if !crate::commands::layout::adopt_paragraph_properties(xml, tail, previous, id, author, &ctx.now) {
+                    kept_empty += 1;
+                    continue;
+                }
+                let id = xml.next_revision_id();
+                xml.add_paragraph_mark_marker(previous, "del", id, author, &ctx.now);
+                break_marks += 1;
+            }
+            None => kept_empty += 1,
         }
     }
 
@@ -3082,6 +3136,12 @@ pub fn delete_paragraphs_typed(
     } else {
         format!("deleted {} paragraph{}", marked, if marked == 1 { "" } else { "s" })
     };
+    if kept_empty > 0 {
+        summary.push_str(&format!(
+            "; {kept_empty} paragraph{} left empty (no previous paragraph can join it)",
+            if kept_empty == 1 { "" } else { "s" }
+        ));
+    }
     if removed > 0 {
         summary.push_str(&format!(
             "; removed {removed} own pending paragraph{}",

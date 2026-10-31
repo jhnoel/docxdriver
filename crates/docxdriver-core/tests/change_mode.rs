@@ -333,6 +333,8 @@ fn op_matrix(bytes: &[u8]) -> Vec<(&'static str, String)> {
         ("delete_paragraphs", format!(r#"[{{"op":"delete_paragraphs","at":["{supplier}"]}}]"#)),
         ("delete_last_claim", format!(r#"[{{"op":"delete_paragraphs","at":["{claim3}"]}}]"#)),
         ("delete_last_paragraph", format!(r#"[{{"op":"delete_paragraphs","at":["{closing}"]}}]"#)),
+        ("delete_before_table", format!(r#"[{{"op":"delete_paragraphs","at":["{either}"]}}]"#)),
+        ("delete_last_two", format!(r#"[{{"op":"delete_paragraphs","at":["{area}","{closing}"]}}]"#)),
         ("insert_table", format!(r#"[{{"op":"insert_table","at":"{supplier}","position":"after","rows":2,"columns":2,"cells":[["a","b"],["c","d"]]}}]"#)),
         ("edit_table_insert_rows", r#"[{"op":"edit_table","at":"table:1","action":{"kind":"insert_rows","row":1,"position":"after","count":1}}]"#.into()),
         ("edit_table_delete_rows", r#"[{"op":"edit_table","at":"table:1","action":{"kind":"delete_rows","row":2,"count":1}}]"#.into()),
@@ -827,5 +829,181 @@ fn check_tracked(label: &str, base: &[u8], input_rejected: &[u8], op: &str, ops:
                 "{context} original view"
             );
         }
+    }
+}
+
+/// Paragraph count and texts of the body, from the markup view.
+fn body_texts(bytes: &[u8]) -> Vec<String> {
+    let markup = Document::open(bytes).markup(View::Markup).unwrap();
+    let paragraph = regex_lite::Regex::new(r"(?s)<(p|h[1-6])( [^>]*)?>(.*?)</(p|h[1-6])>").unwrap();
+    let tag = regex_lite::Regex::new(r"<[^>]+>").unwrap();
+    paragraph
+        .captures_iter(&markup)
+        .map(|c| tag.replace_all(&c[3], "").into_owned())
+        .collect()
+}
+
+fn section_count(bytes: &[u8]) -> usize {
+    part(bytes, "word/document.xml")
+        .matches("<w:sectPr")
+        .count()
+}
+
+// A paragraph whose mark cannot join forward (the last of the body, one
+// before a table, one ending a section) left an empty paragraph behind
+// once its deletion was accepted (and in direct mode). The deletion now
+// takes the previous paragraph's mark, as in Word.
+#[test]
+fn deleting_a_paragraph_that_cannot_join_forward_leaves_no_empty_paragraph() {
+    let plain = fixture();
+    let middle = first_id(&plain, "Either party");
+    // Two sections: the first ends at "Either party".
+    let sectioned = run(
+        &plain,
+        "direct",
+        "setup",
+        &format!(r#"[{{"op":"set_section_boundary","at":"{middle}"}}]"#),
+    )
+    .unwrap();
+    for (label, base, needle, previous_needle) in [
+        ("last", plain.clone(), "Closing paragraph", "The area is"),
+        ("before table", plain.clone(), "Either party", "Abstract"),
+        ("section end", sectioned.clone(), "Either party", "Abstract"),
+        (
+            "foreign before table",
+            foreign_fixture(),
+            "Either party",
+            "Abstract",
+        ),
+    ] {
+        let target = first_id(&base, needle);
+        let previous = first_id(&base, previous_needle);
+        let previous_tag = view_tags(&base, View::Markup)
+            .into_iter()
+            .find(|t| t.contains(&previous))
+            .unwrap();
+        let ops = format!(r#"[{{"op":"delete_paragraphs","at":["{target}"]}}]"#);
+        let tracked = run(&base, "track", AUTHOR, &ops).unwrap();
+        let direct = run(&base, "direct", AUTHOR, &ops).unwrap();
+        let accepted = settle(&tracked, true);
+        assert_same(
+            &format!("{label} accept"),
+            &canonical(&accepted, &base),
+            &canonical(&settle(&direct, true), &base),
+        );
+        assert_same(
+            &format!("{label} reject"),
+            &canonical(&settle(&tracked, false), &base),
+            &canonical(&settle(&base, false), &base),
+        );
+        assert_eq!(authored(&direct, AUTHOR), 0, "{label}");
+        for bytes in [&direct, &accepted] {
+            let texts = body_texts(&settle(bytes, true));
+            let expected: Vec<String> = body_texts(&settle(&base, true))
+                .into_iter()
+                .filter(|t| !t.contains(needle))
+                .collect();
+            assert_eq!(texts, expected, "{label}: no empty paragraph");
+            let tags = view_tags(bytes, View::Markup);
+            assert!(
+                tags.contains(&previous_tag),
+                "{label}: {previous_tag} in {tags:?}"
+            );
+            assert!(
+                !tags.iter().any(|t| t.contains(&target)),
+                "{label}: {tags:?}"
+            );
+            assert_eq!(
+                section_count(bytes),
+                section_count(&base),
+                "{label}: sections"
+            );
+        }
+        assert_eq!(
+            foreign_revisions(&tracked),
+            foreign_revisions(&base),
+            "{label}"
+        );
+        assert_no_new_faults(label, &base, &tracked);
+        assert_no_new_faults(label, &base, &direct);
+    }
+    // A run of deletions at the end takes the mark before the run.
+    let area = first_id(&plain, "The area is");
+    let closing = first_id(&plain, "Closing paragraph");
+    let ops = format!(r#"[{{"op":"delete_paragraphs","at":["{area}","{closing}"]}}]"#);
+    let direct = run(&plain, "direct", AUTHOR, &ops).unwrap();
+    let texts = body_texts(&direct);
+    assert!(
+        !texts
+            .iter()
+            .any(|t| t.is_empty() || t.contains("The area") || t.contains("Closing")),
+        "{texts:?}"
+    );
+}
+
+/// `bytes` with its body content (before the final section properties)
+/// replaced by `body`.
+fn with_body(bytes: &[u8], body: &str) -> Vec<u8> {
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
+    let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    for index in 0..archive.len() {
+        let mut file = archive.by_index(index).unwrap();
+        let name = file.name().to_string();
+        let mut data = Vec::new();
+        std::io::Read::read_to_end(&mut file, &mut data).unwrap();
+        if name == "word/document.xml" {
+            let xml = String::from_utf8(data).unwrap();
+            let start = xml.find("<w:body>").unwrap() + "<w:body>".len();
+            let end = xml.rfind("<w:sectPr").unwrap();
+            data = format!("{}{body}{}", &xml[..start], &xml[end..]).into_bytes();
+        }
+        writer
+            .start_file(name, zip::write::SimpleFileOptions::default())
+            .unwrap();
+        std::io::Write::write_all(&mut writer, &data).unwrap();
+    }
+    writer.finish().unwrap().into_inner()
+}
+
+// An original paragraph whose mark was inserted (a split), followed by
+// wholly inserted paragraphs at the end of the body: the original view is
+// what reject-all leaves.
+#[test]
+fn original_view_of_a_split_before_inserted_tail_is_the_rejected_document() {
+    let mark = |id: u32| {
+        format!(
+            r#"<w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr><w:rPr><w:ins w:id="{id}" w:author="Bob" w:date="2026-01-01T00:00:00Z"/></w:rPr></w:pPr>"#
+        )
+    };
+    let body = format!(
+        concat!(
+            r#"<w:p w14:paraId="10000001"><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr><w:r><w:t>First item</w:t></w:r></w:p>"#,
+            r#"<w:p w14:paraId="10000002">{}<w:r><w:t>Split item</w:t></w:r></w:p>"#,
+            r#"<w:p w14:paraId="10000003">{}<w:ins w:id="3" w:author="Bob" w:date="2026-01-01T00:00:00Z"><w:r><w:t>Inserted one</w:t></w:r></w:ins></w:p>"#,
+            r#"<w:p w14:paraId="10000004"><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr><w:ins w:id="5" w:author="Bob" w:date="2026-01-01T00:00:00Z"><w:r><w:t>Inserted two</w:t></w:r></w:ins></w:p>"#,
+        ),
+        mark(1),
+        mark(2),
+    );
+    let bytes = with_body(&fixture(), &body);
+    for (view, accept) in [(View::Original, false), (View::Final, true)] {
+        assert_eq!(
+            view_tags(&bytes, view),
+            view_tags(&settle(&bytes, accept), View::Markup),
+            "{view:?}"
+        );
+        let text = |b: &[u8], v: View| {
+            Document::open(b)
+                .markup(v)
+                .unwrap()
+                .replace(" data-docx-", "")
+        };
+        let settled = settle(&bytes, accept);
+        let tag = regex_lite::Regex::new(r"<[^>]+>").unwrap();
+        assert_eq!(
+            tag.replace_all(&text(&bytes, view), ""),
+            tag.replace_all(&text(&settled, View::Markup), ""),
+            "{view:?}"
+        );
     }
 }

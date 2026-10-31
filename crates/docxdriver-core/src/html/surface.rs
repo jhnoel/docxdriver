@@ -56,10 +56,89 @@ pub fn render_document(
     view: RenderView,
     source_hash: Option<&[u8; 32]>,
 ) -> RenderedDocument {
+    if view != RenderView::Markup {
+        if let Some(settled) = render_settled(package, xml, view, source_hash) {
+            return settled;
+        }
+    }
+    render_parts(package, xml, view, source_hash, None)
+}
+
+/// The final or original view as the document accept-all or reject-all
+/// actually leaves: a copy of the package is settled and rendered. Its
+/// paragraphs carry the source's addresses (provisional ids included) and
+/// story positions, and the returned regions and blocks name the source's
+/// nodes, found by address. None when the copy cannot be built or settled;
+/// the caller then renders the view from the unsettled document.
+fn render_settled(
+    package: &Package,
+    xml: &DocxXml,
+    view: RenderView,
+    source_hash: Option<&[u8; 32]>,
+) -> Option<RenderedDocument> {
+    let source_ids = RenderCtx::build_with_source(package, xml, source_hash);
+    let mut copy = DocxXml::parse(&xml.serialize()).ok()?;
+    let paragraphs = |x: &DocxXml| -> Vec<NodeId> {
+        let root = x.doc.root();
+        x.doc.descendants(root).filter(|&n| x.is_w(n, "p")).collect()
+    };
+    let (originals, copies) = (paragraphs(xml), paragraphs(&copy));
+    if originals.len() != copies.len() {
+        return None;
+    }
+    let mut by_id: HashMap<String, (NodeId, usize)> = HashMap::new();
+    for (&original, &copied) in originals.iter().zip(&copies) {
+        if let Some((id, ord)) = source_ids.para_ids.get(&original) {
+            if let Some(name) = copy.attr_stored_name(copied, "paraId") {
+                copy.doc.remove_attribute(copied, &name);
+            }
+            copy.doc.set_attribute(copied, "w14:paraId", id);
+            by_id.insert(id.clone(), (original, *ord));
+        }
+    }
+    let mut settled_package = package.clone();
+    crate::commands::revisions::accept_reject_all(&mut settled_package, &mut copy, view == RenderView::Final).ok()?;
+    // The settled copy's paragraphs, under their source addresses.
+    let mut ids: HashMap<NodeId, (String, usize)> = HashMap::new();
+    let mut to_source: HashMap<NodeId, NodeId> = HashMap::new();
+    for copied in paragraphs(&copy) {
+        let Some(id) = copy.attr(copied, "paraId").map(str::to_owned) else { continue };
+        if let Some(&(original, ord)) = by_id.get(&id) {
+            to_source.insert(copied, original);
+            ids.insert(copied, (id, ord));
+        }
+    }
+    let mut rendered = render_parts(&settled_package, &copy, view, source_hash, Some(&ids));
+    rendered.repairs = source_ids.repairs;
+    let remap = |nodes: &mut Vec<NodeId>| {
+        *nodes = nodes.iter().filter_map(|n| to_source.get(n).copied()).collect();
+    };
+    for region in &mut rendered.regions {
+        if region.kind == SurfaceRegionKind::Body {
+            remap(&mut region.paragraphs);
+        }
+    }
+    for block in &mut rendered.body.blocks {
+        remap(&mut block.paragraphs);
+    }
+    Some(rendered)
+}
+
+fn render_parts(
+    package: &Package,
+    xml: &DocxXml,
+    view: RenderView,
+    source_hash: Option<&[u8; 32]>,
+    ids: Option<&HashMap<NodeId, (String, usize)>>,
+) -> RenderedDocument {
     let chrome = chrome_map(package, xml);
     let mut notes = NoteBodies::load(package, view, source_hash);
     assign_note_labels(xml, &mut notes, view);
-    let ctx = RenderCtx::build_with_notes(package, xml, notes, source_hash).for_view(package, xml, view);
+    let mut ctx = RenderCtx::build_with_notes(package, xml, notes, source_hash).for_view(package, xml, view);
+    if let Some(ids) = ids {
+        ctx.para_ids = ids.clone();
+        ctx.repairs = 0;
+    }
     let mut repairs = ctx.repairs;
 
     let Some(body) = xml.body() else {

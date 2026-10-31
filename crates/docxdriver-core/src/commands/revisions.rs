@@ -418,6 +418,30 @@ fn resolve_entry(xml: &mut DocxXml, entry: &RevisionEntry, accept: bool) -> Resu
             //   <p A>Mine.¶(ins)</p><p B, list>item one¶</p>
             //   -> <p B, list>Mine.item one¶</p>
             if let Some(next) = next {
+                // Joining content into an empty paragraph (a deletion that
+                // took the previous mark): the joined paragraph is this one,
+                // so it keeps this one's identity.
+                // (Live content: a pending deletion, an emptied insertion
+                // or a range marker is not.)
+                let has_content = |xml: &DocxXml, p: NodeId| {
+                    xml.doc.children(p).any(|c| {
+                        xml.doc.is_element(c)
+                            && !xml.is_w(c, "pPr")
+                            && !xml.is_rev_del(c)
+                            && !crate::document::BODY_MILESTONES.iter().any(|m| xml.is_w(c, m))
+                            && !(xml.is_rev_ins(c) && !xml.doc.children(c).any(|g| xml.doc.is_element(g)))
+                    })
+                };
+                if has_content(xml, entry.paragraph) && !has_content(xml, next) {
+                    for local in ["paraId", "textId"] {
+                        if let Some(value) = xml.attr(entry.paragraph, local).map(str::to_owned) {
+                            if let Some(name) = xml.attr_stored_name(next, local) {
+                                xml.doc.remove_attribute(next, &name);
+                            }
+                            xml.doc.set_attribute(next, &format!("w14:{local}"), &value);
+                        }
+                    }
+                }
                 let anchor = xml.doc.children(next).find(|&c| !xml.is_w(c, "pPr"));
                 let children: Vec<NodeId> = xml.doc.children(entry.paragraph).collect();
                 for child in children {

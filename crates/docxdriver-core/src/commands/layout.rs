@@ -282,6 +282,69 @@ mod tests {
     }
 }
 
+/// Whether two elements have the same name, attributes and element
+/// children (text is not compared: property elements hold none).
+fn same_tree(xml: &DocxXml, a: NodeId, b: NodeId) -> bool {
+    let attributes = |n: NodeId| {
+        let mut out: Vec<(String, String)> = xml.doc.attributes(n).iter().map(|x| (x.name.clone(), x.value.clone())).collect();
+        out.sort();
+        out
+    };
+    let children = |n: NodeId| xml.doc.children(n).filter(|&c| xml.doc.is_element(c)).collect::<Vec<_>>();
+    let (left, right) = (children(a), children(b));
+    xml.doc.node_name(a) == xml.doc.node_name(b)
+        && attributes(a) == attributes(b)
+        && left.len() == right.len()
+        && left.iter().zip(&right).all(|(&x, &y)| same_tree(xml, x, y))
+}
+
+/// Give paragraph `target` a copy of `source`'s paragraph properties
+/// (CT_PPrBase), recording `target`'s own in a pPrChange when they differ.
+/// `target`'s paragraph-mark run properties and section properties stay.
+/// Returns false, changing nothing, when `target` already has a pending
+/// paragraph property change.
+pub(crate) fn adopt_paragraph_properties(xml: &mut DocxXml, target: NodeId, source: NodeId, id: u64, author: &str, date: &str) -> bool {
+    let base = |xml: &DocxXml, paragraph: NodeId| -> Vec<NodeId> {
+        xml.child_w(paragraph, "pPr")
+            .map(|ppr| {
+                xml.doc
+                    .children(ppr)
+                    .filter(|&c| xml.doc.is_element(c) && !["rPr", "sectPr", "pPrChange"].iter().any(|n| xml.is_w(c, n)))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let old = base(xml, target);
+    let new = base(xml, source);
+    if old.len() == new.len() && old.iter().zip(&new).all(|(&a, &b)| same_tree(xml, a, b)) {
+        return true;
+    }
+    if xml.child_w(target, "pPr").is_some_and(|ppr| xml.child_w(ppr, "pPrChange").is_some()) {
+        return false;
+    }
+    let ppr = ensure_ppr(xml, target);
+    let snapshot = xml.doc.create_element("w:pPr");
+    for node in old {
+        xml.doc.detach(node);
+        xml.doc.append_child(snapshot, node);
+    }
+    let tail = xml.doc.children(ppr).find(|&c| xml.is_w(c, "rPr") || xml.is_w(c, "sectPr") || xml.is_w(c, "pPrChange"));
+    for node in new {
+        let node = xml.doc.clone_node(node, true);
+        match tail {
+            Some(tail) => xml.doc.insert_before(tail, node),
+            None => xml.doc.append_child(ppr, node),
+        }
+    }
+    let change = xml.doc.create_element("w:pPrChange");
+    xml.doc.set_attribute(change, "w:id", &id.to_string());
+    xml.doc.set_attribute(change, "w:author", author);
+    xml.doc.set_attribute(change, "w:date", date);
+    xml.doc.append_child(change, snapshot);
+    xml.doc.append_child(ppr, change);
+    true
+}
+
 const SECT_PR_SEQUENCE: &[&str] = &[
     "headerReference", "footerReference", "footnotePr", "endnotePr", "type", "pgSz",
     "pgMar", "paperSrc", "pgBorders", "lnNumType", "pgNumType", "cols", "formProt",

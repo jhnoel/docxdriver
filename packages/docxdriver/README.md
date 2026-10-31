@@ -236,15 +236,16 @@ revision of its own; a `track` edit leaves no unmarked change: each op
 writes the tracked form Word writes, or is refused with an error that
 names it. Accepting every revision of a tracked edit gives the direct
 edit, and rejecting every revision gives the input (up to run boundaries
-and empty property elements). The `final` and `original` views are what
-accept-all and reject-all produce. Other authors' pending revisions are
+and empty property elements). The `final` and `original` views are
+rendered from a copy of the document with every revision accepted or
+rejected, so they are what accept-all and reject-all produce. Other authors' pending revisions are
 never re-authored or settled, except by `revision_settle`.
 
 | Op | Track | Direct |
 | --- | --- | --- |
 | `replace_text`, `revise_text`, `replace_paragraph` | `w:del` / `w:ins` | replaced |
 | `insert_paragraph` | inserted content and paragraph mark; reject-all removes the paragraph | inserted |
-| `delete_paragraphs` | deleted content and paragraph mark; accept-all leaves the next paragraph's id and properties | removed (the tracked edit, accepted) |
+| `delete_paragraphs` | deleted content and paragraph mark; accept-all leaves the next paragraph's id and properties. A mark that cannot join forward (last paragraph, before a table, section end) stays, and the previous paragraph's mark is deleted instead, as in Word | removed (the tracked edit, accepted) |
 | `format_text` | `w:rPrChange` | applied |
 | `format_paragraph`, `set_list` | `w:pPrChange` (new list definitions stay after reject-all) | applied |
 | `format_table`, `format_row`, `format_cell` | `w:tblPrChange`, `w:trPrChange`, `w:tcPrChange` | applied |

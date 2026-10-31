@@ -420,7 +420,7 @@ impl DocxXml {
 
     /// The stored attribute name matching `local` in either storage form
     /// (parsed "id" + prefix, or created "w:id"), if present.
-    fn attr_stored_name(&self, node: NodeId, local: &str) -> Option<String> {
+    pub(crate) fn attr_stored_name(&self, node: NodeId, local: &str) -> Option<String> {
         let suffix = format!(":{local}");
         self.doc
             .attributes(node)

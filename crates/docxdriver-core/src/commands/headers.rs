@@ -419,7 +419,7 @@ fn tracked_story(
                     story.doc.detach(child);
                     story.doc.append_child(x, child);
                 }
-                take_paragraph_properties(&mut story, x, imported, next_id(), author, date);
+                super::layout::adopt_paragraph_properties(&mut story, x, imported, next_id(), author, date);
             }
             (true, None) => story.doc.append_child(root, imported),
             (false, _) => {
@@ -516,63 +516,6 @@ fn trackable_content(xml: &DocxXml, paragraph: NodeId) -> bool {
         ALLOWED.iter().any(|name| xml.is_w(child, name))
             || crate::document::BODY_MILESTONES.iter().any(|name| xml.is_w(child, name))
     })
-}
-
-/// Whether two elements have the same name, attributes and element
-/// children (text is not compared: property elements hold none).
-fn same_tree(xml: &DocxXml, a: NodeId, b: NodeId) -> bool {
-    let attributes = |n: NodeId| {
-        let mut out: Vec<(String, String)> = xml.doc.attributes(n).iter().map(|x| (x.name.clone(), x.value.clone())).collect();
-        out.sort();
-        out
-    };
-    let children = |n: NodeId| xml.doc.children(n).filter(|&c| xml.doc.is_element(c)).collect::<Vec<_>>();
-    let (left, right) = (children(a), children(b));
-    xml.doc.node_name(a) == xml.doc.node_name(b)
-        && attributes(a) == attributes(b)
-        && left.len() == right.len()
-        && left.iter().zip(&right).all(|(&x, &y)| same_tree(xml, x, y))
-}
-
-/// Give paragraph `target` the paragraph properties of `source` (a new
-/// paragraph), recording `target`'s own in a pPrChange when they differ.
-/// The paragraph mark's run properties stay `target`'s.
-fn take_paragraph_properties(xml: &mut DocxXml, target: NodeId, source: NodeId, id: u64, author: &str, date: &str) {
-    let base = |xml: &DocxXml, paragraph: NodeId| -> Vec<NodeId> {
-        xml.child_w(paragraph, "pPr")
-            .map(|ppr| {
-                xml.doc
-                    .children(ppr)
-                    .filter(|&c| xml.doc.is_element(c) && !["rPr", "sectPr", "pPrChange"].iter().any(|n| xml.is_w(c, n)))
-                    .collect()
-            })
-            .unwrap_or_default()
-    };
-    let old = base(xml, target);
-    let new = base(xml, source);
-    if old.len() == new.len() && old.iter().zip(&new).all(|(&a, &b)| same_tree(xml, a, b)) {
-        return;
-    }
-    let ppr = super::layout::ensure_ppr(xml, target);
-    let snapshot = xml.doc.create_element("w:pPr");
-    for node in old {
-        xml.doc.detach(node);
-        xml.doc.append_child(snapshot, node);
-    }
-    let tail = xml.doc.children(ppr).find(|&c| xml.is_w(c, "rPr") || xml.is_w(c, "sectPr") || xml.is_w(c, "pPrChange"));
-    for node in new {
-        xml.doc.detach(node);
-        match tail {
-            Some(tail) => xml.doc.insert_before(tail, node),
-            None => xml.doc.append_child(ppr, node),
-        }
-    }
-    let change = xml.doc.create_element("w:pPrChange");
-    xml.doc.set_attribute(change, "w:id", &id.to_string());
-    xml.doc.set_attribute(change, "w:author", author);
-    xml.doc.set_attribute(change, "w:date", date);
-    xml.doc.append_child(change, snapshot);
-    xml.doc.append_child(ppr, change);
 }
 
 fn clear_chrome_typed(

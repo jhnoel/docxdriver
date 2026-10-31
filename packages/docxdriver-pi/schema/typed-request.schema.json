@@ -2115,7 +2115,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "Tracked: content and paragraph mark deleted; accept-all leaves the following paragraph's id and properties as they were. The last paragraph of the body, one before a table and one ending a section keep their mark (accepting leaves them empty). Direct: the same edit accepted, no revision.",
+          "description": "Tracked: content and paragraph mark deleted; accept-all leaves the following paragraph's id and properties as they were. A paragraph whose mark cannot join forward (the last of the body, one before a table, one ending a section) takes the previous paragraph's mark instead, as Word does: it gets that paragraph's properties (its own in a pPrChange) and keeps its section properties, and accept-all leaves the previous paragraph, with its id, in its place. Where no previous paragraph can join (a table or another author's mark revision before it) it is left empty. Direct: the same edit accepted, no revision.",
           "properties": {
             "at": {
               "items": {
