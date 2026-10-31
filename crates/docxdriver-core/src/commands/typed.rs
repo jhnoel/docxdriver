@@ -2742,9 +2742,14 @@ pub fn insert_paragraph_typed(
     xml.doc.set_attribute(new_p, "w14:paraId", &new_id);
     xml.ensure_w14_declared();
 
+    // An explicit style alone; otherwise the anchor paragraph's properties,
+    // as Word's Enter gives them (a table anchor gives none).
+    let mut continues = None;
     if let Some(style_id) = &style {
         let ppr = ensure_ppr(xml, new_p);
         set_child_val(xml, ppr, "pStyle", style_id);
+    } else if args.at_para.is_some() {
+        continues = crate::commands::layout::inherit_paragraph_properties(xml, package, anchor, new_p, insert_before);
     }
     if tracked {
         let rev_id = xml.next_revision_id();
@@ -2769,11 +2774,14 @@ pub fn insert_paragraph_typed(
     } else {
         "paragraph"
     };
-    let summary = format!(
+    let mut summary = format!(
         "inserted paragraph {new_id} {} {anchor_kind} {address} ({})",
         if insert_before { "before" } else { "after" },
         if tracked { "tracked" } else { "direct" }
     );
+    if let Some((num_id, level)) = &continues {
+        summary.push_str(&format!("; continues list {num_id} level {level}"));
+    }
     let result = json!({
         "paraId": new_id,
         "anchor": address,

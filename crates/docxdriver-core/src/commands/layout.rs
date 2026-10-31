@@ -242,6 +242,83 @@ fn styles_part_name(package: &Package) -> String {
     }
 }
 
+/// The paragraph style Word gives a new paragraph typed after one in
+/// `style_id` (its `w:next`), and the default paragraph style, from
+/// styles.xml. `style_id` None is the default paragraph style.
+pub(crate) fn next_paragraph_style(package: &Package, style_id: Option<&str>) -> (Option<String>, Option<String>) {
+    let part = styles_part_name(package);
+    let Some(styles_xml) = package.get(&part).and_then(|bytes| DocxXml::parse(bytes).ok()) else {
+        return (None, None);
+    };
+    let root = styles_xml.doc.root();
+    let paragraph_styles: Vec<NodeId> = styles_xml
+        .doc
+        .descendants(root)
+        .filter(|&n| styles_xml.is_w(n, "style") && styles_xml.attr(n, "type").unwrap_or("paragraph") == "paragraph")
+        .collect();
+    let default = paragraph_styles
+        .iter()
+        .find(|&&n| matches!(styles_xml.attr(n, "default"), Some("1" | "true" | "on")))
+        .and_then(|&n| styles_xml.attr(n, "styleId"))
+        .map(str::to_owned);
+    let id = style_id.map(str::to_owned).or_else(|| default.clone());
+    let next = id.and_then(|id| {
+        paragraph_styles
+            .iter()
+            .find(|&&n| styles_xml.attr(n, "styleId") == Some(id.as_str()))
+            .and_then(|&n| styles_xml.child_w(n, "next"))
+            .and_then(|n| styles_xml.attr(n, "val"))
+            .map(str::to_owned)
+    });
+    (next, default)
+}
+
+/// Give `new_paragraph` the paragraph properties Word's Enter gives a
+/// paragraph typed beside `anchor`: a copy of the anchor's (CT_PPrBase:
+/// style, numbering, indents, spacing, ...; not its mark's run properties,
+/// section properties or a pending property change); after a paragraph
+/// whose style names a different next style (a heading), that style alone.
+/// Returns the anchor's list (numId, level) when the new paragraph
+/// continues it.
+pub(crate) fn inherit_paragraph_properties(
+    xml: &mut DocxXml,
+    package: &Package,
+    anchor: NodeId,
+    new_paragraph: NodeId,
+    before: bool,
+) -> Option<(String, String)> {
+    let anchor_ppr = xml.child_w(anchor, "pPr");
+    let style = anchor_ppr.and_then(|ppr| xml.child_w(ppr, "pStyle")).and_then(|s| xml.attr(s, "val")).map(str::to_owned);
+    if !before {
+        let (next, default) = next_paragraph_style(package, style.as_deref());
+        let current = style.clone().or_else(|| default.clone());
+        if let Some(next) = next.filter(|next| Some(next) != current.as_ref()) {
+            if Some(&next) != default.as_ref() {
+                let ppr = ensure_ppr(xml, new_paragraph);
+                set_child_val(xml, ppr, "pStyle", &next);
+            }
+            return None;
+        }
+    }
+    let anchor_ppr = anchor_ppr?;
+    let base: Vec<NodeId> = xml
+        .doc
+        .children(anchor_ppr)
+        .filter(|&c| xml.doc.is_element(c) && !["rPr", "sectPr", "pPrChange"].iter().any(|n| xml.is_w(c, n)))
+        .collect();
+    if base.is_empty() {
+        return None;
+    }
+    let ppr = ensure_ppr(xml, new_paragraph);
+    for node in base {
+        let copy = xml.doc.clone_node(node, true);
+        xml.doc.append_child(ppr, copy);
+    }
+    let numbering = xml.child_w(ppr, "numPr")?;
+    let value = |name: &str| xml.child_w(numbering, name).and_then(|n| xml.attr(n, "val")).map(str::to_owned);
+    Some((value("numId")?, value("ilvl").unwrap_or_else(|| "0".into())))
+}
+
 pub(crate) fn paragraph_style_exists(package: &Package, style_id: &str) -> bool {
     let part = styles_part_name(package);
     let Some(bytes) = package.get(&part) else {

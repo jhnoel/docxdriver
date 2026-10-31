@@ -1007,3 +1007,131 @@ fn original_view_of_a_split_before_inserted_tail_is_the_rejected_document() {
         );
     }
 }
+
+/// The `<w:pPr>` of paragraph `id` in `bytes`, or "" without one.
+fn paragraph_properties(bytes: &[u8], id: &str) -> String {
+    let xml = part(bytes, "word/document.xml");
+    let at = xml
+        .find(&format!("w14:paraId=\"{id}\""))
+        .unwrap_or_else(|| panic!("{id} in {xml}"));
+    let paragraph = &xml[at..at + xml[at..].find("</w:p>").unwrap()];
+    match (paragraph.find("<w:pPr>"), paragraph.find("</w:pPr>")) {
+        (Some(start), Some(end)) => paragraph[start..end + 8].to_string(),
+        _ => String::new(),
+    }
+}
+
+// insert_paragraph wrote a bare paragraph: a paragraph inserted into a
+// numbered list was not a list item. Like Word's Enter, it now takes the
+// anchor's paragraph properties (the style's next style after a heading).
+#[test]
+fn an_inserted_paragraph_continues_the_anchor_like_enter() {
+    let base = fixture();
+    let claim2 = first_id(&base, "Second claim");
+    let claim3 = first_id(&base, "Third claim");
+    let ops = format!(
+        r#"[{{"op":"insert_paragraph","at":"{claim2}","position":"after","with":"New claim"}}]"#
+    );
+    for mode in ["track", "direct"] {
+        let out = run(&base, mode, AUTHOR, &ops).unwrap();
+        let shown = if mode == "track" {
+            View::Final
+        } else {
+            View::Markup
+        };
+        let markers: Vec<String> = view_tags(&out, shown)
+            .into_iter()
+            .filter(|t| t.starts_with("li"))
+            .collect();
+        assert_eq!(
+            markers,
+            ["li   1.", "li   2.", "li   3.", "li   4."],
+            "{mode}"
+        );
+        let markup = Document::open(&out).markup(shown).unwrap();
+        assert!(
+            markup.find("New claim").unwrap() < markup.find("Third claim").unwrap(),
+            "{mode}"
+        );
+        assert_no_new_faults(mode, &base, &out);
+        if mode == "track" {
+            assert_same(
+                "reject",
+                &canonical(&settle(&out, false), &base),
+                &canonical(&settle(&base, false), &base),
+            );
+            assert_eq!(
+                view_tags(&out, View::Original),
+                view_tags(&base, View::Markup)
+            );
+        }
+    }
+    // The bench's tracked replacement of claim 3: the new text keeps "3.".
+    let ops = format!(
+        r#"[{{"op":"insert_paragraph","at":"{claim3}","position":"after","with":"Third claim, revised."}},{{"op":"delete_paragraphs","at":["{claim3}"]}}]"#
+    );
+    let tracked = run(&base, "track", AUTHOR, &ops).unwrap();
+    let accepted = settle(&tracked, true);
+    let markup = Document::open(&accepted).markup(View::Markup).unwrap();
+    assert!(
+        markup.contains(r#"<li data-docx-marker="3.">"#)
+            && markup.contains("Third claim, revised."),
+        "{markup}"
+    );
+    let markers: Vec<String> = view_tags(&accepted, View::Markup)
+        .into_iter()
+        .filter(|t| t.starts_with("li"))
+        .collect();
+    assert_eq!(markers, ["li   1.", "li   2.", "li   3."]);
+
+    // After a heading, the heading style's next style (Normal: no pStyle).
+    let heading = first_id(&base, "Agreement");
+    let ops = format!(
+        r#"[{{"op":"insert_paragraph","at":"{heading}","position":"after","with":"Body text","as":"n"}}]"#
+    );
+    let out = run(&base, "direct", AUTHOR, &ops).unwrap();
+    let id = first_id(&out, "Body text");
+    assert_eq!(paragraph_properties(&out, &id), "");
+    // Before a heading, a copy of it.
+    let ops = format!(
+        r#"[{{"op":"insert_paragraph","at":"{heading}","position":"before","with":"Title two"}}]"#
+    );
+    let out = run(&base, "direct", AUTHOR, &ops).unwrap();
+    let id = first_id(&out, "Title two");
+    assert_eq!(
+        paragraph_properties(&out, &id),
+        paragraph_properties(&base, &heading)
+    );
+    // An explicit style wins.
+    let ops = format!(
+        r#"[{{"op":"insert_paragraph","at":"{claim2}","position":"after","with":"Plain","style":"Heading2"}}]"#
+    );
+    let out = run(&base, "direct", AUTHOR, &ops).unwrap();
+    let id = first_id(&out, "Plain");
+    assert_eq!(
+        paragraph_properties(&out, &id),
+        r#"<w:pPr><w:pStyle w:val="Heading2"/></w:pPr>"#
+    );
+    // An anchor's pending property change and mark revision are not copied.
+    let changed = run(
+        &base,
+        "track",
+        "Bob",
+        &format!(r#"[{{"op":"format_paragraph","at":"{claim2}","alignment":"center"}}]"#),
+    )
+    .unwrap();
+    let ops = format!(
+        r#"[{{"op":"insert_paragraph","at":"{claim2}","position":"after","with":"Copy"}}]"#
+    );
+    let out = run(&changed, "track", AUTHOR, &ops).unwrap();
+    let id = first_id(&out, "Copy");
+    let properties = paragraph_properties(&out, &id);
+    assert!(
+        properties.contains("<w:numPr>") && properties.contains(r#"<w:jc w:val="center"/>"#),
+        "{properties}"
+    );
+    assert!(
+        !properties.contains("pPrChange") && !properties.contains("Bob"),
+        "{properties}"
+    );
+}

@@ -179,7 +179,8 @@ fn paragraph_unset_declarations_are_accepted_and_table_styles_point_to_table_ops
         }],
     ));
     assert!(
-        after["markup"].as_str().unwrap().contains("style=\"font-size:14pt;\">sized</p>"),
+        // The new paragraph continues its anchor's centring, as Enter does.
+        after["markup"].as_str().unwrap().contains("style=\"font-size:14pt;text-align:center;\">sized</p>"),
         "{}",
         after["markup"]
     );

@@ -714,7 +714,7 @@ pub enum EditOp {
     /// With `as`, a single paragraph is `$<as>`; for a list, `$<as>` is the
     /// group (expanded in paragraph lists, its first or last paragraph as an
     /// insert anchor) and item N is `$<as>_N`.
-    /// Tracked: inserted content and paragraph mark; reject-all removes the paragraph. Direct: inserted, no revision.
+    /// Without `style`, a new paragraph takes the paragraph properties of a paragraph anchor (style, numbering, indents, spacing; not its mark's run properties, section properties or pending changes), as Word's Enter does: inserted into a list it is a list item. After a paragraph whose style names a different next style (a heading), it takes that style instead. Tracked: inserted content and paragraph mark; reject-all removes the paragraph. Direct: inserted, no revision.
     InsertParagraph {
         at: InsertAnchor,
         position: InsertPosition,

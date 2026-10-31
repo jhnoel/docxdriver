@@ -244,7 +244,7 @@ never re-authored or settled, except by `revision_settle`.
 | Op | Track | Direct |
 | --- | --- | --- |
 | `replace_text`, `revise_text`, `replace_paragraph` | `w:del` / `w:ins` | replaced |
-| `insert_paragraph` | inserted content and paragraph mark; reject-all removes the paragraph | inserted |
+| `insert_paragraph` | inserted content and paragraph mark; reject-all removes the paragraph. Without `style` the new paragraph takes the anchor's paragraph properties (Word's Enter), so it continues a list | inserted |
 | `delete_paragraphs` | deleted content and paragraph mark; accept-all leaves the next paragraph's id and properties. A mark that cannot join forward (last paragraph, before a table, section end) stays, and the previous paragraph's mark is deleted instead, as in Word | removed (the tracked edit, accepted) |
 | `format_text` | `w:rPrChange` | applied |
 | `format_paragraph`, `set_list` | `w:pPrChange` (new list definitions stay after reject-all) | applied |
