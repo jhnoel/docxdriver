@@ -316,7 +316,7 @@ class InsertParagraph:
     position: str
     as_: str | None = None
     style: str | None = None
-    with_: str | Inline | Quote | Term | None = None
+    with_: str | Inline | Quote | Term | list[str | Inline | Quote | Term] | None = None
     def to_dict(self):
         value = {"op": "insert_paragraph"}
         if self.at is not None:
@@ -328,7 +328,7 @@ class InsertParagraph:
         if self.style is not None:
             value["style"] = self.style
         if self.with_ is not None:
-            value["with"] = self.with_.to_dict() if hasattr(self.with_, "to_dict") else self.with_
+            value["with"] = [v.to_dict() if hasattr(v, "to_dict") else v for v in self.with_] if isinstance(self.with_, list) else self.with_.to_dict() if hasattr(self.with_, "to_dict") else self.with_
         return value
 
 @dataclass
@@ -843,12 +843,12 @@ class FormatText:
     def to_dict(self) -> dict: ...
 
 class InsertParagraph:
-    def __init__(self, at: str, position: str, as_: str | None = None, style: str | None = None, with_: str | Inline | Quote | Term | None = None): ...
+    def __init__(self, at: str, position: str, as_: str | None = None, style: str | None = None, with_: str | Inline | Quote | Term | list[str | Inline | Quote | Term] | None = None): ...
     at: str
     position: str
     as_: str | None
     style: str | None
-    with_: str | Inline | Quote | Term | None
+    with_: str | Inline | Quote | Term | list[str | Inline | Quote | Term] | None
     def to_dict(self) -> dict: ...
 
 class InsertTable:
@@ -1268,9 +1268,9 @@ Apply character formatting to an exact occurrence of \`select\` in the paragraph
 
 ### InsertParagraph
 
-\`InsertParagraph(at: str, position: str, as_: str | None = None, style: str | None = None, with_: str | Inline | Quote | Term | None = None)\`
+\`InsertParagraph(at: str, position: str, as_: str | None = None, style: str | None = None, with_: str | Inline | Quote | Term | list[str | Inline | Quote | Term] | None = None)\`
 
-Insert a new paragraph before or after an anchor: paragraph id/alias (\`at\`) or body-level table number (\`table:N\` from markup); \`with\` is its text, \`style\` its style, and \`as\` names the new paragraph id (a \`$name\` alias).
+Insert a new paragraph before or after an anchor: paragraph id/alias (\`at\`) or body-level table number (\`table:N\` from markup); \`with\` is its text, or a list of texts inserted as consecutive paragraphs in list order; \`style\` is the style of every new paragraph, and \`as\` names the new paragraph id (a \`$name\` alias), or with a list names the whole group \`$name\` and item N \`$name_N\`; a group expands to all its paragraphs in \`set_list\`/\`delete_paragraphs\`, anchors an insert after its last or before its first paragraph, and is rejected where one paragraph is expected. Several inserts at one anchor and position also keep plan order.
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -1278,7 +1278,7 @@ Insert a new paragraph before or after an anchor: paragraph id/alias (\`at\`) or
 | \`position\` | \`str\` | yes |
 | \`as_\` (schema key \`as\`) | \`str | None\` | no |
 | \`style\` | \`str | None\` | no |
-| \`with_\` (schema key \`with\`) | \`str | Inline | Quote | Term | None\` | no |
+| \`with_\` (schema key \`with\`) | \`str | Inline | Quote | Term | list[str | Inline | Quote | Term] | None\` | no |
 
 ### InsertTable
 

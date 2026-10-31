@@ -46,6 +46,7 @@ are still audited. Never alter the reserved quotation audit comments.
 
 `InsertParagraph` also accepts `table:N` anchors from body-level
 `<table data-docx-table="N">` markup and may set `as_="$name"` for later ops.
+A list `with_` inserts one paragraph per item in list order; `$name` is the group (for `SetList`, `DeleteParagraphs` and insert anchors) and `$name_N` each item.
 
 Repeated styles use native CSS classes and an embedded stylesheet; the result
 remains renderable HTML5. Preserve formatting when authoring replacement text;

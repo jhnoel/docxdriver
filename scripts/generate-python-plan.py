@@ -57,6 +57,7 @@ REF_TYPES = {
     'PreviewKey': 'str', 'SourceHash': 'str', 'Points': 'float',
     'LineSpacing': 'dict', 'Span': 'dict', 'Diagnostic': 'dict',
     'HighlightColor': 'str', 'SignedPoints': 'float', 'TableEdit': 'dict',
+    'ParagraphContent': 'str | list[str]',
     'TableFormat': 'dict', 'RowFormat': 'dict', 'CellFormat': 'dict',
 }
 JSON_TYPES = {'string': 'str', 'integer': 'int', 'boolean': 'bool', 'number': 'float', 'array': 'list'}
@@ -87,6 +88,10 @@ def base_annotation(prop, op):
         if len(alternatives) != 1:
             raise ValueError(f'editOp variant {op}: anyOf must have exactly one non-null alternative')
         return base_annotation(alternatives[0], op)
+
+    # A defaulted reference renders as a one-element allOf.
+    if len(prop.get('allOf', [])) == 1:
+        return base_annotation(prop['allOf'][0], op)
 
     if '$ref' in prop:
         name = prop['$ref'].split('/')[-1]

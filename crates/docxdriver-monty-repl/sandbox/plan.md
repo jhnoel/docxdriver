@@ -233,9 +233,9 @@ Apply character formatting to an exact occurrence of `select` in the paragraph a
 
 ### InsertParagraph
 
-`InsertParagraph(at: str, position: str, as_: str | None = None, style: str | None = None, with_: str | None = None)`
+`InsertParagraph(at: str, position: str, as_: str | None = None, style: str | None = None, with_: str | list[str] | None = None)`
 
-Insert a new paragraph before or after an anchor: paragraph id/alias (`at`) or body-level table number (`table:N` from markup); `with` is its text, `style` its style, and `as` names the new paragraph id (a `$name` alias).
+Insert a new paragraph before or after an anchor: paragraph id/alias (`at`) or body-level table number (`table:N` from markup); `with` is its text, or a list of texts inserted as consecutive paragraphs in list order; `style` is the style of every new paragraph, and `as` names the new paragraph id (a `$name` alias), or with a list names the whole group `$name` and item N `$name_N`; a group expands to all its paragraphs in `set_list`/`delete_paragraphs`, anchors an insert after its last or before its first paragraph, and is rejected where one paragraph is expected. Several inserts at one anchor and position also keep plan order.
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -243,7 +243,7 @@ Insert a new paragraph before or after an anchor: paragraph id/alias (`at`) or b
 | `position` | `str` | yes |
 | `as_` (schema key `as`) | `str | None` | no |
 | `style` | `str | None` | no |
-| `with_` (schema key `with`) | `str | None` | no |
+| `with_` (schema key `with`) | `str | list[str] | None` | no |
 
 ### InsertTable
 

@@ -406,6 +406,43 @@ impl<'de> Deserialize<'de> for InsertAnchor {
     }
 }
 
+/// `insert_paragraph`'s `with`: one paragraph's inline content, or a list of
+/// them inserted as consecutive paragraphs in list order.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged, expecting = "with must be a string or a list of strings")]
+pub enum ParagraphContent {
+    One(String),
+    Many(Vec<String>),
+}
+impl ParagraphContent {
+    pub fn items(&self) -> &[String] {
+        match self {
+            Self::One(s) => std::slice::from_ref(s),
+            Self::Many(items) => items,
+        }
+    }
+}
+impl Default for ParagraphContent {
+    fn default() -> Self {
+        Self::One(String::new())
+    }
+}
+impl From<&str> for ParagraphContent {
+    fn from(s: &str) -> Self {
+        Self::One(s.into())
+    }
+}
+impl From<String> for ParagraphContent {
+    fn from(s: String) -> Self {
+        Self::One(s)
+    }
+}
+impl From<Vec<String>> for ParagraphContent {
+    fn from(items: Vec<String>) -> Self {
+        Self::Many(items)
+    }
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum ChromeKind {
@@ -660,11 +697,15 @@ pub enum EditOp {
         #[serde(default)]
         remove: bool,
     },
+    /// One paragraph, or with a list `with`, one per item in list order.
+    /// With `as`, a single paragraph is `$<as>`; for a list, `$<as>` is the
+    /// group (expanded in paragraph lists, its first or last paragraph as an
+    /// insert anchor) and item N is `$<as>_N`.
     InsertParagraph {
         at: InsertAnchor,
         position: InsertPosition,
         #[serde(default)]
-        with: String,
+        with: ParagraphContent,
         #[serde(default)]
         style: Option<String>,
         #[serde(rename = "as", default)]
@@ -1047,6 +1088,10 @@ pub struct PlanReport {
     pub allocated_ids: Vec<String>,
     #[serde(default)]
     pub aliases: Map<String, Value>,
+    /// Group aliases: a list `insert_paragraph`'s `as`, naming its new
+    /// paragraph ids in order.
+    #[serde(default, skip_serializing_if = "Map::is_empty")]
+    pub groups: Map<String, Value>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 #[serde(tag = "outcome", rename_all = "lowercase")]
@@ -1588,10 +1633,15 @@ fn normalize_op(op: &mut EditOp) -> Result<(), String> {
                 if num_id.is_some() { return Err("format cannot restyle an existing list; create a new list".into()); }
             }
         }
-        EditOp::InsertParagraph { alias, .. } => {
+        EditOp::InsertParagraph { alias, with, .. } => {
             if let Some(a) = alias {
                 if !valid_alias(a) {
                     return Err("invalid alias".into());
+                }
+            }
+            if let ParagraphContent::Many(items) = with {
+                if items.is_empty() {
+                    return Err("a with list must not be empty".into());
                 }
             }
         }
@@ -1950,6 +2000,7 @@ fn fold_typed(
         );
     }
     let mut aliases: BTreeMap<String, Value> = BTreeMap::new();
+    let mut groups: BTreeMap<String, Vec<String>> = BTreeMap::new();
     let mut reports = Vec::new();
     let mut affected_ids: Vec<Vec<String>> = Vec::new();
     let plan_seed = crate::commands::plan_seed(plan);
@@ -1959,7 +2010,7 @@ fn fold_typed(
         now: "2000-01-01T00:00:00Z".into(),
     };
     for (index, op) in plan.ops.iter().enumerate() {
-        let resolved = match resolve_typed_aliases(op, &aliases) {
+        let resolved = match resolve_typed_aliases(op, &aliases, &groups) {
             Ok(value) => value,
             Err(error) => {
                 attach_affected(&mut state, &mut reports, &affected_ids);
@@ -1970,6 +2021,7 @@ fn fold_typed(
                     repaired_ids: repaired_ids.clone(),
                     allocated_ids: allocated_ids.clone(),
                     aliases: aliases.clone().into_iter().collect(),
+                    groups: group_map(&groups),
                 };
                 return (report.clone(), None, Some((error, report)));
             }
@@ -2010,6 +2062,7 @@ fn fold_typed(
                 repaired_ids: repaired_ids.clone(),
                 allocated_ids: allocated_ids.clone(),
                 aliases: aliases.clone().into_iter().collect(),
+                groups: group_map(&groups),
             };
             let message = report.ops[index].summary.clone();
             return (
@@ -2025,7 +2078,7 @@ fn fold_typed(
             | EditOp::InsertTable { alias: Some(alias), .. }
             | EditOp::EditTable { action: TableEdit::InsertRows { alias: Some(alias), .. } | TableEdit::InsertColumns { alias: Some(alias), .. }, .. } = op
         {
-            if aliases.contains_key(alias) {
+            if aliases.contains_key(alias) || groups.contains_key(alias) {
                 attach_affected(&mut state, &mut reports, &affected_ids);
                 let report = PlanReport {
                     completed: index,
@@ -2034,6 +2087,7 @@ fn fold_typed(
                     repaired_ids: repaired_ids.clone(),
                     allocated_ids: allocated_ids.clone(),
                     aliases: aliases.clone().into_iter().collect(),
+                    groups: group_map(&groups),
                 };
                 return (
                     report.clone(),
@@ -2051,36 +2105,50 @@ fn fold_typed(
             if matches!(op, EditOp::InsertTable { .. } | EditOp::EditTable { .. }) {
                 aliases.insert(alias.clone(), Value::String(format!("${alias}")));
             }
-            if let Some(rows) = outcome.result.as_ref().and_then(|r| r.get("cells")).and_then(Value::as_array) {
-                let cells = rows.iter().enumerate().flat_map(|(r, row)| {
+            let result = outcome.result.as_ref();
+            // Cells of an inserted table bind as `$<as>_rNcM`; the items of a
+            // list `insert_paragraph` as `$<as>_N`.
+            let mut members: Vec<(String, Value)> = Vec::new();
+            if let Some(rows) = result.and_then(|r| r.get("cells")).and_then(Value::as_array) {
+                members.extend(rows.iter().enumerate().flat_map(|(r, row)| {
                     row.as_array().into_iter().flatten().enumerate().map(move |(c, id)| (format!("{alias}_r{}c{}", r + 1, c + 1), id.clone()))
-                });
-                for (name, id) in cells {
-                    if aliases.contains_key(&name) {
-                        attach_affected(&mut state, &mut reports, &affected_ids);
-                        let report = PlanReport {
-                            completed: index,
-                            stopped_at: Some(index),
-                            ops: reports,
-                            repaired_ids: repaired_ids.clone(),
-                            allocated_ids: allocated_ids.clone(),
-                            aliases: aliases.clone().into_iter().collect(),
-                        };
-                        return (
-                            report.clone(),
-                            None,
-                            Some((
-                                diag(
-                                    "duplicate_alias",
-                                    format!("cell alias {name:?} of table alias {alias:?} is already defined"),
-                                    Some(format!("ops[{index}].as")),
-                                ),
-                                report,
-                            )),
-                        );
-                    }
-                    aliases.insert(name, id);
+                }));
+            }
+            if let Some(ids) = result.and_then(|r| r.get("paraIds")).and_then(Value::as_array) {
+                let ids: Vec<String> = ids.iter().map(|id| id.as_str().unwrap_or_default().to_owned()).collect();
+                for (n, id) in ids.iter().enumerate() {
+                    allocated_ids.push(id.clone());
+                    members.push((format!("{alias}_{}", n + 1), Value::String(id.clone())));
                 }
+                groups.insert(alias.clone(), ids);
+            }
+            let (kind, parent) = if matches!(op, EditOp::InsertParagraph { .. }) { ("paragraph alias", "alias") } else { ("cell alias", "table alias") };
+            for (name, id) in members {
+                if aliases.contains_key(&name) || groups.contains_key(&name) {
+                    attach_affected(&mut state, &mut reports, &affected_ids);
+                    let report = PlanReport {
+                        completed: index,
+                        stopped_at: Some(index),
+                        ops: reports,
+                        repaired_ids: repaired_ids.clone(),
+                        allocated_ids: allocated_ids.clone(),
+                        aliases: aliases.clone().into_iter().collect(),
+                        groups: group_map(&groups),
+                    };
+                    return (
+                        report.clone(),
+                        None,
+                        Some((
+                            diag(
+                                "duplicate_alias",
+                                format!("{kind} {name:?} of {parent} {alias:?} is already defined"),
+                                Some(format!("ops[{index}].as")),
+                            ),
+                            report,
+                        )),
+                    );
+                }
+                aliases.insert(name, id);
             }
             if let Some(id) = outcome
                 .result
@@ -2107,6 +2175,7 @@ fn fold_typed(
         repaired_ids,
         allocated_ids,
         aliases: aliases.into_iter().collect(),
+        groups: group_map(&groups),
     };
     let out = crate::commands::emit(
         state,
@@ -2232,6 +2301,7 @@ fn empty_report(_plan: &Plan) -> PlanReport {
         repaired_ids: Vec::new(),
         allocated_ids: Vec::new(),
         aliases: Map::new(),
+        groups: Map::new(),
     }
 }
 fn operation_name(op: &EditOp) -> &'static str {
@@ -2271,13 +2341,27 @@ fn operation_name(op: &EditOp) -> &'static str {
         EditOp::RevisionSettle { .. } => "revision_settle",
     }
 }
+fn group_map(groups: &BTreeMap<String, Vec<String>>) -> Map<String, Value> {
+    groups.iter().map(|(name, ids)| (name.clone(), serde_json::json!(ids))).collect()
+}
+
 fn resolve_typed_aliases(
     op: &EditOp,
     aliases: &BTreeMap<String, Value>,
+    groups: &BTreeMap<String, Vec<String>>,
 ) -> Result<EditOp, Diagnostic> {
     let mut resolved = op.clone();
+    // A single-paragraph field cannot take a group: which member is meant is
+    // the author's call, so name it.
     let resolve = |address: &mut ParagraphAddress| -> Result<(), Diagnostic> {
         if let ParagraphAddress::Alias(name) = address {
+            if let Some(ids) = groups.get(name.as_str()) {
+                return Err(diag(
+                    "group_alias",
+                    format!("${name} names {} paragraphs; address one as ${name}_N", ids.len()),
+                    None,
+                ));
+            }
             let Some(Value::String(id)) = aliases.get(name) else {
                 return Err(diag(
                     "unknown_alias",
@@ -2289,29 +2373,56 @@ fn resolve_typed_aliases(
         }
         Ok(())
     };
+    // An insert anchored on a group goes after its last member or before
+    // its first.
+    let resolve_anchor = |address: &mut ParagraphAddress, position: InsertPosition| -> Result<(), Diagnostic> {
+        if let ParagraphAddress::Alias(name) = address {
+            if let Some(ids) = groups.get(name.as_str()) {
+                let id = match position {
+                    InsertPosition::Before => ids.first(),
+                    InsertPosition::After => ids.last(),
+                };
+                *address = ParagraphAddress::id(id.expect("groups are never empty"));
+                return Ok(());
+            }
+        }
+        resolve(address)
+    };
+    // A paragraph list takes every member of a group, in order.
+    let resolve_list = |at: &mut Vec<ParagraphAddress>| -> Result<(), Diagnostic> {
+        let mut expanded = Vec::with_capacity(at.len());
+        for mut address in at.drain(..) {
+            if let ParagraphAddress::Alias(name) = &address {
+                if let Some(ids) = groups.get(name.as_str()) {
+                    expanded.extend(ids.iter().map(ParagraphAddress::id));
+                    continue;
+                }
+            }
+            resolve(&mut address)?;
+            expanded.push(address);
+        }
+        *at = expanded;
+        Ok(())
+    };
     match &mut resolved {
         EditOp::ReplaceEquation { at, .. }
         | EditOp::DeleteEquation { at, .. }
         | EditOp::ReplaceText { at, .. }
         | EditOp::ReplaceParagraph { at, .. }
         | EditOp::FormatText { at, .. }
-        | EditOp::InsertTable { at, .. }
         | EditOp::SetSectionBoundary { at, .. }
         | EditOp::FormatParagraph { at, .. }
         | EditOp::CommentAdd { at, .. }
         | EditOp::BookmarkAdd { at, .. }
         | EditOp::BookmarkMove { at, .. } => resolve(at)?,
         EditOp::ReviseText { at: Some(at), .. } => resolve(at)?,
-        EditOp::InsertParagraph { at, .. } => {
+        EditOp::InsertTable { at, position, .. } => resolve_anchor(at, *position)?,
+        EditOp::InsertParagraph { at, position, .. } => {
             if let InsertAnchor::Paragraph(addr) = at {
-                resolve(addr)?;
+                resolve_anchor(addr, *position)?;
             }
         }
-        EditOp::DeleteParagraphs { at } | EditOp::SetList { at, .. } => {
-            for address in at {
-                resolve(address)?;
-            }
-        }
+        EditOp::DeleteParagraphs { at } | EditOp::SetList { at, .. } => resolve_list(at)?,
         EditOp::SetSectionLayout { section_handle:Some(handle),.. } => {
             if let Some(alias)=handle.strip_prefix("section:$") {
                 let Some(Value::String(id))=aliases.get(alias) else { return Err(diag("unknown_alias",format!("unknown section paragraph alias ${alias}"),None)); };

@@ -72,7 +72,13 @@ directly in tracked plans too and edit body bookmarks only. Read
 Paragraph addresses are uppercase eight-digit IDs from `docx_read`;
 `insert_paragraph` also accepts `table:N` anchors from body-level
 `<table data-docx-table="N">` markup. Insertions may define a plan-local alias (`as`) for
-later operations. Measurements are points, colors are uppercase `#RRGGBB`, and
+later operations. To insert several paragraphs, give `with` a list
+(`"with": ["One", "<b>Two</b>"]`): they land in list order. With `as`,
+`$<as>` names the group and item N is `$<as>_N`. A group expands to all its
+paragraphs in `set_list`/`delete_paragraphs` (`"at": ["$<as>"]`), anchors an
+insert after its last or before its first paragraph, and is rejected where one
+paragraph is expected. Separate inserts at one anchor and position also keep
+plan order. Measurements are points, colors are uppercase `#RRGGBB`, and
 alignment is `justify`.
 
 Formatting: omit a property to leave its source setting untouched. Boolean

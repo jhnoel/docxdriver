@@ -101,7 +101,12 @@ export async function resolveStructuredPlan(
       continue;
     }
     const next = { ...op };
-    if ('with' in next) next.with = await resolveNode(next.with);
+    if (Array.isArray(next.with)) {
+      // insert_paragraph's list form: one inline node per paragraph.
+      const items: unknown[] = [];
+      for (const item of next.with) items.push(await resolveNode(item));
+      next.with = items;
+    } else if ('with' in next) next.with = await resolveNode(next.with);
     if (Array.isArray(next.edits)) {
       const edits: unknown[] = [];
       for (const value of next.edits) {

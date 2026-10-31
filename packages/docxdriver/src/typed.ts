@@ -25,7 +25,7 @@ export type EditOp =
   | { op: 'format_text'; at: ParagraphAddress; select: string; occurrence?: number; bold?: boolean; italic?: boolean; underline?: boolean; strike?: boolean; superscript?: boolean; subscript?: boolean; color?: string; highlight?: HighlightColor; font_size?: Point; clear?: string[] }
   | { op: 'format_paragraph'; at: ParagraphAddress; style?: string; alignment?: 'left'|'center'|'right'|'justify'; indent_left?: Point; indent_right?: Point; first_line_indent?: Point; space_before?: Point; space_after?: Point; line_spacing?: LineSpacing; clear?: string[] }
   | { op: 'set_list'; levels?: { format: string; label: string; start?: number; restart_after?: number; indent_left?: Point; indent_right?: Point; first_line_indent?: Point; marker_bold?: boolean; marker_italic?: boolean; marker_font?: string; marker_color?: string }[]; at: ParagraphAddress[]; num_id?: number; format?: 'bullet'|'decimal'|'lowerLetter'|'upperLetter'|'lowerRoman'|'upperRoman'; level?: number; start?: number; remove?: boolean }
-  | { op: 'insert_paragraph'; at: InsertAnchor; position: InsertPosition; with?: string; style?: string; as?: string }
+  | { op: 'insert_paragraph'; at: InsertAnchor; position: InsertPosition; with?: string | string[]; style?: string; as?: string }
   | { op: 'delete_paragraphs'; at: ParagraphAddress[] }
   | { op: 'format_table'; at: string; format: TableFormat }
   | { op: 'format_row'; at: string; format: RowFormat }
@@ -64,7 +64,7 @@ export type Request = { Command: CommandRequest } | { Plan: PlanRequest };
 export type Span = { line: number; column: number; end_line?: number; end_column?: number };
 export type Diagnostic = { code: string; message: string; path?: string; span?: Span };
 export type OperationReport = { index: number; op: string; outcome: string; summary: string; affected?: unknown[]; context_truncated?: boolean };
-export type PlanReport = { completed: number; stopped_at?: number; ops: OperationReport[]; repaired_ids: string[]; allocated_ids: string[]; aliases: Record<string, unknown> };
+export type PlanReport = { completed: number; stopped_at?: number; ops: OperationReport[]; repaired_ids: string[]; allocated_ids: string[]; aliases: Record<string, unknown>; groups?: Record<string, string[]> };
 export type CommandResult = { outcome: 'completed'; source?: SourceHash; result?: unknown; bytes?: Uint8Array } | { outcome: 'rejected'; source?: SourceHash; result?: unknown; diagnostic: Diagnostic };
 export type PlanResult = { outcome: 'previewed'; source: SourceHash; plan: Plan; canonical_toml: string; preview_key: string; report: PlanReport } | { outcome: 'committed'; source: SourceHash; plan: Plan; canonical_toml: string; report: PlanReport; bytes: Uint8Array } | { outcome: 'rejected'; source?: SourceHash; plan?: Plan; diagnostic: Diagnostic; report?: PlanReport };
 export type RequestResult = CommandResult | PlanResult;

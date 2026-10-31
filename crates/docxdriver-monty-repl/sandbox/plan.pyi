@@ -130,12 +130,12 @@ class FormatText:
     def to_dict(self) -> dict: ...
 
 class InsertParagraph:
-    def __init__(self, at: str, position: str, as_: str | None = None, style: str | None = None, with_: str | None = None): ...
+    def __init__(self, at: str, position: str, as_: str | None = None, style: str | None = None, with_: str | list[str] | None = None): ...
     at: str
     position: str
     as_: str | None
     style: str | None
-    with_: str | None
+    with_: str | list[str] | None
     def to_dict(self) -> dict: ...
 
 class InsertTable:

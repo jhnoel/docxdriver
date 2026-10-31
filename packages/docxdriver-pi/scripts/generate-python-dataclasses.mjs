@@ -114,6 +114,12 @@ function baseAnnotation(prop, opName) {
   }
 }
 
+/** Whether a `with` schema is insert_paragraph's string-or-list content. */
+function acceptsList(prop) {
+  const ref = prop.$ref ?? (Array.isArray(prop.allOf) && prop.allOf.length === 1 ? prop.allOf[0].$ref : undefined);
+  return typeof ref === 'string' && ref.split('/').pop() === 'ParagraphContent';
+}
+
 /** Python annotation for a property, e.g. `str | None` for optional fields. */
 function annotation(prop, optional, opName) {
   const base = baseAnnotation(prop, opName);
@@ -122,7 +128,8 @@ function annotation(prop, optional, opName) {
 
 /** `with` also accepts host-resolved structured quotation nodes in quote mode. */
 function fieldAnnotation(name, prop, optional, opName) {
-  const base = name === 'with' ? 'str | Inline | Quote | Term' : baseAnnotation(prop, opName);
+  const inline = 'str | Inline | Quote | Term';
+  const base = name !== 'with' ? baseAnnotation(prop, opName) : acceptsList(prop) ? `${inline} | list[${inline}]` : inline;
   return optional ? `${base} | None` : base;
 }
 
@@ -203,9 +210,11 @@ function generateDataclass({ opName, variant }) {
     ...fields.map(({ name, prop, optional }) => `    ${pythonName(name)}: ${fieldAnnotation(name, prop, optional, opName)}${optional ? ' = None' : ''}`),
     `    def to_dict(self):`,
     `        value = {"op": "${opName}"}`,
-    ...fields.flatMap(({ name }) => [
+    ...fields.flatMap(({ name, prop }) => [
       `        if self.${pythonName(name)} is not None:`,
-      name === 'with'
+      name === 'with' && acceptsList(prop)
+        ? `            value["${name}"] = [v.to_dict() if hasattr(v, "to_dict") else v for v in self.${pythonName(name)}] if isinstance(self.${pythonName(name)}, list) else self.${pythonName(name)}.to_dict() if hasattr(self.${pythonName(name)}, "to_dict") else self.${pythonName(name)}`
+        : name === 'with'
         ? `            value["${name}"] = self.${pythonName(name)}.to_dict() if hasattr(self.${pythonName(name)}, "to_dict") else self.${pythonName(name)}`
         : `            value["${name}"] = self.${pythonName(name)}`,
     ]),
