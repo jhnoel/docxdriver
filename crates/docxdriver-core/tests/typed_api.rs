@@ -3080,3 +3080,39 @@ fn insert_table_link_cell_declares_the_relationships_prefix() {
     let xml = document_xml(&out);
     assert!(xml.contains("xmlns:r=") && xml.contains("<w:hyperlink r:id="), "{xml}");
 }
+
+#[test]
+fn replace_and_delete_paragraph_reach_runs_inside_bidi_wrappers() {
+    let body = format!(
+        "<w:p w14:paraId=\"{SOURCE_ID}\"><w:r><w:t xml:space=\"preserve\">plain </w:t></w:r><w:dir w:val=\"ltr\"><w:r><w:t>dirtext</w:t></w:r><w:bookmarkStart w:id=\"0\" w:name=\"Mark\"/></w:dir><w:bdo w:val=\"rtl\"><w:r><w:t>bdotext</w:t></w:r></w:bdo><w:bookmarkEnd w:id=\"0\"/></w:p>"
+    );
+    let source = package_with_body(&format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?><w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" xmlns:w14=\"http://schemas.microsoft.com/office/word/2010/wordml\"><w:body>{body}</w:body></w:document>"
+    ));
+
+    let direct = commit_plan(&source, ops(serde_json::json!([{"op": "replace_paragraph", "at": SOURCE_ID, "with": "x"}])));
+    let markup = read_markup(&direct);
+    assert!(markup.contains(&format!("id=\"{SOURCE_ID}\"")) && markup.contains(">x</p>"), "{markup}");
+    for old in ["plain", "dirtext", "bdotext"] {
+        assert!(!markup.contains(old), "{old} survived: {markup}");
+    }
+    let xml = document_xml(&direct);
+    assert!(xml.contains("<w:bookmarkStart") && xml.contains("<w:bookmarkEnd"), "{xml}");
+
+    // A link replacement takes the whole-paragraph tracked path; delete_paragraphs
+    // shares its deletion helper.
+    let tracked = commit_mode(
+        &source,
+        ops(serde_json::json!([{"op": "replace_paragraph", "at": SOURCE_ID, "with": "<a href=\"https://example.com\">x</a>"}])),
+        ChangeMode::Track,
+    );
+    let deleted = commit_mode(&source, ops(serde_json::json!([{"op": "delete_paragraphs", "at": [SOURCE_ID]}])), ChangeMode::Track);
+    for out in [tracked, deleted] {
+        let xml = document_xml(&out);
+        for old in ["plain", "dirtext", "bdotext"] {
+            assert!(xml.contains(&format!(">{old}")) && !xml.contains(&format!("<w:t>{old}")), "{old} left live: {xml}");
+        }
+        // A deletion holds runs, so it goes inside the wrappers, which stay.
+        assert!(xml.contains("<w:dir w:val=\"ltr\"><w:del ") && xml.contains("<w:bdo w:val=\"rtl\"><w:del "), "{xml}");
+    }
+}
