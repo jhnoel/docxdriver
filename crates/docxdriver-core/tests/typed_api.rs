@@ -143,7 +143,7 @@ fn commit_plan(bytes: &[u8], ops: Vec<EditOp>) -> Vec<u8> {
         bytes,
         &PlanRequest {
             plan: p.clone(),
-            preview_key: None,
+            preview_key: None, now: None
         },
     );
     let key = match preview {
@@ -154,7 +154,7 @@ fn commit_plan(bytes: &[u8], ops: Vec<EditOp>) -> Vec<u8> {
         bytes,
         &PlanRequest {
             plan: p,
-            preview_key: Some(key),
+            preview_key: Some(key), now: None
         },
     ) {
         PlanResult::Committed { bytes, .. } => bytes,
@@ -296,7 +296,7 @@ fn plan(bytes: &[u8], ops: Vec<EditOp>) -> Plan {
 fn command(command: Command) -> Request {
     Request::Command(CommandRequest {
         command,
-        expected_source: None,
+        expected_source: None, now: None
     })
 }
 
@@ -360,7 +360,7 @@ fn command_create_read_find_and_source_cas_use_typed_results() {
             ignore_case: false,
             view: None,
         }),
-        expected_source: Some(SourceHash::from_bytes(b"different")),
+        expected_source: Some(SourceHash::from_bytes(b"different")), now: None
     };
     match execute_command(Some(&created), &mismatch) {
         CommandResult::Rejected { diagnostic, .. } => {
@@ -393,7 +393,7 @@ fn plan_preview_commit_is_keyed_and_binds_insert_aliases() {
         &source,
         &PlanRequest {
             plan: plan.clone(),
-            preview_key: None,
+            preview_key: None, now: None
         },
     );
     let preview_json = serde_json::to_value(&preview).unwrap();
@@ -420,7 +420,7 @@ fn plan_preview_commit_is_keyed_and_binds_insert_aliases() {
         &source,
         &PlanRequest {
             plan,
-            preview_key: Some(key),
+            preview_key: Some(key), now: None
         },
     );
     let output = match committed {
@@ -468,7 +468,7 @@ fn plan_rejects_stale_key_and_stops_atomically_on_unknown_alias() {
         &source,
         &PlanRequest {
             plan: atomic.clone(),
-            preview_key: None,
+            preview_key: None, now: None
         },
     );
     let rejected_json = serde_json::to_value(&rejected).unwrap();
@@ -494,7 +494,7 @@ fn plan_rejects_stale_key_and_stops_atomically_on_unknown_alias() {
         &document(&[(SOURCE_ID, "changed"), (SECOND_ID, "last")]),
         &PlanRequest {
             plan: atomic,
-            preview_key: Some(key),
+            preview_key: Some(key), now: None
         },
     );
     match stale {
@@ -889,7 +889,7 @@ fn preview_key_is_stable_and_wrong_key_rejects_before_fold() {
             plan: p,
             preview_key: Some(PreviewKey(
                 "p1:sha256:0000000000000000000000000000000000000000000000000000000000000000".into(),
-            )),
+            )), now: None
         },
     );
     match wrong {
@@ -913,7 +913,7 @@ fn every_edit_op_executes_through_an_individual_typed_command() {
                 change_mode,
                 op,
             }),
-            expected_source: None,
+            expected_source: None, now: None
         };
         match execute_command(Some(bytes), &request) {
             CommandResult::Completed {
@@ -1165,11 +1165,11 @@ fn every_edit_op_also_executes_as_a_single_plan_entry() {
     let run_plan_mode = |bytes: &[u8], op: EditOp, change_mode: ChangeMode| {
         let mut p = plan(bytes, vec![op]);
         p.change_mode = change_mode;
-        let key = match execute_plan(bytes, &PlanRequest { plan: p.clone(), preview_key: None }) {
+        let key = match execute_plan(bytes, &PlanRequest { plan: p.clone(), preview_key: None, now: None }) {
             PlanResult::Previewed { preview_key, .. } => preview_key,
             other => panic!("plan preview rejected: {other:?}"),
         };
-        match execute_plan(bytes, &PlanRequest { plan: p, preview_key: Some(key) }) {
+        match execute_plan(bytes, &PlanRequest { plan: p, preview_key: Some(key), now: None }) {
             PlanResult::Committed { bytes, .. } => bytes,
             other => panic!("plan commit rejected: {other:?}"),
         }
@@ -1180,7 +1180,7 @@ fn every_edit_op_also_executes_as_a_single_plan_entry() {
             bytes,
             &PlanRequest {
                 plan: p.clone(),
-                preview_key: None,
+                preview_key: None, now: None
             },
         );
         let key = match preview {
@@ -1191,7 +1191,7 @@ fn every_edit_op_also_executes_as_a_single_plan_entry() {
             bytes,
             &PlanRequest {
                 plan: p,
-                preview_key: Some(key),
+                preview_key: Some(key), now: None
             },
         ) {
             PlanResult::Committed { bytes, .. } => bytes,
@@ -1406,7 +1406,7 @@ fn every_edit_op_also_executes_as_a_single_plan_entry() {
                     occurrence: None,
                 },
             }),
-            expected_source: None,
+            expected_source: None, now: None
         };
         match execute_command(Some(&fresh()), &request) {
             CommandResult::Completed {
@@ -1519,7 +1519,7 @@ fn insert_paragraph_table_anchor_numbers_body_tables_and_inserts_siblings() {
                     alias: None,
                 }],
             ),
-            preview_key: None,
+            preview_key: None, now: None
         },
     );
     match rejected {
@@ -1895,7 +1895,7 @@ fn equations_are_discoverable_and_ambiguous_edits_are_rejected() {
                 &bytes,
                 &PlanRequest {
                     plan: plan(&bytes, vec![op]),
-                    preview_key: None
+                    preview_key: None, now: None
                 }
             ),
             PlanResult::Rejected { .. }
@@ -1921,7 +1921,7 @@ fn equation_replacement_tracks_and_can_be_rejected_without_losing_original_math(
         &bytes,
         &PlanRequest {
             plan: p.clone(),
-            preview_key: None,
+            preview_key: None, now: None
         },
     ) {
         PlanResult::Previewed { preview_key, .. } => preview_key,
@@ -1931,7 +1931,7 @@ fn equation_replacement_tracks_and_can_be_rejected_without_losing_original_math(
         &bytes,
         &PlanRequest {
             plan: p,
-            preview_key: Some(key),
+            preview_key: Some(key), now: None
         },
     ) {
         PlanResult::Committed { bytes, .. } => bytes,
@@ -1978,7 +1978,7 @@ fn equations_can_be_deleted_directly_or_as_recoverable_tracked_changes() {
         &bytes,
         &PlanRequest {
             plan: tracked_plan.clone(),
-            preview_key: None,
+            preview_key: None, now: None
         },
     ) {
         PlanResult::Previewed { preview_key, .. } => preview_key,
@@ -1988,7 +1988,7 @@ fn equations_can_be_deleted_directly_or_as_recoverable_tracked_changes() {
         &bytes,
         &PlanRequest {
             plan: tracked_plan,
-            preview_key: Some(key),
+            preview_key: Some(key), now: None
         },
     ) {
         PlanResult::Committed { bytes, .. } => bytes,
@@ -2065,7 +2065,7 @@ fn deleting_sole_equation_removes_the_complete_math_object() {
             &source,
             &PlanRequest {
                 plan: tracked_plan.clone(),
-                preview_key: None,
+                preview_key: None, now: None
             },
         ) {
             PlanResult::Previewed { preview_key, .. } => preview_key,
@@ -2075,7 +2075,7 @@ fn deleting_sole_equation_removes_the_complete_math_object() {
             &source,
             &PlanRequest {
                 plan: tracked_plan,
-                preview_key: Some(key),
+                preview_key: Some(key), now: None
             },
         ) {
             PlanResult::Committed { bytes, .. } => bytes,
@@ -2127,7 +2127,7 @@ fn tracked_plan_allocates_unique_revision_ids_and_reports_final_markup() {
         &bytes,
         &PlanRequest {
             plan: p,
-            preview_key: Some(key),
+            preview_key: Some(key), now: None
         },
     ) else {
         panic!("plan did not commit");
@@ -2172,7 +2172,7 @@ fn revise_final(bytes: &[u8], mode: ChangeMode, ops: Vec<EditOp>) -> Result<Stri
     let mut p = plan(bytes, ops);
     p.change_mode = mode;
     let key = PreviewKey::new(&p);
-    match execute_plan(bytes, &PlanRequest { plan: p, preview_key: Some(key) }) {
+    match execute_plan(bytes, &PlanRequest { plan: p, preview_key: Some(key), now: None }) {
         PlanResult::Committed { bytes, .. } => {
             let markup = read_markup_view(&bytes, Some("final"));
             let text = markup
@@ -2341,7 +2341,7 @@ fn created_structure_follows_schema_sequence_order() {
     let mut deleted = plan(&bytes, vec![EditOp::DeleteParagraphs { at: vec![ParagraphAddress::id(SOURCE_ID)] }]);
     deleted.change_mode = ChangeMode::Track;
     let key = PreviewKey::new(&deleted);
-    let PlanResult::Committed { bytes: out, .. } = execute_plan(&bytes, &PlanRequest { plan: deleted, preview_key: Some(key) }) else {
+    let PlanResult::Committed { bytes: out, .. } = execute_plan(&bytes, &PlanRequest { plan: deleted, preview_key: Some(key), now: None }) else {
         panic!("delete did not commit");
     };
     let xml = document_xml(&out);
@@ -2540,20 +2540,20 @@ fn section_handles_survive_boundaries_and_merging_preserves_final_layout() {
     let source = document(&[(SOURCE_ID,"First"),(SECOND_ID,"Second")]);
     let insert:EditOp=serde_json::from_value(serde_json::json!({"op":"set_section_boundary","at":SOURCE_ID,"break_type":"continuous"})).unwrap();
     let mut request=plan(&source,vec![insert.clone()]);request.change_mode=ChangeMode::Track;
-    assert!(matches!(execute_plan(&source,&PlanRequest{plan:request,preview_key:None}),PlanResult::Rejected{..}));
+    assert!(matches!(execute_plan(&source,&PlanRequest{plan:request,preview_key:None, now: None}),PlanResult::Rejected{..}));
     let mut request=plan(&source,vec![insert]);request.change_mode=ChangeMode::Direct;
     let key=PreviewKey::new(&request);
-    let PlanResult::Committed {bytes:split,..}=execute_plan(&source,&PlanRequest{plan:request,preview_key:Some(key)})else{panic!("insert failed")};
+    let PlanResult::Committed {bytes:split,..}=execute_plan(&source,&PlanRequest{plan:request,preview_key:Some(key), now: None})else{panic!("insert failed")};
     let read=read_listing(&split,"document",None);
     assert_eq!(read["sections"].as_array().unwrap().len(),2,"{read}");
     assert_eq!(read["sections"][0]["handle"],format!("section:{SOURCE_ID}"));
     assert_eq!(read["sections"][1]["handle"],"section:final");
     let layout:EditOp=serde_json::from_value(serde_json::json!({"op":"set_section_layout","section_handle":"section:final","orientation":"landscape"})).unwrap();
     let mut request=plan(&split,vec![layout]);request.change_mode=ChangeMode::Direct;let key=PreviewKey::new(&request);
-    let PlanResult::Committed {bytes:landscape,..}=execute_plan(&split,&PlanRequest{plan:request,preview_key:Some(key)})else{panic!("layout failed")};
+    let PlanResult::Committed {bytes:landscape,..}=execute_plan(&split,&PlanRequest{plan:request,preview_key:Some(key), now: None})else{panic!("layout failed")};
     let remove:EditOp=serde_json::from_value(serde_json::json!({"op":"set_section_boundary","at":SOURCE_ID,"remove":true})).unwrap();
     let mut request=plan(&landscape,vec![remove]);request.change_mode=ChangeMode::Direct;let key=PreviewKey::new(&request);
-    let PlanResult::Committed {bytes:merged,..}=execute_plan(&landscape,&PlanRequest{plan:request,preview_key:Some(key)})else{panic!("remove failed")};
+    let PlanResult::Committed {bytes:merged,..}=execute_plan(&landscape,&PlanRequest{plan:request,preview_key:Some(key), now: None})else{panic!("remove failed")};
     let xml=document_xml(&merged);assert_eq!(xml.matches("<w:sectPr").count(),1,"{xml}");
     assert!(xml.contains("w:orient=\"landscape\"")&&xml.contains("First")&&xml.contains("Second"),"{xml}");
 }
@@ -2570,7 +2570,7 @@ fn inserts_after_one_anchor_keep_operation_order() {
         {"op":"insert_paragraph","at":SECOND_ID,"position":"before","with":"Four"}
     ])).unwrap();
     let mut request=plan(&source,ops);request.change_mode=ChangeMode::Direct;let key=PreviewKey::new(&request);
-    let PlanResult::Committed{bytes,..}=execute_plan(&source,&PlanRequest{plan:request,preview_key:Some(key)})else{panic!("commit failed")};
+    let PlanResult::Committed{bytes,..}=execute_plan(&source,&PlanRequest{plan:request,preview_key:Some(key), now: None})else{panic!("commit failed")};
     let xml=document_xml(&bytes);
     let order=["First","One","One-b","Two","Cell","Three","Four","Second"].map(|t|xml.find(&format!(">{t}<")).unwrap_or_else(||panic!("{t} missing: {xml}")));
     assert!(order.windows(2).all(|w|w[0]<w[1]),"{xml}");
@@ -2585,7 +2585,7 @@ fn insert_paragraph_list_inserts_in_order_and_binds_item_aliases() {
         {"op":"replace_text","at":"$items_2","select":"B","with":"Bee"}
     ])).unwrap();
     let request=plan(&source,ops);
-    let PlanResult::Previewed{report,..}=execute_plan(&source,&PlanRequest{plan:request.clone(),preview_key:None})else{panic!("review failed")};
+    let PlanResult::Previewed{report,..}=execute_plan(&source,&PlanRequest{plan:request.clone(),preview_key:None, now: None})else{panic!("review failed")};
     assert_eq!(report.allocated_ids.len(),3,"{report:?}");
     for n in 1..=3 {assert!(report.aliases.iter().any(|(name,_)|name==&format!("items_{n}")),"{report:?}");}
     assert!(!report.aliases.iter().any(|(name,_)|name=="items"),"{report:?}");
@@ -2596,7 +2596,7 @@ fn insert_paragraph_list_inserts_in_order_and_binds_item_aliases() {
     assert_eq!(xml.matches("<w:p ").count(),7,"{xml}");
 
     let empty:Result<Vec<EditOp>,_>=serde_json::from_value(serde_json::json!([{"op":"insert_paragraph","at":SOURCE_ID,"position":"after","with":[]}]));
-    let rejected=empty.map(|ops|execute_plan(&source,&PlanRequest{plan:plan(&source,ops),preview_key:None}));
+    let rejected=empty.map(|ops|execute_plan(&source,&PlanRequest{plan:plan(&source,ops),preview_key:None, now: None}));
     assert!(!matches!(rejected,Ok(PlanResult::Previewed{..})),"{rejected:?}");
     let wrong:Result<EditOp,_>=serde_json::from_value(serde_json::json!({"op":"insert_paragraph","at":SOURCE_ID,"position":"after","with":[1]}));
     assert!(wrong.unwrap_err().to_string().contains("with must be a string or a list of strings"));
@@ -2613,7 +2613,7 @@ fn list_insert_alias_names_the_group() {
         {"op":"insert_paragraph","at":"$g","position":"before","with":"Before"},
         {"op":"set_list","at":["$g"],"format":"bullet"}]));
     let key=PreviewKey::new(&request);
-    let PlanResult::Committed{bytes,report,..}=execute_plan(&source,&PlanRequest{plan:request,preview_key:Some(key)})else{panic!("commit failed")};
+    let PlanResult::Committed{bytes,report,..}=execute_plan(&source,&PlanRequest{plan:request,preview_key:Some(key), now: None})else{panic!("commit failed")};
     assert_eq!(report.groups["g"].as_array().unwrap().len(),3,"{report:?}");
     assert!(!report.aliases.contains_key("g"),"{report:?}");
     let xml=document_xml(&bytes);
@@ -2623,14 +2623,14 @@ fn list_insert_alias_names_the_group() {
 
     let request=direct(serde_json::json!([insert,{"op":"delete_paragraphs","at":["$g"]}]));
     let key=PreviewKey::new(&request);
-    let PlanResult::Committed{bytes,..}=execute_plan(&source,&PlanRequest{plan:request,preview_key:Some(key)})else{panic!("commit failed")};
+    let PlanResult::Committed{bytes,..}=execute_plan(&source,&PlanRequest{plan:request,preview_key:Some(key), now: None})else{panic!("commit failed")};
     let xml=document_xml(&bytes);
     // A direct deletion removes the paragraphs; nothing is left tracked.
     assert!(["A","B","C"].iter().all(|t|!xml.contains(&format!(">{t}<"))),"{xml}");
     assert!(!xml.contains("<w:del ") && xml.contains(">First<") && xml.contains(">Second<"),"{xml}");
 
     let request=direct(serde_json::json!([insert,{"op":"format_paragraph","at":"$g","alignment":"center"}]));
-    match execute_plan(&source,&PlanRequest{plan:request,preview_key:None}) {
+    match execute_plan(&source,&PlanRequest{plan:request,preview_key:None, now: None}) {
         PlanResult::Rejected{diagnostic,..}=>{assert_eq!(diagnostic.code,"group_alias");assert!(diagnostic.message.contains("$g_N"),"{diagnostic:?}");}
         other=>panic!("expected group_alias: {other:?}"),
     }
@@ -2654,11 +2654,11 @@ fn section_boundary_handles_follow_inserted_paragraph_aliases() {
 fn commit_auto_diff(bytes: &[u8], op: EditOp) -> Vec<u8> {
     let mut p = plan(bytes, vec![op]);
     p.change_mode = ChangeMode::Track;
-    let key = match execute_plan(bytes, &PlanRequest { plan: p.clone(), preview_key: None }) {
+    let key = match execute_plan(bytes, &PlanRequest { plan: p.clone(), preview_key: None, now: None }) {
         PlanResult::Previewed { preview_key, .. } => preview_key,
         other => panic!("auto_diff review failed: {other:?}"),
     };
-    match execute_plan(bytes, &PlanRequest { plan: p, preview_key: Some(key) }) {
+    match execute_plan(bytes, &PlanRequest { plan: p, preview_key: Some(key), now: None }) {
         PlanResult::Committed { bytes, .. } => bytes,
         other => panic!("auto_diff commit failed: {other:?}"),
     }
@@ -2793,18 +2793,18 @@ fn document_with_header_bookmark(body: &str) -> Vec<u8> {
 fn commit_mode(bytes: &[u8], ops: Vec<EditOp>, mode: ChangeMode) -> Vec<u8> {
     let mut p = plan(bytes, ops);
     p.change_mode = mode;
-    let key = match execute_plan(bytes, &PlanRequest { plan: p.clone(), preview_key: None }) {
+    let key = match execute_plan(bytes, &PlanRequest { plan: p.clone(), preview_key: None, now: None }) {
         PlanResult::Previewed { preview_key, .. } => preview_key,
         other => panic!("preview rejected: {other:?}"),
     };
-    match execute_plan(bytes, &PlanRequest { plan: p, preview_key: Some(key) }) {
+    match execute_plan(bytes, &PlanRequest { plan: p, preview_key: Some(key), now: None }) {
         PlanResult::Committed { bytes, .. } => bytes,
         other => panic!("commit rejected: {other:?}"),
     }
 }
 
 fn rejection(bytes: &[u8], ops: Vec<EditOp>) -> docxdriver_core::Diagnostic {
-    match execute_plan(bytes, &PlanRequest { plan: plan(bytes, ops), preview_key: None }) {
+    match execute_plan(bytes, &PlanRequest { plan: plan(bytes, ops), preview_key: None, now: None }) {
         PlanResult::Rejected { diagnostic, .. } => diagnostic,
         other => panic!("plan was not rejected: {other:?}"),
     }
@@ -2869,7 +2869,7 @@ fn bookmark_add_is_never_tracked_and_reports_its_op() {
     let p = Plan { change_mode: ChangeMode::Track, ..plan(&source, ops(serde_json::json!([
         {"op": "bookmark_add", "at": SOURCE_ID, "name": "Beta", "select": "beta", "occurrence": 1},
     ]))) };
-    let report = match execute_plan(&source, &PlanRequest { plan: p, preview_key: None }) {
+    let report = match execute_plan(&source, &PlanRequest { plan: p, preview_key: None, now: None }) {
         PlanResult::Previewed { report, .. } => report,
         other => panic!("preview rejected: {other:?}"),
     };
@@ -3054,7 +3054,7 @@ fn existing_edits_keep_bookmarks_paired() {
 }
 
 fn preview_plan(bytes: &[u8], ops: Vec<EditOp>) -> PlanResult {
-    execute_plan(bytes, &PlanRequest { plan: plan(bytes, ops), preview_key: None })
+    execute_plan(bytes, &PlanRequest { plan: plan(bytes, ops), preview_key: None, now: None })
 }
 
 #[test]

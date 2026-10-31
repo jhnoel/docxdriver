@@ -394,6 +394,7 @@ fn dispatch_command(ctx: &Context, args: &MutArgs, op: EditOp) -> Result<ExitCod
             op,
         }),
         expected_source: expected,
+        now: std::env::var("DOCXDRIVER_NOW").ok(),
     });
     let mut result = match execute_request(Some(&input), &request) {
         docxdriver_core::RequestResult::Command(r) => r,
@@ -748,6 +749,7 @@ fn create(ctx: &Context, path: &Path, html: &str) -> Result<ExitCode, String> {
             html: Some(source),
         }),
         expected_source: None,
+        now: None,
     });
     let result = match execute_request(None, &request) {
         docxdriver_core::RequestResult::Command(r) => r,
@@ -779,6 +781,7 @@ fn read(
             view: view.map(|view| format!("{view:?}").to_ascii_lowercase()),
         }),
         expected_source: None,
+        now: None,
     });
     let result = match execute_request(Some(&input), &request) {
         docxdriver_core::RequestResult::Command(r) => r,
@@ -810,6 +813,7 @@ fn find(
             }),
         }),
         expected_source: None,
+        now: None,
     });
     let result = match execute_request(Some(&input), &request) {
         docxdriver_core::RequestResult::Command(r) => r,
@@ -849,6 +853,7 @@ fn plan(
     let request = Request::Plan(PlanRequest {
         plan: parsed,
         preview_key: key,
+        now: std::env::var("DOCXDRIVER_NOW").ok(),
     });
     let result = match execute_request(Some(&input), &request) {
         docxdriver_core::RequestResult::Plan(r) => r,

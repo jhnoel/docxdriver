@@ -322,7 +322,8 @@ test('v1: SetEvenAndOddHeaders and Comment* dataclasses review and commit', asyn
   assert.match(shapes.content[0].text, /comment_delete/);
 
   const evenOddReview = await call([
-    'plan = Plan(operations=[SetEvenAndOddHeaders(even_and_odd=True)])',
+    // A document setting: Word cannot track it, so it needs a direct plan.
+    'plan = Plan(change_mode="direct", operations=[SetEvenAndOddHeaders(even_and_odd=True)])',
     'review = docx_review("contract.docx", plan)',
     'if review is None:',
     '    print("blocked")',

@@ -18,7 +18,7 @@ fn read(bytes: &[u8], kind: Option<&str>, view: Option<&str>) -> serde_json::Val
                 read_kind: kind.map(str::to_owned),
                 view: view.map(str::to_owned),
             }),
-            expected_source: None,
+            expected_source: None, now: None
         }),
     ) {
         RequestResult::Command(CommandResult::Completed {
@@ -77,7 +77,7 @@ fn reads_reference_bytes_and_settles_revisions_through_plan() {
         TS_REFERENCE,
         &PlanRequest {
             plan: p.clone(),
-            preview_key: None,
+            preview_key: None, now: None
         },
     ) {
         PlanResult::Previewed { preview_key, .. } => preview_key,
@@ -87,7 +87,7 @@ fn reads_reference_bytes_and_settles_revisions_through_plan() {
         TS_REFERENCE,
         &PlanRequest {
             plan: p,
-            preview_key: Some(preview),
+            preview_key: Some(preview), now: None
         },
     ) {
         PlanResult::Committed { bytes, .. } => {

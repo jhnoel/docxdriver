@@ -33,7 +33,7 @@ fn read(view: &str) -> Value {
                 read_kind: Some("document_ui".into()),
                 view: Some(view.into()),
             }),
-            expected_source: None,
+            expected_source: None, now: None
         },
     ) {
         CommandResult::Completed {
@@ -235,7 +235,7 @@ fn compact_default_preserves_the_entire_document_in_every_view() {
                     read_kind: None,
                     view: Some(view.into()),
                 }),
-                expected_source: None,
+                expected_source: None, now: None
             },
         ) {
             CommandResult::Completed {
@@ -482,7 +482,7 @@ fn compact_comment_records_preserve_thread_content_and_ready_to_use_selectors() 
                 read_kind: Some(kind.into()),
                 view: Some("markup".into()),
             }),
-            expected_source: None,
+            expected_source: None, now: None
         },
     ) {
         CommandResult::Completed {

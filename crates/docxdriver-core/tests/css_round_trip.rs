@@ -13,7 +13,7 @@ fn run(input: Option<&[u8]>, command: Command) -> CommandResult {
         input,
         &CommandRequest {
             command,
-            expected_source: None,
+            expected_source: None, now: None
         },
     )
 }
@@ -79,18 +79,18 @@ fn commit(bytes: &[u8], ops: Vec<EditOp>) -> Vec<u8> {
 
 fn commit_in(bytes: &[u8], ops: Vec<EditOp>, change_mode: ChangeMode) -> Vec<u8> {
     let p = Plan { change_mode, ..plan(bytes, ops) };
-    let key = match execute_plan(bytes, &PlanRequest { plan: p.clone(), preview_key: None }) {
+    let key = match execute_plan(bytes, &PlanRequest { plan: p.clone(), preview_key: None, now: None }) {
         PlanResult::Previewed { preview_key, .. } => preview_key,
         other => panic!("preview rejected: {other:?}"),
     };
-    match execute_plan(bytes, &PlanRequest { plan: p, preview_key: Some(key) }) {
+    match execute_plan(bytes, &PlanRequest { plan: p, preview_key: Some(key), now: None }) {
         PlanResult::Committed { bytes, .. } => bytes,
         other => panic!("commit rejected: {other:?}"),
     }
 }
 
 fn rejection(bytes: &[u8], ops: Vec<EditOp>) -> (String, String) {
-    match execute_plan(bytes, &PlanRequest { plan: plan(bytes, ops), preview_key: None }) {
+    match execute_plan(bytes, &PlanRequest { plan: plan(bytes, ops), preview_key: None, now: None }) {
         PlanResult::Rejected { diagnostic, .. } => (diagnostic.code, diagnostic.message),
         other => panic!("expected rejection: {other:?}"),
     }

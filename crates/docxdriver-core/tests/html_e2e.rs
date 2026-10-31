@@ -11,7 +11,7 @@ fn command(input: Option<&[u8]>, command: Command) -> CommandResult {
         input,
         &CommandRequest {
             command,
-            expected_source: None,
+            expected_source: None, now: None
         },
     )
 }
@@ -68,7 +68,7 @@ fn commit(input: &[u8], ops: Vec<EditOp>, mode: ChangeMode) -> Vec<u8> {
         input,
         &PlanRequest {
             plan: plan.clone(),
-            preview_key: None,
+            preview_key: None, now: None
         },
     );
     let key = match preview {
@@ -79,7 +79,7 @@ fn commit(input: &[u8], ops: Vec<EditOp>, mode: ChangeMode) -> Vec<u8> {
         input,
         &PlanRequest {
             plan,
-            preview_key: Some(key),
+            preview_key: Some(key), now: None
         },
     ) {
         PlanResult::Committed { bytes, .. } => bytes,
@@ -290,7 +290,7 @@ fn mathml_equation_edits_preview_commit_and_restore_original_omml() {
                 &input,
                 &PlanRequest {
                     plan,
-                    preview_key: None
+                    preview_key: None, now: None
                 }
             ),
             PlanResult::Rejected { .. }
@@ -981,7 +981,7 @@ fn typed_membership_rejects_multi_paragraph_lists_without_detaching_continuation
         for change_mode in [ChangeMode::Direct,ChangeMode::Track] {
             let op=serde_json::from_value(json!({"op":"set_list","at":[at],"remove":true})).unwrap();
             let plan=Plan{base:SourceHash::from_bytes(&input),author:"test".into(),change_mode,ops:vec![op]};
-            let PlanResult::Rejected{diagnostic,..}=execute_plan(&input,&PlanRequest{plan,preview_key:None})else{panic!("membership edit was accepted")};
+            let PlanResult::Rejected{diagnostic,..}=execute_plan(&input,&PlanRequest{plan,preview_key:None, now: None})else{panic!("membership edit was accepted")};
             assert!(diagnostic.message.contains("explicit continuation"),"{diagnostic:?}");
         }
     }

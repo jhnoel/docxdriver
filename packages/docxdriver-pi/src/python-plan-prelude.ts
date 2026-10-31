@@ -1097,7 +1097,7 @@ Rename the body bookmark \`name\` to \`new_name\` (same rules as bookmark_add); 
 
 \`ClearFooter(kind: str | None = None, section: int | None = None)\`
 
-Remove the explicit footer reference for a section/kind (defaults: section 1, kind default).
+Remove the explicit footer reference for a section/kind (defaults: section 1, kind default). Tracked as clear_header.
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -1108,7 +1108,7 @@ Remove the explicit footer reference for a section/kind (defaults: section 1, ki
 
 \`ClearHeader(kind: str | None = None, section: int | None = None)\`
 
-Remove the explicit header reference for a section/kind (defaults: section 1, kind default).
+Remove the explicit header reference for a section/kind (defaults: section 1, kind default). Track mode deletes the content of the header as a tracked deletion instead (section 1 only; the empty header stays referenced).
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -1119,7 +1119,7 @@ Remove the explicit header reference for a section/kind (defaults: section 1, ki
 
 \`CommentAdd(at: str, text: str, occurrence: int | None = None, select: str | None = None)\`
 
-Anchor a comment with \`text\` to the paragraph at \`at\`; omit \`select\` to comment the whole paragraph, or pass \`select\`/\`occurrence\` (1-based) to pin one exact span.
+Anchor a comment with \`text\` to the paragraph at \`at\`; omit \`select\` to comment the whole paragraph, or pass \`select\`/\`occurrence\` (1-based) to pin one exact span. Applies directly in both change modes (Word does not track comments).
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -1175,7 +1175,7 @@ Delete a current equation while preserving the paragraph. Read docx_read(path).e
 
 \`DeleteParagraphs(at: list)\`
 
-Delete the paragraphs listed in \`at\` (tracked deletion by default).
+Delete the paragraphs listed in \`at\`. Track mode: a tracked deletion; accepting it leaves the id, style and list membership of the following paragraph intact. Direct mode: removed with no revision.
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -1185,7 +1185,7 @@ Delete the paragraphs listed in \`at\` (tracked deletion by default).
 
 \`EditTable(action: dict, at: str)\`
 
-Direct structural table edits using a source-bound table handle. action.kind is insert_rows/delete_rows/insert_columns/delete_columns/merge_cells/split_cell/delete; coordinates and counts are one-based. Insert/delete grid operations and merge require an unmerged rectangular grid. Split keeps content in the first resulting cell; merge concatenates content in row-major order. Insert actions optionally accept as for a group alias: inserted rows use $name/row:N[/cell:N]; inserted columns use $name/row:N/cell:N within the inserted strip. Rejects tracked mode and tables containing unresolved revisions, bookmarks, comments, fields or content controls. Delete the table instead of its final row or column.
+Structural table edits using a source-bound table handle. action.kind is insert_rows/delete_rows/insert_columns/delete_columns/merge_cells/split_cell/delete; coordinates and counts are one-based. Insert/delete grid operations and merge require an unmerged rectangular grid. Split keeps content in the first resulting cell; merge concatenates content in row-major order. Insert actions optionally accept as for a group alias: inserted rows use $name/row:N[/cell:N]; inserted columns use $name/row:N/cell:N within the inserted strip. Track mode records insert_rows/delete_rows/delete as tracked row insertions/deletions and refuses insert_columns/delete_columns/merge_cells/split_cell (Word does not track them); direct mode applies every action with no revision. Rejects tables containing unresolved revisions of other authors, bookmarks, comments, fields or content controls. Delete the table instead of its final row or column.
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -1207,7 +1207,7 @@ Format a source-bound table:N/row:N/cell:N handle using width, borders, fill (#R
 
 \`FormatParagraph(at: str, alignment: str | None = None, clear: list | None = None, first_line_indent: float | None = None, indent_left: float | None = None, indent_right: float | None = None, line_spacing: dict | None = None, space_after: float | None = None, space_before: float | None = None, style: str | None = None)\`
 
-Apply paragraph formatting to the paragraph at \`at\`: \`style\`, \`alignment\` (left/center/right/justify), signed \`indent_left\`/\`indent_right\`, signed \`first_line_indent\` (negative for hanging, zero for an explicit zero offset), \`space_before\`/\`space_after\`, \`line_spacing\` (dict with \`mode\` multiple/exact/at_least and \`value\`), or \`clear\`. Omitted properties are untouched; clear removes direct settings and inherits styles/defaults, winning over set. Formatting changes are always tracked.
+Apply paragraph formatting to the paragraph at \`at\`: \`style\`, \`alignment\` (left/center/right/justify), signed \`indent_left\`/\`indent_right\`, signed \`first_line_indent\` (negative for hanging, zero for an explicit zero offset), \`space_before\`/\`space_after\`, \`line_spacing\` (dict with \`mode\` multiple/exact/at_least and \`value\`), or \`clear\`. Omitted properties are untouched; clear removes direct settings and inherits styles/defaults, winning over set. Track mode records the change (rPrChange/pPrChange); direct mode applies it with no revision.
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -1248,7 +1248,7 @@ Format the table at a source-bound table:N handle or inserted $alias. format acc
 
 \`FormatText(at: str, select: str, bold: bool | None = None, clear: list | None = None, color: str | None = None, font_size: float | None = None, highlight: str | None = None, italic: bool | None = None, occurrence: int | None = None, strike: bool | None = None, subscript: bool | None = None, superscript: bool | None = None, underline: bool | None = None)\`
 
-Apply character formatting to an exact occurrence of \`select\` in the paragraph at \`at\`: boolean attributes (\`bold\`, \`italic\`, \`underline\`, \`strike\`, \`superscript\`, \`subscript\`), \`color\` (#RRGGBB), \`highlight\` (Word palette including none), \`font_size\` (points), \`occurrence\`, or \`clear\`. Omitted properties preserve source OOXML; false explicitly overrides inherited formatting (baseline for superscript/subscript). Clear removes the direct property and inherits styles/defaults, winning over set; superscript/subscript share one property. Formatting changes are always tracked.
+Apply character formatting to an exact occurrence of \`select\` in the paragraph at \`at\`: boolean attributes (\`bold\`, \`italic\`, \`underline\`, \`strike\`, \`superscript\`, \`subscript\`), \`color\` (#RRGGBB), \`highlight\` (Word palette including none), \`font_size\` (points), \`occurrence\`, or \`clear\`. Omitted properties preserve source OOXML; false explicitly overrides inherited formatting (baseline for superscript/subscript). Clear removes the direct property and inherits styles/defaults, winning over set; superscript/subscript share one property. Track mode records the change (rPrChange/pPrChange); direct mode applies it with no revision.
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -1284,7 +1284,7 @@ Insert a new paragraph before or after an anchor: paragraph id/alias (\`at\`) or
 
 \`InsertTable(at: str, columns: int, position: str, rows: int, as_: str | None = None, cells: list | None = None)\`
 
-Insert a rectangular table before/after paragraph at, with rows and columns in 1..100, and optionally fill it in the same plan. cells is a list of rows, each a list of cell strings in insert_paragraph's inline content (<b>, <i>, <a href>, ...); missing trailing rows and cells stay empty, extra rows or cells are an error. Direct mode only. Optional as creates a plan-local table alias for later formatting and structural edits, and binds each cell's paragraph as $<as>_rNcM (row N, column M, from 1) for later ops in the same plan. Every cell paragraph id is reported in allocated_ids, row by row.
+Insert a rectangular table before/after paragraph at, with rows and columns in 1..100, and optionally fill it in the same plan. cells is a list of rows, each a list of cell strings in insert_paragraph's inline content (<b>, <i>, <a href>, ...); missing trailing rows and cells stay empty, extra rows or cells are an error. Track mode inserts it as a tracked table (inserted rows and content; refused as the last block of a table cell). Optional as creates a plan-local table alias for later formatting and structural edits, and binds each cell's paragraph as $<as>_rNcM (row N, column M, from 1) for later ops in the same plan. Every cell paragraph id is reported in allocated_ids, row by row.
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -1360,7 +1360,7 @@ Accept or reject tracked changes: \`target\` is a decimal revision id from \`doc
 
 \`SetEvenAndOddHeaders(even_and_odd: bool)\`
 
-Enable or disable distinct even-page headers/footers (\`even_and_odd\`); when true, \`kind="even"\` chrome applies to even pages.
+Enable or disable distinct even-page headers/footers (\`even_and_odd\`); when true, \`kind="even"\` chrome applies to even pages. Direct mode only: Word cannot track this document setting, so track mode refuses it.
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -1381,7 +1381,7 @@ Enable/disable first-page stories in a section (default 1) without removing stor
 
 \`SetFooter(with_: str | Inline | Quote | Term, kind: str | None = None, section: int | None = None)\`
 
-Set section footer chrome from inner HTML (\`with\`); optional \`section\` (default 1) and \`kind\` (default/even/first).
+Set section footer chrome from inner HTML (\`with\`); optional \`section\` (default 1) and \`kind\` (default/even/first). Tracked as set_header.
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -1393,7 +1393,7 @@ Set section footer chrome from inner HTML (\`with\`); optional \`section\` (defa
 
 \`SetHeader(with_: str | Inline | Quote | Term, kind: str | None = None, section: int | None = None)\`
 
-Set section header chrome from inner HTML (\`with\`); optional \`section\` (default 1) and \`kind\` (default/even/first).
+Set section header chrome from inner HTML (\`with\`); optional \`section\` (default 1) and \`kind\` (default/even/first). Track mode: old content becomes a tracked deletion and the new a tracked insertion (a new header part stays, empty, after reject-all); kind=first tracks titlePg; kind=even is refused while even/odd headers are off.
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -1405,7 +1405,7 @@ Set section header chrome from inner HTML (\`with\`); optional \`section\` (defa
 
 \`SetList(at: list, format: str | None = None, level: int | None = None, levels: list | None = None, num_id: int | None = None, remove: bool | None = None, start: int | None = None)\`
 
-Assign explicitly selected paragraphs to a new list (format defaults to decimal), continue an existing num_id, or remove membership with remove=True. level is 0..8; IDs/starts are 1..2147483647. start creates an isolated restarted instance, and on new lists applies only to the selected level (explicit per-level start wins). Optional levels defines 1..9 per-level format/label/start/restart_after, signed indent_left/indent_right/first_line_indent and marker_bold/marker_italic/marker_font/marker_color for a new list. Label placeholders reference this or ancestor levels (%1..%9). Existing definitions are never restyled. Membership changes are tracked; settle pending paragraph changes first. Definitions remain after rejection for safe reference restoration. Typed membership changes on lists containing explicit continuation paragraphs are rejected, including numbered parents; HTML multi-paragraph creation and reconstruction are supported.
+Assign explicitly selected paragraphs to a new list (format defaults to decimal), continue an existing num_id, or remove membership with remove=True. level is 0..8; IDs/starts are 1..2147483647. start creates an isolated restarted instance, and on new lists applies only to the selected level (explicit per-level start wins). Optional levels defines 1..9 per-level format/label/start/restart_after, signed indent_left/indent_right/first_line_indent and marker_bold/marker_italic/marker_font/marker_color for a new list. Label placeholders reference this or ancestor levels (%1..%9). Existing definitions are never restyled. Track mode records membership changes (pPrChange), direct mode applies them with no revision; settle pending paragraph changes first. Definitions remain after rejection for safe reference restoration. Typed membership changes on lists containing explicit continuation paragraphs are rejected, including numbered parents; HTML multi-paragraph creation and reconstruction are supported.
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -1421,7 +1421,7 @@ Assign explicitly selected paragraphs to a new list (format defaults to decimal)
 
 \`SetPageMargins(bottom: float | None = None, footer: float | None = None, gutter: float | None = None, header: float | None = None, left: float | None = None, right: float | None = None, section: int | None = None, top: float | None = None)\`
 
-Set selected nonnegative page margins in points for a section (default 1): top/right/bottom/left/header/footer/gutter. Omitted values are preserved. Like existing header/footer setters, margin changes are direct even in tracked plans.
+Set selected nonnegative page margins in points for a section (default 1): top/right/bottom/left/header/footer/gutter. Omitted values are preserved. Track mode records the old margins in a section-property change; direct mode applies them with no revision.
 
 | Field | Type | Required |
 | --- | --- | --- |
