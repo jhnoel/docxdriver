@@ -384,6 +384,14 @@ fn paragraph_blocker(xml: &DocxXml, paragraph: NodeId) -> Option<String> {
     None
 }
 
+/// Paragraph content that holds runs: a run, or a hyperlink, smart tag or
+/// bidi wrapper (`w:dir`, `w:bdo`) around runs.
+fn is_run_content(xml: &DocxXml, node: NodeId) -> bool {
+    ["r", "hyperlink", "smartTag", "dir", "bdo"]
+        .iter()
+        .any(|name| xml.is_w(node, name))
+}
+
 fn inside_ppr(xml: &DocxXml, paragraph: NodeId, mut node: NodeId) -> bool {
     while let Some(parent) = xml.doc.parent(node) {
         if parent == paragraph {
@@ -1257,9 +1265,7 @@ pub fn replace_paragraph_typed(
         let content: Vec<NodeId> = xml
             .doc
             .children(paragraph)
-            .filter(|&node| {
-                xml.is_w(node, "r") || xml.is_w(node, "hyperlink") || xml.is_w(node, "smartTag")
-            })
+            .filter(|&node| is_run_content(xml, node))
             .collect();
         let insert_before = content_insert_point(xml, paragraph, &content);
         for node in &content {
@@ -1414,19 +1420,17 @@ fn wrap_all_content_in_del(
     let content: Vec<NodeId> = xml
         .doc
         .children(paragraph)
-        .filter(|&node| {
-            xml.is_w(node, "r") || xml.is_w(node, "hyperlink") || xml.is_w(node, "smartTag")
-        })
+        .filter(|&node| is_run_content(xml, node))
         .collect();
     if content.is_empty() {
         return Ok(());
     }
     // Adjacent runs share one deletion, so milestones between them keep their
-    // positions; a hyperlink is never wrapped (a
-    // deletion holds runs only), so its runs are deleted inside it.
+    // positions; a hyperlink or bidi wrapper is never
+    // wrapped (a deletion holds runs only), so its runs are deleted inside it.
     let mut del: Option<NodeId> = None;
     for node in content {
-        if xml.is_w(node, "hyperlink") {
+        if xml.is_w(node, "hyperlink") || xml.is_w(node, "dir") || xml.is_w(node, "bdo") {
             move_content_into_del(xml, node, id, author, date)?;
             del = None;
             continue;
@@ -2941,14 +2945,15 @@ fn move_content_into_del(
     date: &str,
 ) -> Result<(), String> {
     // A tracked deletion holds runs, never a hyperlink (CT_RunTrackChange);
-    // the deletion goes inside the hyperlink instead.
-    if xml.is_w(node, "hyperlink") {
+    // the deletion goes inside the hyperlink instead. Bidi wrappers may hold
+    // hyperlinks, so their runs are deleted inside them too.
+    if xml.is_w(node, "hyperlink") || xml.is_w(node, "dir") || xml.is_w(node, "bdo") {
         let inner: Vec<NodeId> = xml.doc.children(node).collect();
         for child in inner {
             if xml.is_rev_del(child) {
                 continue;
             }
-            if xml.is_w(child, "r") || xml.is_w(child, "hyperlink") || xml.is_w(child, "smartTag") {
+            if is_run_content(xml, child) {
                 move_content_into_del(xml, child, id, author, date)?;
             }
         }
@@ -2999,13 +3004,13 @@ fn wrap_live_content_in_del(
                 if xml.is_rev_del(run) {
                     continue;
                 }
-                if xml.is_w(run, "r") || xml.is_w(run, "hyperlink") || xml.is_w(run, "smartTag") {
+                if is_run_content(xml, run) {
                     move_content_into_del(xml, run, id, author, date)?;
                 }
             }
             continue;
         }
-        if xml.is_w(child, "r") || xml.is_w(child, "hyperlink") || xml.is_w(child, "smartTag") {
+        if is_run_content(xml, child) {
             move_content_into_del(xml, child, id, author, date)?;
         }
         // Milestones (bookmarks, comment ranges, proofErr) are structural
