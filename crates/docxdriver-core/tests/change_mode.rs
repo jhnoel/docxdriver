@@ -1219,3 +1219,44 @@ fn rejecting_a_list_change_takes_back_its_definitions() {
         }
     }
 }
+
+/// Every revision `w:id` in the package's WordprocessingML parts, as
+/// `part: id`.
+fn revision_ids(bytes: &[u8]) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for (name, xml) in parts(bytes) {
+        if !name.starts_with("word/") || name.contains("_rels") {
+            continue;
+        }
+        for tag in REVISION_TAGS {
+            for suffix in [" ", ">", "/"] {
+                let needle = format!("<w:{tag}{suffix}");
+                for (at, _) in xml.match_indices(&needle) {
+                    let element = &xml[at..at + xml[at..].find('>').unwrap()];
+                    if let Some(start) = element.find(" w:id=\"") {
+                        let value = &element[start + 7..];
+                        out.push((name.clone(), value[..value.find('"').unwrap()].to_string()));
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+// A tracked header took ids past its own part only, so a later plan reused
+// the ids a tracked footer already held.
+#[test]
+fn tracked_stories_in_separate_plans_keep_revision_ids_unique() {
+    let footer = run(&fixture(), "track", AUTHOR, r#"[{"op":"set_footer","with":"<p>New footer</p>"}]"#).unwrap();
+    let both = run(&footer, "track", AUTHOR, r#"[{"op":"set_header","with":"<p>New header</p>"}]"#).unwrap();
+    let ids = revision_ids(&both);
+    assert!(ids.iter().any(|(part, _)| part.contains("header")), "{ids:?}");
+    assert!(ids.iter().any(|(part, _)| part.contains("footer")), "{ids:?}");
+    let mut seen = BTreeMap::new();
+    for (part, id) in &ids {
+        if let Some(other) = seen.insert(id.clone(), part.clone()) {
+            panic!("revision id {id} in both {other} and {part}");
+        }
+    }
+}

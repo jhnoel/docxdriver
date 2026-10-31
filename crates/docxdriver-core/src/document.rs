@@ -179,8 +179,6 @@ pub struct ParaIdIndex {
     pub allocation_error: Option<String>,
 }
 
-/// Every element family carrying a revision w:id; they share one sequence.
-/// The trailing move range markers pair a start and end under one id.
 /// Body-level milestone elements that can sit between paragraphs and are not
 /// blocks themselves.
 pub const BODY_MILESTONES: &[&str] = &[
@@ -198,6 +196,8 @@ pub const BODY_MILESTONES: &[&str] = &[
     "moveToRangeEnd",
 ];
 
+/// Every element family carrying a revision w:id; they share one sequence.
+/// The trailing move range markers pair a start and end under one id.
 const REVISION_ID_TAGS: &[&str] = &[
     "ins", "del", "cellIns", "cellDel", "cellMerge", "moveFrom", "moveTo", "rPrChange",
     "pPrChange", "tblPrChange", "trPrChange", "tcPrChange", "sectPrChange", "tblGridChange",

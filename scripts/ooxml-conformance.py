@@ -401,7 +401,7 @@ def scenarios(read):
             ('format_paragraph', mode, [{'op': 'format_paragraph', 'at': at, 'clear': ['first_line_indent', 'indent_left', 'indent_right']}]),
             ('format_paragraph', mode, [{'op': 'format_paragraph', 'at': at, 'alignment': 'center', 'space_after': 6.0,
                                          'line_spacing': {'mode': 'multiple', 'value': 1.5}}]),
-            ('insert_paragraph', mode, [{'op': 'insert_paragraph', 'at': at, 'position': 'after', 'with': 'Inserted <b>text</b>', 'as': '$new'},
+            ('insert_paragraph', mode, [{'op': 'insert_paragraph', 'at': at, 'position': 'after', 'with': 'Inserted <b>text</b>', 'as': 'new'},
                                         {'op': 'replace_text', 'at': '$new', 'select': 'Inserted', 'with': 'Added'}]),
             ('insert_paragraph', mode, [{'op': 'insert_paragraph', 'at': at, 'position': 'after', 'with': ['One', '<i>Two</i>', 'Three'], 'as': 'many'},
                                         {'op': 'insert_paragraph', 'at': at, 'position': 'before', 'with': ['Before one', 'Before two']},
