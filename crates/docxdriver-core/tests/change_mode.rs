@@ -829,23 +829,3 @@ fn check_tracked(label: &str, base: &[u8], input_rejected: &[u8], op: &str, ops:
         }
     }
 }
-
-#[test]
-#[ignore]
-fn peek_op() {
-    let base = fixture();
-    let name = std::env::var("OP").unwrap();
-    let ops = op_matrix(&base)
-        .into_iter()
-        .find(|(l, _)| *l == name)
-        .unwrap()
-        .1;
-    let tracked = run(&base, "track", AUTHOR, &ops).unwrap();
-    let direct = run(&base, "direct", AUTHOR, &ops).unwrap();
-    let part_name = std::env::var("PART").unwrap();
-    println!("BASE   {}", part(&base, &part_name));
-    println!("TRACK  {}", part(&tracked, &part_name));
-    println!("ACCEPT {}", part(&settle(&tracked, true), &part_name));
-    println!("REJECT {}", part(&settle(&tracked, false), &part_name));
-    println!("DIRECT {}", part(&direct, &part_name));
-}
