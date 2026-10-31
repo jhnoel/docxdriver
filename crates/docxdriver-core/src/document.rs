@@ -676,22 +676,25 @@ impl DocxXml {
             .all(|child| self.is_w(child, "pPr") || self.is_rev_ins(child))
     }
 
-    /// Whether `paragraph`'s story stays well formed without it: a body
-    /// still ends in a paragraph, any other story still ends in a block
-    /// after it.
+    /// Whether `paragraph`'s story stays well formed without it: a
+    /// paragraph precedes it (so the story still ends in one), or, outside
+    /// the body, a block follows it.
     fn story_survives_without(&self, paragraph: NodeId) -> bool {
         let Some(parent) = self.doc.parent(paragraph) else {
             return false;
         };
         let element = |node: &NodeId| self.doc.is_element(*node) && !BODY_MILESTONES.iter().any(|local| self.is_w(*node, local));
-        if self.is_w(parent, "body") {
-            let mut previous = self.doc.prev_sibling(paragraph);
-            while let Some(node) = previous {
-                if element(&node) {
-                    return self.is_w(node, "p");
+        let mut previous = self.doc.prev_sibling(paragraph);
+        while let Some(node) = previous {
+            if element(&node) {
+                if self.is_w(node, "p") {
+                    return true;
                 }
-                previous = self.doc.prev_sibling(node);
+                break;
             }
+            previous = self.doc.prev_sibling(node);
+        }
+        if self.is_w(parent, "body") {
             return false;
         }
         let mut next = self.doc.next_sibling(paragraph);
@@ -702,6 +705,19 @@ impl DocxXml {
             next = self.doc.next_sibling(node);
         }
         false
+    }
+
+    /// A table row's tracked insertion or deletion marker
+    /// (`w:trPr/w:ins|w:del`), if any.
+    pub fn row_revision(&self, row: NodeId) -> Option<NodeId> {
+        let trpr = self.child_w(row, "trPr")?;
+        self.child_w(trpr, "ins").or_else(|| self.child_w(trpr, "del"))
+    }
+
+    /// Whether settling removes `row`: a deleted row on accept, an inserted
+    /// row on reject.
+    pub fn row_goes(&self, row: NodeId, accept: bool) -> bool {
+        self.row_revision(row).is_some_and(|marker| self.is_w(marker, "del") == accept)
     }
 
     /// Add a paragraph-mark revision marker (w:pPr/w:rPr/w:ins|w:del), creating

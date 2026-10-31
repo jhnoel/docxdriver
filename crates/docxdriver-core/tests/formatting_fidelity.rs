@@ -656,9 +656,10 @@ fn rejecting_paragraph_formatting_restores_schema_order_on_imported_section_tail
 #[test]
 fn first_page_mode_tracks_properties_and_retains_first_stories_on_reject() {
     let input = fixture("", "");
-    let input = commit(&input, vec![EditOp::SetHeader {
+    // Direct: a tracked first-page header also records the titlePg change.
+    let input = commit_mode(&input, vec![EditOp::SetHeader {
         section: None, kind: Some(ChromeKind::First), with: "<p>First story</p>".into(),
-    }]);
+    }], ChangeMode::Direct);
     let before = xml(&input);
     let changed = commit(&input, vec![EditOp::SetFirstPageMode { section: None, enabled: false }]);
     let changed_xml = String::from_utf8(parts(&changed)["word/document.xml"].clone()).unwrap();
@@ -882,7 +883,7 @@ fn table_structural_failures_are_atomic_and_tracking_is_explicit() {
     let input=create("<table><tr><td>A</td><td>B</td></tr><tr><td>C</td><td>D</td></tr></table>");
     let op=|v|serde_json::from_value::<EditOp>(v).unwrap();
     let attempts=vec![
-        (ChangeMode::Track,vec![json!({"op":"edit_table","at":"table:1","action":{"kind":"delete"}})]),
+        (ChangeMode::Track,vec![json!({"op":"edit_table","at":"table:1","action":{"kind":"merge_cells","row":1,"column":1,"row_span":1,"column_span":2}})]),
         (ChangeMode::Direct,vec![json!({"op":"edit_table","at":"table:1","action":{"kind":"insert_rows","row":1,"position":"before","count":1}}),json!({"op":"edit_table","at":"table:1","action":{"kind":"delete_columns","column":9,"count":1}})]),
         (ChangeMode::Direct,vec![json!({"op":"edit_table","at":"table:1","action":{"kind":"delete"}}),json!({"op":"format_table","at":"table:1","format":{"alignment":"center"}})]),
         (ChangeMode::Direct,vec![json!({"op":"edit_table","at":"table:1","action":{"kind":"delete_rows","row":1,"count":2}})]),

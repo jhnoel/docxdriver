@@ -302,9 +302,14 @@ def scenarios(read):
         ('set_first_page_mode', 'track', [{'op': 'set_first_page_mode', 'enabled': True}]),
         ('set_first_page_mode', 'track', [{'op': 'set_first_page_mode', 'enabled': True}, {'op': 'revision_settle', 'target': 'all', 'action': 'reject'}]),
         ('set_first_page_mode', 'direct', [{'op': 'set_first_page_mode', 'enabled': True}, {'op': 'set_first_page_mode', 'enabled': False}]),
-        ('set_even_and_odd_headers', 'track', [{'op': 'set_even_and_odd_headers', 'even_and_odd': True}]),
-        ('set_header', 'track', [{'op': 'set_header', 'kind': 'even', 'with': '<p>Even <b>header</b></p>'}]),
+        ('set_even_and_odd_headers', 'direct', [{'op': 'set_even_and_odd_headers', 'even_and_odd': True}]),
+        ('set_header', 'direct', [{'op': 'set_header', 'kind': 'even', 'with': '<p>Even <b>header</b></p>'}]),
+        ('set_header', 'track', [{'op': 'set_header', 'with': '<p>Tracked <b>header</b></p><p>Second line</p>'}]),
+        ('set_header', 'track', [{'op': 'set_header', 'kind': 'first', 'with': '<p>First page</p>'}, {'op': 'revision_settle', 'target': 'all', 'action': 'reject'}]),
         ('set_footer', 'track', [{'op': 'set_footer', 'with': '<p>Page footer</p>'}]),
+        ('set_footer', 'track', [{'op': 'set_footer', 'with': '<p>Page <page-number/> of <page-count/></p>'}, {'op': 'revision_settle', 'target': 'all', 'action': 'accept'}]),
+        ('set_page_margins', 'direct', [{'op': 'set_page_margins', 'top': 72.0, 'left': 90.0}]),
+        ('set_page_margins', 'track', [{'op': 'set_page_margins', 'bottom': 54.0}, {'op': 'revision_settle', 'target': 'all', 'action': 'reject'}]),
         ('clear_header', 'track', [{'op': 'set_header', 'kind': 'first', 'with': '<p>First</p>'}, {'op': 'clear_header', 'kind': 'first'}]),
         ('clear_footer', 'track', [{'op': 'clear_footer'}]),
         ('revision_settle', 'track', [{'op': 'revision_settle', 'target': 'all', 'action': 'accept'}]),
@@ -328,6 +333,17 @@ def scenarios(read):
         {'op': 'format_cell', 'at': '$alias_rows/row:1/cell:2', 'format': {'fill': '#FF0000'}},
         {'op': 'format_cell', 'at': '$alias_cols/row:1/cell:2', 'format': {'fill': '#0000FF'}},
     ]))
+    # Tracked tables: an inserted table, inserted and deleted rows, a deleted
+    # table, each also settled.
+    tracked_grid = {'op': 'insert_table', 'at': at, 'position': 'before', 'rows': 2, 'columns': 2, 'as': 'tgrid', 'cells': [['a', 'b'], ['c', 'd']]}
+    for action in ('accept', 'reject', None):
+        settle = [{'op': 'revision_settle', 'target': 'all', 'action': action}] if action else []
+        out.append(('insert_table', 'track', [tracked_grid] + settle))
+        out.append(('edit_table', 'track', [tracked_grid, {'op': 'edit_table', 'at': '$tgrid', 'action': {'kind': 'insert_rows', 'row': 1, 'position': 'after', 'count': 1}}] + settle))
+    if '<table' in markup:
+        for action in ({'kind': 'insert_rows', 'row': 1, 'position': 'before', 'count': 2}, {'kind': 'delete_rows', 'row': 1, 'count': 1}, {'kind': 'delete'}):
+            out.append(('edit_table', 'track', [{'op': 'edit_table', 'at': 'table:1', 'action': action}]))
+            out.append(('edit_table', 'track', [{'op': 'edit_table', 'at': 'table:1', 'action': action}, {'op': 'revision_settle', 'target': 'all', 'action': 'reject'}]))
     out.append(('set_section_boundary', 'direct', [{'op': 'set_section_boundary', 'at': at, 'break_type': 'continuous'}]))
     out.append(('set_section_boundary', 'direct', [{'op': 'set_section_boundary', 'at': at}, {'op': 'set_section_layout', 'section_handle': f'section:{at}', 'columns': 2}, {'op': 'set_section_boundary', 'at': at, 'remove': True}]))
     out.append(('insert_table', 'direct', [{'op': 'insert_table', 'at': at, 'position': 'before', 'rows': 2, 'columns': 2, 'as': 'grid'}, {'op': 'edit_table', 'at': '$grid', 'action': {'kind': 'insert_rows', 'row': 1, 'position': 'after', 'count': 1}}]))

@@ -124,7 +124,8 @@ fn canonical(bytes: &[u8], input: &[u8]) -> BTreeMap<String, String> {
     let mut fresh: BTreeMap<String, String> = BTreeMap::new();
     let mut out = BTreeMap::new();
     for (name, xml) in parts(bytes) {
-        let mut text = xml.clone();
+        // The declaration's line break is serializer style, not content.
+        let mut text = xml.replacen("?>\n<", "?><", 1).trim_end().to_string();
         for id in para_ids(&xml) {
             if known.contains(&id) {
                 continue;
@@ -283,6 +284,7 @@ const BODY: &str = concat!(
     "<h2>Abstract</h2>",
     "<p>Either party may terminate this agreement with notice.</p>",
     "<table><tr><td>Fee schedule</td><td>Amount due</td></tr><tr><td>Initial fee</td><td>5000 dollars</td></tr></table>",
+    "<p>The area is <math display=\"inline\"><msup><mi>r</mi><mn>2</mn></msup></math> per region.</p>",
     "<p>Closing paragraph of the agreement.</p>",
 );
 
@@ -293,7 +295,7 @@ fn fixture() -> Vec<u8> {
         &bytes,
         "direct",
         "setup",
-        r#"[{"op":"set_header","with":"<p>Running header</p>"},{"op":"set_footer","with":"<p>Running footer</p>"}]"#,
+        r#"[{"op":"set_header","with":"<p>Running header</p><p>Second header line</p>"},{"op":"set_footer","with":"<p>Running footer</p>"}]"#,
     )
     .unwrap()
 }
@@ -317,6 +319,7 @@ fn op_matrix(bytes: &[u8]) -> Vec<(&'static str, String)> {
     let claim3 = first_id(bytes, "Third claim");
     let either = first_id(bytes, "Either party");
     let closing = first_id(bytes, "Closing paragraph");
+    let area = first_id(bytes, "The area is");
     vec![
         ("replace_text", format!(r#"[{{"op":"replace_text","at":"{supplier}","select":"Services","with":"Goods"}}]"#)),
         ("revise_text", format!(r#"[{{"op":"revise_text","at":"{supplier}","edits":[{{"select":"deliver","with":"ship"}}]}}]"#)),
@@ -337,7 +340,18 @@ fn op_matrix(bytes: &[u8]) -> Vec<(&'static str, String)> {
         ("format_table", r#"[{"op":"format_table","at":"table:1","format":{"alignment":"center"}}]"#.into()),
         ("format_row", r#"[{"op":"format_row","at":"table:1/row:1","format":{"repeating_header":true}}]"#.into()),
         ("format_cell", r##"[{"op":"format_cell","at":"table:1/row:1/cell:1","format":{"fill":"#ABCDEF"}}]"##.into()),
+        ("edit_table_insert_rows_before", r#"[{"op":"edit_table","at":"table:1","action":{"kind":"insert_rows","row":1,"position":"before","count":2}}]"#.into()),
+        ("edit_table_insert_columns", r#"[{"op":"edit_table","at":"table:1","action":{"kind":"insert_columns","column":1,"position":"after","count":1}}]"#.into()),
+        ("edit_table_delete_columns", r#"[{"op":"edit_table","at":"table:1","action":{"kind":"delete_columns","column":1,"count":1}}]"#.into()),
+        ("edit_table_merge_cells", r#"[{"op":"edit_table","at":"table:1","action":{"kind":"merge_cells","row":1,"column":1,"row_span":1,"column_span":2}}]"#.into()),
+        ("insert_table_in_plan", format!(r#"[{{"op":"insert_table","at":"{closing}","position":"before","rows":1,"columns":2,"as":"t"}},{{"op":"replace_paragraph","at":"$t_r1c1","with":"cell"}},{{"op":"edit_table","at":"$t","action":{{"kind":"insert_rows","row":1,"position":"after","count":1}}}}]"#)),
+        ("replace_equation", format!(r#"[{{"op":"replace_equation","at":"{area}","equation":1,"mathml":"<math display=\"inline\"><mfrac><mi>a</mi><mi>b</mi></mfrac></math>"}}]"#)),
+        ("delete_equation", format!(r#"[{{"op":"delete_equation","at":"{area}","equation":1}}]"#)),
         ("set_header", r#"[{"op":"set_header","with":"<p>New header</p>"}]"#.into()),
+        ("set_header_lines", r#"[{"op":"set_header","with":"<p>One</p><p style=\"text-align:center\">Two</p><p>Three</p>"}]"#.into()),
+        ("set_header_first", r#"[{"op":"set_header","kind":"first","with":"<p>Cover header</p>"}]"#.into()),
+        ("set_header_even", r#"[{"op":"set_header","kind":"even","with":"<p>Even header</p>"}]"#.into()),
+        ("set_footer_page", r#"[{"op":"set_footer","with":"<p>Page <page-number/> of <page-count/></p>"}]"#.into()),
         ("set_footer", r#"[{"op":"set_footer","with":"<p>New footer</p>"}]"#.into()),
         ("clear_header", r#"[{"op":"clear_header"}]"#.into()),
         ("clear_footer", r#"[{"op":"clear_footer"}]"#.into()),
@@ -348,6 +362,7 @@ fn op_matrix(bytes: &[u8]) -> Vec<(&'static str, String)> {
         ("set_section_boundary", format!(r#"[{{"op":"set_section_boundary","at":"{supplier}"}}]"#)),
         ("comment_add", format!(r#"[{{"op":"comment_add","at":"{supplier}","select":"Supplier","text":"Check"}}]"#)),
         ("bookmark_add", format!(r#"[{{"op":"bookmark_add","at":"{supplier}","name":"Mark"}}]"#)),
+        ("revision_settle", r#"[{"op":"revision_settle","target":"all","action":"accept"}]"#.into()),
     ]
 }
 
@@ -387,6 +402,9 @@ fn direct_edits_leave_no_revision() {
                 "{label} {op}: {:?}",
                 revisions(&out)
             );
+            if op == "revision_settle" {
+                continue; // settles everyone's revisions by definition
+            }
             // Other authors' revisions are neither settled nor re-authored
             // (a direct deletion may take one away with its content).
             let before = foreign_revisions(&base);
@@ -593,4 +611,241 @@ fn rejecting_an_insertion_after_the_last_paragraph_restores_the_input() {
         &canonical(&base, &base),
     );
     assert_no_new_faults("insert after last", &base, &tracked);
+}
+
+/// What a tracked edit of each op must do.
+#[derive(Debug, PartialEq)]
+enum Track {
+    /// Revisions only: accept-all gives the direct output, reject-all the input.
+    Exact,
+    /// As `Exact`, but reject-all keeps definitions or empty stories the op
+    /// added (list definitions, a new header part); its views still equal
+    /// the input's.
+    KeepsAdditions,
+    /// Accept-all leaves an empty story where the direct edit removes its
+    /// reference (same rendering in the first section); reject-all gives the
+    /// input.
+    EmptiesStory,
+    /// As `Exact`, but a simple field is written as the complex field
+    /// runs a tracked change holds; the stories' text is the same.
+    ComplexField,
+    /// Refused with an error naming the op.
+    Refused,
+    /// Applied directly in both modes: Word records no revision for it.
+    Direct,
+}
+
+fn expectation(op: &str) -> Track {
+    match op {
+        "set_list" | "set_header_first" => Track::KeepsAdditions,
+        "set_footer_page" => Track::ComplexField,
+        "clear_header" | "clear_footer" => Track::EmptiesStory,
+        "set_even_and_odd_headers"
+        | "set_header_even"
+        | "set_section_boundary"
+        | "edit_table_insert_columns"
+        | "edit_table_delete_columns"
+        | "edit_table_merge_cells" => Track::Refused,
+        "comment_add" | "bookmark_add" | "revision_settle" => Track::Direct,
+        _ => Track::Exact,
+    }
+}
+
+/// Visible text of every part's paragraphs (body, headers, footers).
+fn story_text(bytes: &[u8]) -> BTreeMap<String, String> {
+    let tag = regex_lite::Regex::new(r#"<w:t(?: [^>]*)?>([^<]*)</w:t>|<w:instrText[^>]*>([^<]*)</w:instrText>|<w:fldSimple w:instr="([^"]*)"|</w:p>"#).unwrap();
+    parts(bytes)
+        .into_iter()
+        .filter(|(name, _)| name.starts_with("word/header") || name.starts_with("word/footer"))
+        .map(|(name, xml)| {
+            let text: String = tag
+                .captures_iter(&xml)
+                .map(|c| match (c.get(1), c.get(2).or(c.get(3))) {
+                    (Some(text), _) => text.as_str().to_string(),
+                    (None, Some(field)) => format!("{{{}}}", field.as_str().trim()),
+                    (None, None) => "\n".to_string(),
+                })
+                .collect();
+            (name, text.trim_end_matches('\n').to_string())
+        })
+        .collect()
+}
+
+// Findings 2 and 3: every op in track mode produces Word's tracked form or
+// is refused; settling it gives the direct edit or the input; other
+// authors' revisions are left alone.
+#[test]
+fn tracked_edits_settle_to_the_direct_edit_and_the_input() {
+    let mut failures = Vec::new();
+    for (label, base) in both_fixtures() {
+        let input_rejected = settle(&base, false);
+        for (op, ops) in op_matrix(&base) {
+            let outcome =
+                std::panic::catch_unwind(|| check_tracked(label, &base, &input_rejected, op, &ops));
+            if let Err(panic) = outcome {
+                let message = panic
+                    .downcast_ref::<String>()
+                    .cloned()
+                    .or_else(|| panic.downcast_ref::<&str>().map(|s| s.to_string()));
+                failures.push(format!(
+                    "{label} {op}: {}",
+                    message
+                        .unwrap_or_default()
+                        .chars()
+                        .take(1500)
+                        .collect::<String>()
+                ));
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n\n"));
+}
+
+fn check_tracked(label: &str, base: &[u8], input_rejected: &[u8], op: &str, ops: &str) {
+    let (base, input_rejected) = (base.to_vec(), input_rejected.to_vec());
+    {
+        {
+            let expect = expectation(op);
+            let tracked = run(&base, "track", AUTHOR, ops);
+            let context = format!("{label} {op}");
+            if expect == Track::Refused {
+                let message = tracked.expect_err(&context);
+                let name = ops
+                    .split("\"op\":\"")
+                    .nth(1)
+                    .unwrap()
+                    .split('"')
+                    .next()
+                    .unwrap();
+                assert!(message.contains(name), "{context}: {message}");
+                assert!(message.contains("direct"), "{context}: {message}");
+                return;
+            }
+            let tracked = match tracked {
+                Ok(bytes) => bytes,
+                // Refusing an edit over another author's revision is correct.
+                Err(message) if label == "foreign" && message.contains("tracked change") => return,
+                Err(message) => panic!("{context}: {message}"),
+            };
+            let direct = run(&base, "direct", AUTHOR, ops)
+                .unwrap_or_else(|e| panic!("{context} direct: {e}"));
+            assert_no_new_faults(&context, &base, &tracked);
+            assert_no_new_faults(&context, &base, &direct);
+            assert_no_new_faults(
+                &format!("{context} accepted"),
+                &base,
+                &settle(&tracked, true),
+            );
+            assert_no_new_faults(
+                &format!("{context} rejected"),
+                &base,
+                &settle(&tracked, false),
+            );
+            if expect == Track::Direct {
+                assert_same(
+                    &context,
+                    &canonical(&tracked, &base),
+                    &canonical(&direct, &base),
+                );
+                return;
+            }
+            assert!(
+                authored(&tracked, AUTHOR) > 0,
+                "{context}: no revision written"
+            );
+            assert_eq!(
+                foreign_revisions(&tracked),
+                foreign_revisions(&base),
+                "{context}: other authors' revisions changed"
+            );
+            let accepted = canonical(&settle(&tracked, true), &base);
+            let direct_settled = canonical(&settle(&direct, true), &base);
+            let rejected = settle(&tracked, false);
+            match expect {
+                Track::Exact | Track::KeepsAdditions => {
+                    assert_same(&format!("{context} accept"), &accepted, &direct_settled)
+                }
+                Track::ComplexField => {
+                    let body = |m: &BTreeMap<String, String>| m.get("word/document.xml").cloned();
+                    assert_eq!(body(&accepted), body(&direct_settled), "{context}");
+                    assert_eq!(
+                        story_text(&settle(&tracked, true)),
+                        story_text(&direct),
+                        "{context}"
+                    );
+                }
+                _ => {
+                    let mut without_story = accepted.clone();
+                    without_story.retain(|name, _| {
+                        !name.starts_with("word/header") && !name.starts_with("word/footer")
+                    });
+                    let doc = |m: &BTreeMap<String, String>| m.get("word/document.xml").cloned();
+                    assert_ne!(doc(&without_story), None);
+                    let texts = story_text(&settle(&tracked, true));
+                    assert!(texts.values().any(|t| t.is_empty()), "{context}: {texts:?}");
+                }
+            }
+            match expect {
+                Track::KeepsAdditions => {
+                    let mut left = canonical(&rejected, &base);
+                    let mut right = canonical(&input_rejected, &base);
+                    for map in [&mut left, &mut right] {
+                        map.retain(|name, _| name == "word/document.xml");
+                    }
+                    let strip_section =
+                        regex_lite::Regex::new(r"<w:(header|footer)Reference [^>]*/>").unwrap();
+                    for map in [&mut left, &mut right] {
+                        for xml in map.values_mut() {
+                            *xml = strip_section.replace_all(xml, "").into_owned();
+                        }
+                    }
+                    assert_same(&format!("{context} reject"), &left, &right);
+                    let texts = story_text(&rejected);
+                    let before = story_text(&input_rejected);
+                    for (name, text) in &texts {
+                        assert_eq!(
+                            before.get(name).map(String::as_str).unwrap_or(""),
+                            text,
+                            "{context}: {name}"
+                        );
+                    }
+                }
+                _ => assert_same(
+                    &format!("{context} reject"),
+                    &canonical(&rejected, &base),
+                    &canonical(&input_rejected, &base),
+                ),
+            }
+            assert_eq!(
+                view_tags(&tracked, View::Final),
+                view_tags(&settle(&tracked, true), View::Markup),
+                "{context} final view"
+            );
+            assert_eq!(
+                view_tags(&tracked, View::Original),
+                view_tags(&settle(&tracked, false), View::Markup),
+                "{context} original view"
+            );
+        }
+    }
+}
+
+#[test]
+#[ignore]
+fn peek_op() {
+    let base = fixture();
+    let name = std::env::var("OP").unwrap();
+    let ops = op_matrix(&base)
+        .into_iter()
+        .find(|(l, _)| *l == name)
+        .unwrap()
+        .1;
+    let tracked = run(&base, "track", AUTHOR, &ops).unwrap();
+    let direct = run(&base, "direct", AUTHOR, &ops).unwrap();
+    let part_name = std::env::var("PART").unwrap();
+    println!("BASE   {}", part(&base, &part_name));
+    println!("TRACK  {}", part(&tracked, &part_name));
+    println!("ACCEPT {}", part(&settle(&tracked, true), &part_name));
+    println!("REJECT {}", part(&settle(&tracked, false), &part_name));
+    println!("DIRECT {}", part(&direct, &part_name));
 }

@@ -62,6 +62,9 @@ pub fn set_page_margins_typed(
     header: Option<i64>,
     footer: Option<i64>,
     gutter: Option<i64>,
+    tracked: bool,
+    author: &str,
+    ctx: &super::ExecCtx,
 ) -> Result<(String, Value), Outcome> {
     if section == 0 {
         return Err(Outcome::error("section must be >= 1"));
@@ -73,9 +76,15 @@ pub fn set_page_margins_typed(
         return Err(Outcome::error("setPageMargins requires at least one margin field (top/right/bottom/left/header/footer/gutter, twips)"));
     }
     let sect = ensure_sect_pr(xml, section)?;
+    // Tracked, the old margins go into a section property change, as Word
+    // records them.
+    if tracked {
+        snapshot_section_properties(xml, sect, author, ctx)?;
+    }
     let pg_mar = ensure_pg_mar(sect, xml);
     let mut applied = serde_json::Map::new();
     applied.insert("section".into(), json!(section));
+    applied.insert("tracked".into(), json!(tracked));
     for (key, value) in [
         ("top", top),
         ("right", right),
@@ -289,8 +298,13 @@ pub(crate) fn ensure_sect_pr_child(xml: &mut DocxXml, sect: NodeId, local: &str)
 pub(crate) fn snapshot_section_properties(
     xml: &mut DocxXml, sect: NodeId, author: &str, ctx: &super::ExecCtx,
 ) -> Result<(), Outcome> {
-    if xml.child_w(sect, "sectPrChange").is_some() {
-        return Err(Outcome::blocked("section already has a pending property change; accept or reject it first"));
+    // The author's own pending change keeps its snapshot, as Word folds
+    // one author's successive changes into one record.
+    if let Some(change) = xml.child_w(sect, "sectPrChange") {
+        if xml.attr(change, "author") == Some(author) {
+            return Ok(());
+        }
+        return Err(Outcome::blocked("section already has a pending property change by another author; accept or reject it first"));
     }
     let snapshot = xml.doc.create_element("w:sectPr");
     for child in xml.doc.children(sect).collect::<Vec<_>>() {
@@ -313,7 +327,7 @@ pub fn set_first_page_mode(
     author: &str, ctx: &super::ExecCtx,
 ) -> Result<(String, Value), Outcome> {
     let sect = ensure_sect_pr(xml, section)?;
-    if xml.child_w(sect, "sectPrChange").is_some() {
+    if xml.child_w(sect, "sectPrChange").is_some_and(|change| !tracked || xml.attr(change, "author") != Some(author)) {
         return Err(Outcome::blocked("section already has a pending property change; accept or reject it first"));
     }
     let current = xml.child_w(sect, "titlePg").is_some_and(|node| {
@@ -336,7 +350,7 @@ pub fn set_section_layout(
         columns, column_spacing, column_widths, column_separator, break_type,
         page_number_format, page_number_start, page_number_continue, .. } = op else { unreachable!() };
     let sect = ensure_sect_pr(xml, section)?;
-    if xml.child_w(sect, "sectPrChange").is_some() {
+    if xml.child_w(sect, "sectPrChange").is_some_and(|change| !tracked || xml.attr(change, "author") != Some(author)) {
         return Err(Outcome::blocked("section already has a pending property change; accept or reject it first"));
     }
     let dimension = |tag: &str, attr: &str, default: i64| {

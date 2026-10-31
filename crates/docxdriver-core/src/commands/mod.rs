@@ -338,12 +338,12 @@ fn run_typed_edit_inner(
             })
         }
         EditOp::EditTable { at, action } => {
-            mutate(state, |pkg, xml, _source| table_structure::edit(pkg, xml, at, action, tracked))
+            mutate(state, |pkg, xml, _source| table_structure::edit(pkg, xml, at, action, tracked.then_some((author, ctx))))
         }
         EditOp::InsertTable { at, position, rows, columns, cells, .. } => {
             let at = para_id!(at);
             let cells = cells.as_deref().unwrap_or_default();
-            mutate(state, |pkg, xml, source| table_structure::insert(pkg, xml, source, &at, *position, *rows, *columns, cells, tracked, &plan_seed, index))
+            mutate(state, |pkg, xml, source| table_structure::insert(pkg, xml, source, &at, *position, *rows, *columns, cells, tracked.then_some((author, ctx)), &plan_seed, index))
         }
         EditOp::FormatTable { at, format } => mutate(state, |pkg, xml, _| tables::format_table(Some(pkg), xml, at, format, tracked, author, ctx)),
         EditOp::FormatRow { at, format } => mutate(state, |_, xml, _| tables::format_row(xml, at, format, tracked, author, ctx)),
@@ -518,6 +518,9 @@ fn run_typed_edit_inner(
                 header.map(|p| p.0),
                 footer.map(|p| p.0),
                 gutter.map(|p| p.0),
+                tracked,
+                author,
+                ctx,
             )
         }),
         EditOp::SetSectionLayout { section, section_handle, .. } => mutate(state, |pkg, xml, source| {
@@ -530,6 +533,11 @@ fn run_typed_edit_inner(
         EditOp::SetFirstPageMode { section, enabled } => mutate(state, |_pkg, xml, _| {
             layout::set_first_page_mode(xml, section.unwrap_or(1) as usize, *enabled, tracked, author, ctx)
         }),
+        // Word cannot track a document setting: refuse rather than apply it
+        // unmarked.
+        EditOp::SetEvenAndOddHeaders { .. } if tracked => Outcome::error(
+            "set_even_and_odd_headers cannot be tracked: it changes a document setting (w:evenAndOddHeaders in settings.xml), which Word records no revision for; run it in a change_mode=direct plan",
+        ),
         EditOp::SetEvenAndOddHeaders { even_and_odd } => mutate(state, |pkg, xml, _| {
             headers::set_even_and_odd_headers_typed(pkg, xml, *even_and_odd)
         }),
@@ -544,6 +552,7 @@ fn run_typed_edit_inner(
                 section.unwrap_or(1) as usize,
                 ChromeKind::resolve(*kind),
                 with,
+                tracked.then_some((author, ctx)),
             )
         }),
         EditOp::SetFooter {
@@ -557,6 +566,7 @@ fn run_typed_edit_inner(
                 section.unwrap_or(1) as usize,
                 ChromeKind::resolve(*kind),
                 with,
+                tracked.then_some((author, ctx)),
             )
         }),
         EditOp::ClearHeader { section, kind } => mutate(state, |pkg, xml, _| {
@@ -565,6 +575,7 @@ fn run_typed_edit_inner(
                 xml,
                 section.unwrap_or(1) as usize,
                 ChromeKind::resolve(*kind),
+                tracked.then_some((author, ctx)),
             )
         }),
         EditOp::ClearFooter { section, kind } => mutate(state, |pkg, xml, _| {
@@ -573,6 +584,7 @@ fn run_typed_edit_inner(
                 xml,
                 section.unwrap_or(1) as usize,
                 ChromeKind::resolve(*kind),
+                tracked.then_some((author, ctx)),
             )
         }),
         EditOp::CommentAdd {

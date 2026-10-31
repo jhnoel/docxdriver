@@ -23,6 +23,9 @@ struct RevisionEntry {
     /// Run-level wrapper node, or the paragraph-mark marker element.
     node: NodeId,
     is_paragraph_mark: bool,
+    /// A table row's insertion or deletion (`w:trPr/w:ins|w:del`); `paragraph`
+    /// is then the row.
+    is_row: bool,
     paragraph: NodeId,
     /// Package part when the revision lives outside document.xml (header/footer).
     part: Option<String>,
@@ -142,6 +145,7 @@ fn collect_revisions_in(
                 text,
                 node: wrapper,
                 is_paragraph_mark: false,
+                is_row: false,
                 paragraph: paragraph.node,
                 part: part.map(str::to_string),
             });
@@ -164,6 +168,7 @@ fn collect_revisions_in(
                 text: String::new(),
                 node: marker,
                 is_paragraph_mark: true,
+                is_row: false,
                 paragraph: paragraph.node,
                 part: part.map(str::to_string),
             });
@@ -192,12 +197,55 @@ fn collect_revisions_in(
                 text: String::new(),
                 node,
                 is_paragraph_mark: false,
+                is_row: false,
                 paragraph: paragraph.node,
                 part: part.map(str::to_string),
             });
         }
     }
+    // Table row insertions and deletions, after the paragraphs.
+    let rows: Vec<NodeId> = xml.doc.descendants(container).filter(|&n| xml.is_w(n, "tr")).collect();
+    for row in rows {
+        let Some(marker) = xml.row_revision(row) else { continue };
+        entries.push(RevisionEntry {
+            id: xml.attr(marker, "id").unwrap_or("").to_string(),
+            kind: kind_of(xml, marker).unwrap_or("ins"),
+            author: xml.attr(marker, "author").unwrap_or("").to_string(),
+            date: xml.attr(marker, "date").unwrap_or("").to_string(),
+            paragraph_index: 0,
+            locator: "row".into(),
+            text: String::new(),
+            node: marker,
+            is_paragraph_mark: false,
+            is_row: true,
+            paragraph: row,
+            part: part.map(str::to_string),
+        });
+    }
     entries
+}
+
+/// Settle a table row's insertion or deletion: the row goes on a rejected
+/// insertion or an accepted deletion (and the table with its last row),
+/// otherwise only the marker does.
+fn resolve_row(xml: &mut DocxXml, marker: NodeId, row: NodeId, accept: bool) {
+    if xml.row_goes(row, accept) {
+        let table = xml.doc.ancestors(row).skip(1).find(|&a| xml.is_w(a, "tbl"));
+        xml.doc.remove_node(row);
+        if let Some(table) = table {
+            if !xml.doc.children(table).any(|c| xml.is_w(c, "tr")) {
+                xml.doc.remove_node(table);
+            }
+        }
+        return;
+    }
+    let trpr = xml.doc.parent(marker);
+    xml.doc.remove_node(marker);
+    if let Some(trpr) = trpr {
+        if xml.doc.children(trpr).all(|c| !xml.doc.is_element(c)) && xml.doc.attributes(trpr).is_empty() {
+            xml.doc.remove_node(trpr);
+        }
+    }
 }
 
 /// Document body revisions plus every header/footer part the document references.
@@ -335,6 +383,10 @@ pub fn list_revisions(package: &Package, xml: &DocxXml) -> Outcome {
 
 /// Resolve one revision entry in place.
 fn resolve_entry(xml: &mut DocxXml, entry: &RevisionEntry, accept: bool) -> Result<(), Outcome> {
+    if entry.is_row {
+        resolve_row(xml, entry.node, entry.paragraph, accept);
+        return Ok(());
+    }
     if !matches!(entry.kind, "ins" | "del" | "moveFrom" | "moveTo") {
         resolve_property_change(xml, entry.node, accept);
         return Ok(());
@@ -465,6 +517,7 @@ pub(crate) fn accept_new_revisions(xml: &mut DocxXml, before: usize, author: &st
             text: String::new(),
             node,
             is_paragraph_mark: true,
+            is_row: false,
             paragraph,
             part: None,
         };
@@ -583,9 +636,18 @@ fn accept_reject_all_in_xml(xml: &mut DocxXml, accept: bool) -> Result<usize, Ou
     // after, last-first (a merge consumes the following paragraph).
     let mut count = 0usize;
     let is_content = |e: &RevisionEntry| {
-        !e.is_paragraph_mark && matches!(e.kind, "ins" | "del" | "moveFrom" | "moveTo")
+        !e.is_paragraph_mark && !e.is_row && matches!(e.kind, "ins" | "del" | "moveFrom" | "moveTo")
     };
     let scope = |xml: &DocxXml| xml.body().or_else(|| xml.doc.root_element());
+    // Rows first: a row that goes takes its content's revisions with it.
+    loop {
+        let Some(root) = scope(xml) else { break };
+        let row = xml.doc.descendants(root).find(|&n| xml.is_w(n, "tr") && xml.row_revision(n).is_some());
+        let Some(row) = row else { break };
+        let marker = xml.row_revision(row).expect("found above");
+        resolve_row(xml, marker, row, accept);
+        count += 1;
+    }
     loop {
         let Some(root) = scope(xml) else { break };
         let Some(entry) = collect_revisions_in(xml, root, None)

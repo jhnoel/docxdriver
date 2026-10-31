@@ -3125,15 +3125,12 @@ fn insert_table_cells_reject_extra_rows_columns_and_bad_markup() {
     assert!(columns.contains("cells[1] (row 2) has 3 cells but the table has 2 columns") && columns.contains("(column 3)"), "{columns}");
     let markup = rejected(serde_json::json!({"op": "insert_table", "at": SOURCE_ID, "position": "after", "rows": 1, "columns": 2, "cells": [["a", "<table>x</table>"]]}));
     assert!(markup.contains("cells[0][1]"), "{markup}");
-    // Tracked insertion stays unsupported, filled or not.
-    let mut tracked = plan(&source, ops(serde_json::json!([
+    // Tracked, the table is an inserted table: inserted rows, inserted content.
+    let tracked = commit_mode(&source, ops(serde_json::json!([
         {"op": "insert_table", "at": SOURCE_ID, "position": "after", "rows": 1, "columns": 1, "cells": [["a"]]},
-    ])));
-    tracked.change_mode = ChangeMode::Track;
-    match execute_plan(&source, &PlanRequest { plan: tracked, preview_key: None }) {
-        PlanResult::Rejected { diagnostic, .. } => assert!(diagnostic.message.contains("tracked table insertion"), "{}", diagnostic.message),
-        other => panic!("expected rejection, got {other:?}"),
-    }
+    ])), ChangeMode::Track);
+    let xml = document_xml(&tracked);
+    assert!(xml.contains("<w:trPr><w:ins ") && xml.contains("<w:ins w:id="), "{xml}");
 }
 
 #[test]

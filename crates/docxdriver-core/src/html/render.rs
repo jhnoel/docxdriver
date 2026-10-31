@@ -67,7 +67,14 @@ pub fn render_block_list(
         let node = children[index];
         let mut paragraphs = Vec::new();
         let mut text = String::new();
-        if xml.is_w(node, "tbl") {
+        if xml.is_w(node, "tbl") && view != RenderView::Markup && table_settled_away(xml, node, view) {
+            // Settling removes every row, and so the table.
+            if let Some(counter) = table_number.as_deref_mut() {
+                *counter += 1;
+            }
+            index += 1;
+            continue;
+        } else if xml.is_w(node, "tbl") {
             render_table(
                 xml,
                 ctx,
@@ -595,6 +602,12 @@ fn rowspan_of(rows: &[Vec<CellInfo>], row_index: usize, grid_start: u32) -> u32 
     span
 }
 
+/// Whether settling `view`'s revisions removes every row of `table`.
+fn table_settled_away(xml: &DocxXml, table: NodeId, view: RenderView) -> bool {
+    let mut rows = xml.doc.children(table).filter(|&n| xml.is_w(n, "tr")).peekable();
+    rows.peek().is_some() && rows.all(|row| xml.row_goes(row, view == RenderView::Final))
+}
+
 fn render_table(
     xml: &DocxXml,
     ctx: &RenderCtx,
@@ -617,6 +630,10 @@ fn render_table(
     out.push_str("<tbody>");
     for (row_index, row) in rows.iter().enumerate() {
         let row_node = row_nodes.get(row_index).copied();
+        // A row that settling removes is not in the final/original view.
+        if view != RenderView::Markup && row_node.is_some_and(|n| xml.row_goes(n, view == RenderView::Final)) {
+            continue;
+        }
         out.push_str(&format!("\n<tr{}>", row_node.map(|n| crate::commands::tables::render_attrs(xml, n, "trPr", view == RenderView::Original, ctx.table_handles.get(&n))).unwrap_or_default()));
         // Runs opened this row start covering at the NEXT row, so they merge
         // into `covered` only after this row's end-of-row decrement.

@@ -386,7 +386,7 @@ fn paragraph_blocker(xml: &DocxXml, paragraph: NodeId) -> Option<String> {
 
 /// Paragraph content that holds runs: a run, or a hyperlink, smart tag or
 /// bidi wrapper (`w:dir`, `w:bdo`) around runs.
-fn is_run_content(xml: &DocxXml, node: NodeId) -> bool {
+pub(crate) fn is_run_content(xml: &DocxXml, node: NodeId) -> bool {
     ["r", "hyperlink", "smartTag", "dir", "bdo"]
         .iter()
         .any(|name| xml.is_w(node, name))
@@ -2949,7 +2949,7 @@ fn move_content_into_del(
 /// existing `w:ins` receives a nested `w:del` (Word's edit-within-edit), and
 /// plain runs/hyperlinks/smartTags are wrapped in a fresh `w:del`. A
 /// `w:del` never wraps multiple `w:p` elements.
-fn wrap_live_content_in_del(
+pub(crate) fn wrap_live_content_in_del(
     xml: &mut DocxXml,
     paragraph: NodeId,
     id: u64,

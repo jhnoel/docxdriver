@@ -3,6 +3,7 @@ use super::{
     tables::{cells, resolve, rows},
     typed::resolve_paragraph_by_para_id,
 };
+use super::ExecCtx;
 use crate::{
     api::{InsertPosition, TableEdit},
     document::DocxXml,
@@ -241,25 +242,104 @@ fn at_column(x: &DocxXml, r: NodeId, col: usize) -> Option<NodeId> {
     None
 }
 
+/// Mark `row` as a tracked insertion or deletion (`w:trPr/w:ins|w:del`),
+/// replacing any row marker it was copied with.
+fn mark_row(x: &mut DocxXml, row: NodeId, kind: &str, author: &str, ctx: &ExecCtx) {
+    let trpr = match x.child_w(row, "trPr") {
+        Some(trpr) => trpr,
+        None => {
+            let trpr = x.doc.create_element("w:trPr");
+            match x.child_w(row, "tblPrEx") {
+                Some(ex) => x.doc.insert_after(ex, trpr),
+                None => match x.doc.first_child(row) {
+                    Some(first) => x.doc.insert_before(first, trpr),
+                    None => x.doc.append_child(row, trpr),
+                },
+            }
+            trpr
+        }
+    };
+    for old in x.doc.children(trpr).filter(|&c| x.is_w(c, "ins") || x.is_w(c, "del")).collect::<Vec<_>>() {
+        x.doc.remove_node(old);
+    }
+    let marker = x.doc.create_element(&format!("w:{kind}"));
+    let id = x.next_revision_id();
+    x.doc.set_attribute(marker, "w:id", &id.to_string());
+    x.doc.set_attribute(marker, "w:author", author);
+    x.doc.set_attribute(marker, "w:date", &ctx.now);
+    // CT_TrPr: the base properties, then ins, del, trPrChange.
+    match x.child_w(trpr, "trPrChange") {
+        Some(change) => x.doc.insert_before(change, marker),
+        None => x.doc.append_child(trpr, marker),
+    }
+}
+
+/// Delete `row` as a tracked change: the row marker and its cells' content.
+/// `author`'s own inserted row goes outright, as in Word.
+fn delete_row_tracked(x: &mut DocxXml, row: NodeId, author: &str, ctx: &ExecCtx) -> Result<(), Outcome> {
+    if x.row_revision(row).is_some_and(|m| x.is_w(m, "ins") && x.attr(m, "author") == Some(author)) {
+        x.doc.remove_node(row);
+        return Ok(());
+    }
+    let paragraphs: Vec<NodeId> = x.doc.descendants(row).filter(|&n| x.is_w(n, "p")).collect();
+    for paragraph in paragraphs {
+        let id = x.next_revision_id();
+        super::typed::wrap_live_content_in_del(x, paragraph, id, author, &ctx.now).map_err(|message| error(&message))?;
+    }
+    mark_row(x, row, "del", author, ctx);
+    Ok(())
+}
+
+/// Wrap the content of every paragraph in `node` in a tracked insertion.
+fn insert_content_tracked(x: &mut DocxXml, node: NodeId, author: &str, ctx: &ExecCtx) {
+    let paragraphs: Vec<NodeId> = x.doc.descendants(node).filter(|&n| x.is_w(n, "p")).collect();
+    for paragraph in paragraphs {
+        let id = x.next_revision_id();
+        super::headers::wrap_content_in_ins(x, paragraph, id, author, &ctx.now);
+    }
+}
+
+fn untrackable(a: &TableEdit) -> Option<&'static str> {
+    match a {
+        TableEdit::InsertColumns { .. } => Some("insert_columns"),
+        TableEdit::DeleteColumns { .. } => Some("delete_columns"),
+        TableEdit::MergeCells { .. } => Some("merge_cells"),
+        TableEdit::SplitCell { .. } => Some("split_cell"),
+        _ => None,
+    }
+}
+
+/// `track` is the author and context of a tracked edit, `None` for direct.
 pub fn edit(
     _package: &mut Package,
     x: &mut DocxXml,
     at: &str,
     a: &TableEdit,
-    tracked: bool,
+    track: Option<(&str, &ExecCtx)>,
 ) -> Result<(String, Value), Outcome> {
-    if tracked {
-        return Err(error(
-            "tracked table structural editing is unsupported; use an explicit direct plan",
-        ));
+    if let (Some(_), Some(kind)) = (track, untrackable(a)) {
+        return Err(error(&format!(
+            "edit_table {kind} cannot be tracked: Word tracks inserted and deleted rows, not column or cell-merge changes; use a change_mode=direct plan"
+        )));
     }
     let t = resolve(x, at, 1)?;
-    guarded(x, t)?;
+    match track {
+        Some((author, _)) => guarded_tracked(x, t, author)?,
+        None => guarded(x, t)?,
+    }
     let mut inserted: Vec<(String, NodeId)> = Vec::new();
     match a {
-        TableEdit::Delete => {
-            x.doc.detach(t);
-        }
+        TableEdit::Delete => match track {
+            Some((author, ctx)) => {
+                for row in rows(x, t) {
+                    delete_row_tracked(x, row, author, ctx)?;
+                }
+                if !x.doc.children(t).any(|c| x.is_w(c, "tr")) {
+                    x.doc.remove_node(t);
+                }
+            }
+            None => x.doc.detach(t),
+        },
         TableEdit::InsertRows {
             row,
             position,
@@ -293,6 +373,9 @@ pub fn edit(
                         cursor = r;
                     }
                 };
+                if let Some((author, ctx)) = track {
+                    mark_row(x, r, "ins", author, ctx);
+                }
                 inserted.push((format!("row:{}", i + 1), r));
             }
         }
@@ -303,7 +386,10 @@ pub fn edit(
                 return Err(error("cannot remove every row; delete the table instead"));
             }
             for r in &rs[range] {
-                x.doc.detach(*r);
+                match track {
+                    Some((author, ctx)) => delete_row_tracked(x, *r, author, ctx)?,
+                    None => x.doc.detach(*r),
+                }
             }
         }
         TableEdit::InsertColumns {
@@ -484,8 +570,37 @@ pub fn edit(
         .collect::<serde_json::Map<String, Value>>();
     Ok((
         "edited table structure".into(),
-        json!({"table":at,"tracked":false,"alias_paths":alias_paths}),
+        json!({"table":at,"tracked":track.is_some(),"alias_paths":alias_paths}),
     ))
+}
+
+/// The tracked-edit guard: as [`guarded`], except that `author`'s own
+/// tracked insertions and deletions (rows, content, paragraph marks) are
+/// allowed, so one plan can insert a table and then edit it.
+fn guarded_tracked(x: &DocxXml, t: NodeId, author: &str) -> Result<(), Outcome> {
+    let foreign = x.doc.descendants(t).any(|n| {
+        (x.is_w(n, "ins") || x.is_w(n, "del")) && x.attr(n, "author") != Some(author)
+    });
+    if foreign {
+        return Err(error("tracked table structural edits require the table to hold no other author's pending revisions; accept or reject them first"));
+    }
+    let mut ancestor = x.doc.parent(t);
+    while let Some(node) = ancestor {
+        if ["ins", "del", "moveFrom", "moveTo", "sdt", "sdtContent", "customXml", "AlternateContent"].iter().any(|tag| x.is_local(node, tag)) {
+            return Err(error("table structural editing inside revision or content-control wrappers is unsupported"));
+        }
+        ancestor = x.doc.parent(node);
+    }
+    if x.doc.descendants(t).any(|n| {
+        ["moveFrom", "moveTo", "bookmarkStart", "bookmarkEnd", "commentRangeStart", "commentRangeEnd", "commentReference",
+         "fldChar", "fldSimple", "sdt", "customXml", "tblPrChange", "tblGridChange", "trPrChange", "tcPrChange",
+         "pPrChange", "rPrChange", "cellIns", "cellDel", "cellMerge", "AlternateContent"]
+            .iter()
+            .any(|tag| x.is_local(n, tag))
+    }) {
+        return Err(error("table structural edits require settled revisions and no bookmarks, comments, fields or content controls in the target table"));
+    }
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -498,15 +613,10 @@ pub fn insert(
     row_count: u32,
     column_count: u32,
     cell_content: &[Vec<String>],
-    tracked: bool,
+    track: Option<(&str, &ExecCtx)>,
     plan_seed: &[u8; 32],
     op_index: usize,
 ) -> Result<(String, Value), Outcome> {
-    if tracked {
-        return Err(error(
-            "tracked table insertion is unsupported; use an explicit direct plan",
-        ));
-    }
     let p = resolve_paragraph_by_para_id(x, package, source, at)?;
     if x.child_w(p, "pPr")
         .is_some_and(|pr| x.child_w(pr, "sectPr").is_some())
@@ -585,8 +695,21 @@ pub fn insert(
         .map(|row| json!(row))
         .collect::<Vec<_>>();
     if x.is_w(parent, "tc") && x.doc.children(parent).last() == Some(t) {
+        if track.is_some() {
+            return Err(error(
+                "insert_table cannot be tracked as the last block of a table cell: the cell needs a new paragraph after it, which rejecting cannot take away; insert before the paragraph or use a change_mode=direct plan",
+            ));
+        }
         let end = x.doc.create_element("w:p");
         x.doc.append_child(parent, end);
+    }
+    // Tracked, every row is an inserted row and every cell's content an
+    // insertion, as Word writes an inserted table.
+    if let Some((author, ctx)) = track {
+        for row in rows(x, t) {
+            mark_row(x, row, "ins", author, ctx);
+        }
+        insert_content_tracked(x, t, author, ctx);
     }
     let ordinal = super::tables::tables(x)
         .iter()
@@ -603,6 +726,6 @@ pub fn insert(
     };
     Ok((
         summary,
-        json!({"table":format!("table:{ordinal}"),"tracked":false,"cells":cell_ids,"filled":filled}),
+        json!({"table":format!("table:{ordinal}"),"tracked":track.is_some(),"cells":cell_ids,"filled":filled}),
     ))
 }
