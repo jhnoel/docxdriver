@@ -1203,9 +1203,13 @@ pub fn replace_paragraph_typed(
         author: args.author.clone(),
         tracked: args.tracked,
     };
-    let (pieces, link_href) = parse_with(&input.with)?;
+    let (bare, link_href) = parse_with(&input.with)?;
     let paragraph = resolve_paragraph_by_para_id(xml, package, source_hash, &input.at)?;
-    let pieces = with_shared_run_format(xml, package, paragraph, pieces);
+
+    // Plain text is diffed as given: formatting every run shares is not a
+    // change, and the diff keeps each run's own formatting.
+    let plain = diff_eligible(&bare, link_href.as_deref());
+    let pieces = with_shared_run_format(xml, package, paragraph, bare.clone());
     let address = input.at.to_uppercase();
 
     if let Some(label) = paragraph_blocker(xml, paragraph) {
@@ -1222,14 +1226,20 @@ pub fn replace_paragraph_typed(
         .map(|s| s.end)
         .max()
         .unwrap_or(0);
-    if input.tracked && WORD_LEVEL_REDLINES && diff_eligible(&pieces, link_href.as_deref()) {
+    if input.tracked && WORD_LEVEL_REDLINES && plain {
+        // Others' tracked changes keep the range off the diff; the
+        // replacement then wears the shared formatting.
+        let diffable = !build_segments(xml, paragraph)
+            .iter()
+            .any(|s| s.start < count && s.end > 0 && blocks_diff(xml, s, &input.author));
+        let with = if diffable { &bare } else { &pieces };
         replace_range(
             package,
             xml,
             paragraph,
             &address,
             (0, count),
-            (&pieces, link_href),
+            (with, link_href),
             &input.author,
             true,
             true,

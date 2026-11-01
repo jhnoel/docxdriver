@@ -2739,6 +2739,66 @@ fn auto_diff_groups_rewritten_phrases_but_keeps_unchanged_words() {
     }
 }
 
+/// A paragraph of runs that share a font and size, some bold.
+fn shared_font_paragraph(runs: &[(&str, bool)]) -> Vec<u8> {
+    let runs: String = runs
+        .iter()
+        .map(|(text, bold)| {
+            let bold = if *bold { "<w:b/>" } else { "" };
+            format!("<w:r><w:rPr><w:rFonts w:ascii=\"Times New Roman\" w:hAnsi=\"Times New Roman\"/>{bold}<w:sz w:val=\"22\"/></w:rPr><w:t xml:space=\"preserve\">{text}</w:t></w:r>")
+        })
+        .collect();
+    body_document(&format!("<w:p w14:paraId=\"{SOURCE_ID}\">{runs}</w:p>"))
+}
+
+fn settle_all(bytes: &[u8], action: RevisionAction) -> String {
+    let settled = commit_plan(bytes, vec![EditOp::RevisionSettle { target: RevisionTarget::All, action }]);
+    read_markup(&settled)
+}
+
+#[test]
+fn auto_diff_plain_text_keeps_formatting_runs_share() {
+    // Formatting every run shares (font, size) must not keep plain text off
+    // the word-level diff, nor cost the bold runs theirs.
+    for (runs, old, new) in [
+        (&[("Section 9.2 — Costs.", true), (" Fees shall be shared equally.", false)][..], "shared", "borne"),
+        (&[("“", false), ("Seat", true), ("” means Seattle, Washington.", false)][..], "Seattle", "Portland"),
+        (&[("Fees shall be shared equally.", false)][..], "shared", "borne"),
+    ] {
+        let source = shared_font_paragraph(runs);
+        let text: String = runs.iter().map(|(text, _)| *text).collect();
+        let changed = commit_auto_diff(&source, EditOp::ReplaceParagraph {
+            at: ParagraphAddress::id(SOURCE_ID), with: text.replace(old, new),
+        });
+
+        // Only the changed word is tracked.
+        let xml = document_xml(&changed);
+        assert_eq!(xml.matches("<w:del ").count(), 1, "{xml}");
+        assert_eq!(xml.matches("<w:ins ").count(), 1, "{xml}");
+        assert!(xml.contains(&format!(">{old}</w:delText>")), "{xml}");
+        assert!(xml.contains(&format!(">{new}</w:t>")), "{xml}");
+
+        // Accepting gives the source formatting with the new word; rejecting
+        // gives the source.
+        let before = read_markup(&source);
+        assert_eq!(settle_all(&changed, RevisionAction::Accept), before.replace(old, new), "{xml}");
+        assert_eq!(settle_all(&changed, RevisionAction::Reject), before, "{xml}");
+    }
+}
+
+#[test]
+fn replace_paragraph_tags_still_apply_formatting() {
+    let source = shared_font_paragraph(&[("Section 9.2 — Costs.", true), (" Fees shall be shared equally.", false)]);
+    let changed = commit_auto_diff(&source, EditOp::ReplaceParagraph {
+        at: ParagraphAddress::id(SOURCE_ID),
+        with: "<b>Section 9.2 — Costs.</b> Fees shall be <b>borne</b> equally.".into(),
+    });
+    let accepted = settle_all(&changed, RevisionAction::Accept);
+    assert!(accepted.contains("<b>borne</b>"), "{accepted}");
+    assert!(accepted.contains("<b>Section 9.2 — Costs.</b>"), "{accepted}");
+    assert_eq!(settle_all(&changed, RevisionAction::Reject), read_markup(&source));
+}
+
 // ---------------------------------------------------------------------------
 // Bookmarks
 // ---------------------------------------------------------------------------
