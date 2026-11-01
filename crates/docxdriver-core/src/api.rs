@@ -942,6 +942,11 @@ pub enum EditOp {
     /// rows stay, their text underlined or struck. Formatting, table and
     /// section property changes have no amendment form and are accepted.
     /// Moves convert as deletion (source) and insertion (destination).
+    /// Where struck and underlined text meet with a word character on both
+    /// sides (a replaced word, whose redline shares one surrounding space),
+    /// one plain space goes between them: "~~attached~~ <u>secured</u>", as
+    /// in MPEP 714 examples; none is added next to whitespace or untouched
+    /// punctuation, or for a pure insertion or deletion.
     /// Existing underline and strike are kept. `target` is `"all"`,
     /// `{"id": ...}` or `{"author": ...}`; `at` limits it to revisions in
     /// those body paragraphs. Settles revisions, so it writes none of its
